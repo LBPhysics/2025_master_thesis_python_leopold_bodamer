@@ -26,10 +26,8 @@ else:
 
 DATA_DIR = (PROJECT_ROOT / "data").resolve()
 FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
-PYTHON_CODE_DIR = PROJECT_ROOT / "code" / "python"
-SCRIPTS_DIR = PYTHON_CODE_DIR / "scripts"
-NOTEBOOKS_DIR = PYTHON_CODE_DIR / "notebooks"
-LATEX_DIR = PROJECT_ROOT / "latex"
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+NOTEBOOKS_DIR = PROJECT_ROOT / "notebooks"
 FIGURES_PYTHON_DIR = FIGURES_DIR / "figures_from_python"
 FIGURES_TESTS_DIR = FIGURES_PYTHON_DIR / "tests"
 SIM_CONFIGS_DIR = SCRIPTS_DIR / "simulation_configs"
@@ -50,10 +48,8 @@ __all__ = [
     "FIGURES_DIR",
     "FIGURES_PYTHON_DIR",
     "FIGURES_TESTS_DIR",
-    "PYTHON_CODE_DIR",
     "SCRIPTS_DIR",
     "SIM_CONFIGS_DIR",
     "NOTEBOOKS_DIR",
-    "LATEX_DIR",
     "ensure_project_directories",
 ]

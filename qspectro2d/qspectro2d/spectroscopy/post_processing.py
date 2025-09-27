@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 
-def _extend_axis(axis: np.ndarray, new_len: int) -> np.ndarray:
+def _etend_axis(axis: np.ndarray, new_len: int) -> np.ndarray:
     """Extend a strictly increasing 1D axis to ``new_len`` in + direction."""
     if axis.ndim != 1:
         raise ValueError("axis must be 1D")
@@ -62,7 +62,7 @@ def extend_time_domain_data(
     n_det_ext = int(np.ceil(pad * n_det))
 
     if t_coh is None:
-        extended_t_det = _extend_axis(t_det, n_det_ext)
+        extended_t_det = _etend_axis(t_det, n_det_ext)
         extended_datas = []
         for idx, arr in enumerate(datas):
             if arr.ndim != 1:
@@ -87,8 +87,8 @@ def extend_time_domain_data(
     n_coh = int(t_coh.size)
     n_coh_ext = int(np.ceil(pad * n_coh))
 
-    extended_t_det = _extend_axis(t_det, n_det_ext)
-    extended_t_coh = _extend_axis(t_coh, n_coh_ext)
+    extended_t_det = _etend_axis(t_det, n_det_ext)
+    extended_t_coh = _etend_axis(t_coh, n_coh_ext)
 
     extended_datas: List[np.ndarray] = []
     for idx, arr in enumerate(datas):
@@ -149,9 +149,7 @@ def compute_spectra(
         sig_types = [signal_types[0]] * len(datas)
     else:
         if len(signal_types) != len(datas):
-            raise ValueError(
-                "signal_types must have same length as datas or be a single entry"
-            )
+            raise ValueError("signal_types must have same length as datas or be a single entry")
         sig_types = list(signal_types)
 
     # Detection axis frequency and wavenumber
@@ -189,9 +187,7 @@ def compute_spectra(
         # 2D case: (N_coh, N_det)
         n_coh = int(t_coh.size)
         if arr.ndim != 2 or arr.shape != (n_coh, n_det):
-            raise ValueError(
-                f"datas[{idx}] must be 2D with shape (len(t_coh), len(t_det))"
-            )
+            raise ValueError(f"datas[{idx}] must be 2D with shape (len(t_coh), len(t_det))")
 
         # Detection axis (+i) via IFFT along last axis
         spec_2d = np.fft.ifft(arr, axis=1)
