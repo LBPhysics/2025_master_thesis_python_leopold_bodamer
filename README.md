@@ -5,8 +5,13 @@ This directory is a snapshot of the Python-only components extracted from the fu
 ## Included Packages
 - `thesis_paths`: Paths.
 - `qspectro2d`: Core quantum spectroscopy simulation framework (1D/2D electronic spectroscopy; system, bath, laser, simulation orchestration, I/O, visualization).
-- `plotstyle`: Matplotlib style helpers tuned for LaTeX-quality figures.
-- `scripts/`: *MOST IMPORTANT* CLI utilities for batch simulations and data post-processing (`calc_datas.py`, `plot_datas.py`, etc.).
+    - `config`: Validates default physics parameters and builds ready-to-run `SimulationModuleOQS` objects from YAML inputs.
+    - `core`: Defines the dynamical model (atomic systems, baths, laser pulses) and solver building blocks used across simulations.
+    - `spectroscopy`: Provides 1D/2D pulse evolution, polarization pipelines, inhomogeneous sampling, and post-processing transforms. For post-processing it follows https://doi.org/10.1063/5.0214023.
+    - `utils`: Shared constants, rotating-wave helpers, file naming, and data I/O utilities.
+    - `visualization`: High-level plotting helpers for pulse envelopes, fields, and spectroscopy datasets.
+- `plotstyle`: Drop-in Matplotlib styles for publication-ready figures—use these to get consistently “nice” plots that match the thesis aesthetic.
+- `scripts/`: *most important* CLI utilities for (batch) simulations and data post-processing (`calc_datas.py`, `plot_datas.py`, etc.).
 - `notebooks/`: Demonstration and exploratory notebooks.
 
 ## Quick Start (Development Install)

@@ -5,16 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "thesis_paths"
 version = "0.1.0"
-description = "Utilities and CLI tools for quantum spectroscopy thesis project"
+description = "contain the paths of the project"
 authors = [{name="Leopold Bodamer"}]
 readme = "README.md"
 requires-python = ">=3.11"
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
-  "Intended Audience :: Science/Research",
-  "Topic :: Scientific/Engineering :: Physics",
-]
 dependencies = [
   "numpy",
   "matplotlib", 
@@ -24,36 +18,3 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/LBPhysics/thesis_python"
-
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "ruff",
-  "black",
-  "mypy",
-]
-
-[project.scripts]
-calc-datas = "scripts.calc_datas:main"
-stack-times = "scripts.stack_times:main"
-
-# Explicitly declare root package name since its source lives at '.' via package-dir mapping.
-[tool.setuptools]
-packages = ["thesis_paths"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-select = ["E", "F", "I", "B"]
-
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-warn_unused_configs = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-show_error_codes = true
