@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "plotstyle"
 version = "0.1.0"
 description = "LaTeX-compatible matplotlib plotting styles for the thesis"
-readme = "README.md"
 requires-python = ">=3.11"
 authors = [
   {name = "Leopold Bodamer"}
