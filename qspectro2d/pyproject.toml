@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qspectro2d"
+version = "0.1.0"
+description = "Quantum 1D/2D electronic spectroscopy simulations for the thesis"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  {name = "Leopold Bodamer"}
+]
+
+[project.urls]
+Repository = "https://github.com/LBPhysics/2025_master_thesis_leopold_bodamer"
+
+[tool.setuptools.packages.find]
+include = ["qspectro2d", "qspectro2d.*"]
+namespaces = false
+
+

@@ -1,0 +1,86 @@
+# Template for qspectro2d simulation config
+# List every supported parameter with a brief explanation.
+# Units:
+# - Frequencies in wavenumbers [cm^-1]
+# - Times in femtoseconds [fs]
+# - Bath parameters (cutoff, temperature, coupling) are in angular-frequency units used by the solver
+#
+# Notes:
+# - Keep array lengths consistent (e.g., one dipole per atom).
+# - For dimers, set coupling_cm to the electronic coupling between the two sites.
+
+atomic:
+  # Number of atoms/sites in the aggregate (>= 1)
+  n_atoms: 1
+
+  # Number of independent chains (use 1) -> for cylindrical geometry
+  n_chains: 1
+
+  # Site transition frequencies [cm^-1]; length must equal n_atoms
+  frequencies_cm: [16000.0]
+
+  # Transition dipole moments (relative units); one per site
+  dip_moments: [1.0]
+
+  # Number of inhomogeneous samples to compute (1 disables inhomogeneous averaging in this step)
+  n_inhomogen: 100
+
+  # Inhomogeneous Gaussian full width at half maximum (FWHM) in [cm^-1]
+  # Used to sample site frequencies for inhomogeneous broadening
+  delta_inhomogen_cm: 0.0
+
+  # Electronic (resonant) coupling between sites [cm^-1];
+  # For monomers keep 0.0; for dimers set to the excitonic coupling
+  coupling_cm: 0.0
+
+  # Max excitation manifold to include (1=single-exciton; 2=up to double-exciton)
+  max_excitation: 1
+
+laser:
+  # Base electric field amplitude (arb. units)
+  base_amplitude: 0.01
+
+  # Pulse full width at half maximum [fs] -> pulse is active for ~2*pulse_fwhm_fs
+  pulse_fwhm_fs: 15.0
+
+  # Pulse envelope type: 'gaussian / cos2' (supported)
+  envelope_type: gaussian
+
+  # Optical carrier frequency [cm^-1] (central frequency of the pulse)
+  carrier_freq_cm: 16000.0
+
+  # Apply rotating-wave approximation in Schrödinger–Liouville picture
+  rwa_sl: true
+
+bath:
+  # Bath spectral density type (e.g., 'ohmic')
+  bath_type: ohmic
+
+  # Bath cutoff frequency (solver units)
+  cutoff: 100
+
+  # Bath temperature (solver units)
+  temperature: 1e-6
+
+  # System–bath coupling strength (solver units)
+  coupling: 0.001
+
+config:
+  # Solver backend: options include 'ME' (Lindblad/Markovian), 'BR' (Bloch-Redfield),  'Paper_eqs' (which excplicitly use the equations of motion derived in the paper I and II), # TODO extend to'HEOM' (if available)
+  solver: ME
+
+  # Signal types to compute; common: ['nonrephasing', 'rephasing']
+  signal_types: [rephasing]
+
+window:
+  # Maximum detection-time span [fs] -> determines frequency resolution, also t_coh range for 2D mode
+  t_det_max: 100.0
+
+  # Waiting time between 2.pump and probe [fs]
+  t_wait: 50.0
+
+  # Coherence time between 1.& 2.pump[fs] (used directly in 1D mode; in 2D mode it is swept)
+  t_coh: 60.0
+
+  # Time step [fs] < 0.2 to resolve fast dynamics /  spectral features around 16000 cm^-1
+  dt: 0.1

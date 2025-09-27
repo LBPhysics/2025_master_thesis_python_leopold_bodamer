@@ -1,0 +1,28 @@
+# 2-atoms (dimer) uncoupled configuration
+atomic:
+  n_atoms: 2
+  frequencies_cm: [15640.0, 16360.0]
+  dip_moments: [1.0, 1.0]
+  max_excitation: 2
+
+laser:
+  base_amplitude: 0.05
+  pulse_fwhm_fs: 5.0
+  carrier_freq_cm: 16000.0
+  rwa_sl: true
+
+bath:
+  bath_type: ohmic
+  cutoff: 100
+  temperature: 1e-6
+  coupling: 0.01
+
+config:
+  solver: Paper_eqs
+  signal_types: [rephasing]
+
+window:
+  t_det_max: 50.0
+  t_wait: 0.0
+  t_coh: 30.0
+  dt: 0.1

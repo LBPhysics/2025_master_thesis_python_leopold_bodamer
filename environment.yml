@@ -1,0 +1,29 @@
+# In General Get conda on "https://repo.anaconda.com/miniconda/"
+# ON Linux: run "wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+# Conda environment file for Master Thesis 2D Electronic Spectroscopy project
+# Initialize: conda env create -f environment.yml
+# Update: conda env update -f environment.yml --prune
+
+name: m_env
+channels:
+  - conda-forge  # Preferred channel for scientific packages
+  - defaults
+
+dependencies:
+  # Core Python
+  - python=3.11
+  - pip
+  
+  # Conda packages (when available, prefer conda over pip)
+  - numpy>=1.20,<3.0  # Compatible with matplotlib 3.10+
+  - matplotlib>=3.10    # Required for NumPy 2.x compatibility
+  - qutip>=5.2
+  - mpmath
+  - psutil>=5.8
+  - jupyter
+  - ipython
+  - pip:
+      # Editable installs: ensure correct relative paths (leading './')
+      - -e ./qspectro2d
+      - -e ./plotstyle
+      - -e ./

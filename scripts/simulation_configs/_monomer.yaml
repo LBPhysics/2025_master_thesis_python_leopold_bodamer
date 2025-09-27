@@ -1,0 +1,31 @@
+# 1-atom (monomer) configuration
+atomic:
+  n_atoms: 1
+  frequencies_cm: [16000.0]
+  # TEMP: enable inhomogeneous sampling for diagnostic comparison
+  # Set back to n_inhomogen: 1 for homogeneous runs.
+  n_inhomogen: 100
+  delta_inhomogen_cm: 600.0
+  dip_moments: [1.0]
+
+laser:
+  base_amplitude: 0.05
+  pulse_fwhm_fs: 15.0
+  carrier_freq_cm: 16000.0
+  rwa_sl: true
+
+bath:
+  bath_type: ohmic
+  cutoff: 100
+  temperature: 1e-6
+  coupling: 0.01
+
+config:
+  solver: Paper_eqs
+  signal_types: [rephasing]
+
+window:
+  t_det_max: 600.0
+  t_wait: 1000.0
+  t_coh: 300.0
+  dt: 2
