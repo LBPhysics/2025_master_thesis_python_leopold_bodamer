@@ -13,7 +13,7 @@ authors = [
 ]
 
 [project.urls]
-Repository = "https://github.com/LBPhysics/2025_master_thesis_leopold_bodamer"
+Repository = "https://github.com/LBPhysics/thesis_python"
 
 [tool.setuptools.packages.find]
 include = ["qspectro2d", "qspectro2d.*"]

@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "thesis_paths"
 version = "0.1.0"
-description = "Master thesis spectroscopy tooling"
+description = "Utilities and CLI tools for quantum spectroscopy thesis project"
 authors = [{name="Leopold Bodamer"}]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,15 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Physics",
 ]
-dependencies = []
+dependencies = [
+  "numpy",
+  "matplotlib", 
+  "scipy",
+  "pyyaml",
+]
+
+[project.urls]
+Repository = "https://github.com/LBPhysics/thesis_python"
 
 [project.optional-dependencies]
 dev = [
@@ -26,8 +34,8 @@ dev = [
 ]
 
 [project.scripts]
-calc-datas = "thesis_paths.scripts.calc_datas:main"
-stack-times = "thesis_paths.scripts.stack_times:main"
+calc-datas = "scripts.calc_datas:main"
+stack-times = "scripts.stack_times:main"
 
 # Explicitly declare root package name since its source lives at '.' via package-dir mapping.
 [tool.setuptools]

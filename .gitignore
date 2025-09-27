@@ -485,7 +485,6 @@ TSWLatexianTemp*
 # option is specified. Footnotes are the stored in a file with suffix Notes.bib.
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
-README.md
 
 
 # Archive directory (if it contains old/experimental code)
