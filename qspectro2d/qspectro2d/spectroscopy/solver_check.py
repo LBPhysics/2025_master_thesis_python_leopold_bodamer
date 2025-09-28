@@ -19,7 +19,7 @@ from qutip import Qobj, Result
 
 # LOCAL IMPORTS
 from ..core.simulation import SimulationModuleOQS
-from .one_d_field import compute_evolution
+from .e_field_1d import compute_evolution
 
 
 __all__ = ["check_the_solver"]
@@ -49,7 +49,9 @@ def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
 
     if psi_ini.type == "oper":  # density matrix
         ini_eigvals = psi_ini.eigenenergies()
-        print(f"Initial eigenvalues range: [{ini_eigvals.min():.6f}, {ini_eigvals.max():.6f}]")
+        print(
+            f"Initial eigenvalues range: [{ini_eigvals.min():.6f}, {ini_eigvals.max():.6f}]"
+        )
         print(f"Initial min eigenvalue: {ini_eigvals.min():.10f}")
 
     # System Hamiltonian diagnostics
@@ -223,7 +225,9 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     if getattr(copy_sim_oqs.simulation_config, "rwa_sl", False):
         n_atoms = copy_sim_oqs.system.n_atoms
         omega_laser = copy_sim_oqs.laser.carrier_freq_fs
-        print(f"Applying RWA phase factors: n_atoms={n_atoms}, omega_laser={omega_laser} [fs^-1]")
+        print(
+            f"Applying RWA phase factors: n_atoms={n_atoms}, omega_laser={omega_laser} [fs^-1]"
+        )
         # Lazy import here to avoid triggering package-level imports during module import
         from ..utils.rwa_utils import from_rotating_frame_list
 

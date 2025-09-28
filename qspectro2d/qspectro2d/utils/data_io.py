@@ -20,7 +20,10 @@ if TYPE_CHECKING:
     from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
     from qspectro2d.core.atomic_system.system_class import AtomicSystem
     from qspectro2d.core.simulation import SimulationConfig, SimulationModuleOQS
-from qspectro2d.utils.file_naming import generate_unique_data_filename, _generate_unique_filename
+from qspectro2d.utils.file_naming import (
+    generate_unique_data_filename,
+    _generate_unique_filename,
+)
 
 
 # data saving functions
@@ -78,7 +81,9 @@ def save_data_file(
                     )
             else:
                 if not isinstance(data, np.ndarray) or data.shape != (len(t_det),):
-                    raise ValueError(f"1D data must have shape (len(t_det),) = ({len(t_det)},)")
+                    raise ValueError(
+                        f"1D data must have shape (len(t_det),) = ({len(t_det)},)"
+                    )
             payload[sig_key] = data
 
         # Single write
@@ -152,7 +157,9 @@ def save_simulation_data(
     laser: "LaserPulseSequence" = sim_module.laser
 
     # Deterministic non-enumerated base (no suffix yet)
-    abs_base_path = Path(generate_unique_data_filename(system, sim_config, data_root=data_root))
+    abs_base_path = Path(
+        generate_unique_data_filename(system, sim_config, data_root=data_root)
+    )
     base_dir = abs_base_path.parent
     base_stem = abs_base_path.name  # e.g. 1d_t_coh_33.3_inhom_000 (no _data suffix yet)
 
@@ -166,6 +173,39 @@ def save_simulation_data(
 
     save_data_file(abs_data_path, metadata, datas, t_det, t_coh=t_coh)
     save_info_file(abs_info_path, system, bath, laser, sim_config)
+    return abs_data_path
+
+
+def save_data_only(
+    sim_module: SimulationModuleOQS,
+    metadata: dict,
+    datas: List[np.ndarray],
+    t_det: np.ndarray,
+    t_coh: Optional[np.ndarray] = None,
+    *,
+    data_root: Path | str,
+) -> Path:
+    """Persist spectroscopy data arrays without writing a companion info file.
+
+    Parameters mirror :func:`save_simulation_data`, but this helper only produces the
+    compressed ``*_data.npz`` artifact. It reuses the deterministic naming scheme and
+    collision handling so enumerated files stay consistent with the full saver.
+    """
+
+    sim_config: "SimulationConfig" = sim_module.simulation_config
+    system: "AtomicSystem" = sim_module.system
+
+    abs_base_path = Path(
+        generate_unique_data_filename(system, sim_config, data_root=data_root)
+    )
+    base_dir = abs_base_path.parent
+    base_stem = abs_base_path.name
+
+    data_stem = f"{base_stem}_data"
+    unique_data_stem = Path(_generate_unique_filename(base_dir, data_stem)).name
+    abs_data_path = base_dir / f"{unique_data_stem}.npz"
+
+    save_data_file(abs_data_path, metadata, datas, t_det, t_coh=t_coh)
     return abs_data_path
 
 
@@ -346,8 +386,25 @@ def list_available_files(abs_base_dir: Path) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def discover_1d_files(folder: Path) -> List[Path]:
-    """Return sorted list of all *_data.npz files in the folder.
+def extract_run_index_from_data_file(data_file: Path) -> int | None:
+    """Return enumerated run index encoded in a *_data*.npz file name."""
+
+    stem = data_file.stem
+    if stem.endswith("_data"):
+        return None
+
+    if "_data_" not in stem:
+        return None
+
+    prefix, suffix = stem.rsplit("_data_", 1)
+    if not prefix:
+        return None
+
+    return int(suffix) if suffix.isdigit() else None
+
+
+def discover_1d_data_files(folder: Path, run_index: int | None = None) -> List[Path]:
+    """Return sorted list of *_data*.npz files limited to a specific run, if given.
 
     New naming scheme: averaged outputs carry an in-filename prefix segment
     'inhom_avg' (e.g. '1d_inhom_avg_t_coh_50_inhom_000_data.npz').
@@ -355,9 +412,24 @@ def discover_1d_files(folder: Path) -> List[Path]:
     If any averaged files are present we return only those, to avoid stacking
     raw per-config files with duplicate t_coh values.
     """
+
     if not folder.is_dir():
         raise NotADirectoryError(f"Not a directory: {folder}")
-    candidates = sorted(folder.glob("*_data.npz"))
+
+    candidates = sorted(folder.glob("*_data*.npz"))
+
+    if run_index is None:
+        base_only = [
+            p for p in candidates if extract_run_index_from_data_file(p) is None
+        ]
+        if base_only:
+            candidates = base_only
+    else:
+        run_specific = [
+            p for p in candidates if extract_run_index_from_data_file(p) == run_index
+        ]
+        candidates = run_specific
+
     avgs = [p for p in candidates if "/inhom_avg_" in str(p).replace("\\", "/")]
     return avgs if avgs else candidates
 
@@ -373,11 +445,43 @@ def derive_2d_folder(from_1d_folder: Path) -> Path:
     return Path(*parts)
 
 
+def _extract_inhom_enabled(bundle: dict) -> bool:
+    """Infer whether a loaded bundle corresponds to an inhomogeneous run."""
+
+    raw_flag = bundle.get("inhom_enabled", None)
+    if raw_flag is not None:
+        return bool(raw_flag)
+
+    sim_cfg = bundle.get("sim_config")
+    if sim_cfg is not None and hasattr(sim_cfg, "inhom_enabled"):
+        return bool(sim_cfg.inhom_enabled)
+
+    # Fall back to presence of a group identifier
+    return bundle.get("inhom_group_id") is not None
+
+
+def _normalize_group_id(value) -> str | None:
+    """Convert stored group identifiers to plain Python strings."""
+
+    if value is None:
+        return None
+    if isinstance(value, np.ndarray):
+        # Scalar arrays store values such as array('inhom_xxx', dtype='<U16')
+        try:
+            return str(value.item())
+        except ValueError:
+            return str(value.tolist())
+    return str(value)
+
+
 def collect_group_files(anchor: Path) -> List[Path]:
     """Find all files with the same inhom_group_id as `anchor` in its directory.
 
     The anchor must be a path to a single `_data.npz` file from an inhomogeneous 1D run.
     """
+    anchor = Path(anchor)
+    anchor_run_idx = extract_run_index_from_data_file(anchor)
+
     try:
         base = load_simulation_data(anchor)
     except Exception as e:
@@ -386,11 +490,13 @@ def collect_group_files(anchor: Path) -> List[Path]:
         print("🔍 Searching for valid files in the same directory...")
 
         # Try to find any valid file in the same directory to get the group_id
-        dir_path = Path(anchor).parent
-        all_npz = list(dir_path.glob("*_data.npz"))
+        dir_path = anchor.parent
+        all_npz = sorted(dir_path.glob("*_data*.npz"))
 
         base = None
         for p in all_npz:
+            if extract_run_index_from_data_file(p) != anchor_run_idx:
+                continue
             if "/inhom_avg_" in str(p).replace("\\", "/"):
                 continue
             try:
@@ -406,16 +512,20 @@ def collect_group_files(anchor: Path) -> List[Path]:
                 "No valid inhomogeneous files found in directory to determine group_id"
             )
 
-    group_id = base.get("inhom_group_id")
+    group_id = _normalize_group_id(base.get("inhom_group_id"))
     if group_id is None:
         raise ValueError("Missing inhom_group_id in anchor file metadata.")
     # Keep t_coh constant if present (multiple coherence delays in same folder)
     anchor_tcoh = base.get("t_coh_value", None)
 
-    dir_path = Path(anchor).parent
-    all_npz = list(dir_path.glob("*_data.npz"))
+    anchor_is_inhom = _extract_inhom_enabled(base)
+
+    dir_path = anchor.parent
+    all_npz = sorted(dir_path.glob("*_data*.npz"))
     matches: List[Path] = []
     for p in all_npz:
+        if extract_run_index_from_data_file(p) != anchor_run_idx:
+            continue
         # Skip any already averaged outputs (identified by 'inhom_avg' prefix segment)
         if "/inhom_avg_" in str(p).replace("\\", "/"):
             continue
@@ -425,11 +535,23 @@ def collect_group_files(anchor: Path) -> List[Path]:
             print(f"⚠️  Skipping corrupted file: {p}")
             print(f"    Error: {e}")
             continue
-        if d.get("inhom_enabled", False) and d.get("inhom_group_id") == group_id:
-            if anchor_tcoh is None or np.isclose(
-                float(d.get("t_coh_value", 0.0)), float(anchor_tcoh)
+        if not _extract_inhom_enabled(d) and anchor_is_inhom:
+            continue
+
+        if _normalize_group_id(d.get("inhom_group_id")) != group_id:
+            continue
+
+        if anchor_tcoh is not None:
+            try:
+                candidate_tcoh = float(np.asarray(d.get("t_coh_value", 0.0)))
+            except Exception:
+                candidate_tcoh = None
+            if candidate_tcoh is None or not np.isclose(
+                candidate_tcoh, float(anchor_tcoh)
             ):
-                matches.append(p)
+                continue
+
+        matches.append(p)
     if not matches:
         raise FileNotFoundError("No matching inhomogeneous files found for group.")
     return sorted(matches)

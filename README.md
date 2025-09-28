@@ -1,6 +1,6 @@
 # Thesis Spectroscopy Python Toolkit (Minimal Edition)
 
-This directory is a snapshot of the Python-only components extracted from the full Master Thesis repository. It contains only reusable simulation, plotting, and helper code.
+This repository is a Python-only collection of the full Master Thesis repository.
 
 ## Included Packages
 - `thesis_paths`: Paths.
@@ -25,6 +25,7 @@ conda activate m_env
     - `template.yaml` explains all options.
     - `monomer.yaml` (reproduces https://pubs.aip.org/jcp/article/124/23/234504/930650/)
     - `[un]coupled_dimer.yaml` (reproduces https://pubs.aip.org/jcp/article/124/23/234505/930637/)
+    - The script `calc_datas.py` will select the file that starts with an underscore e.g. `_monomer.yaml`.
 
 All parameters that are not specified in the YAML will take defaults located in `qspectro2d/config`.
 
@@ -41,3 +42,9 @@ python scripts/hpc_calc_datas.py --n_batches N --sim_type 2d
 ```
 
 Generated SLURM scripts store logs in `code/python/scripts/batch_jobs/`.
+
+
+## Current problems (TODOS):
+
+- when trying to recreate Fig. 2. from https://pubs.aip.org/jcp/article/124/23/234504/930650/ -> inhomogeneous broadening doesnt work (I GET NO REPHASING SIGNAL after time t_det ~ t_coh)
+- when trying to recreate Fig. 3 of the same article / every other figure also Fig. 3 in https://pubs.aip.org/jcp/article/124/23/234505/930637/: the spectral features are rotated by 90 degrees

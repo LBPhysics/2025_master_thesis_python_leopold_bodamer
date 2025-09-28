@@ -28,7 +28,8 @@ from qspectro2d.utils.data_io import (
     load_data_file,
     load_info_file,
     save_simulation_data,
-    discover_1d_files,
+    discover_1d_data_files,
+    extract_run_index_from_data_file,
 )
 
 
@@ -68,7 +69,9 @@ def _load_entries(
             t_det = d["t_det"]
         else:
             if d["t_det"].shape != t_det.shape or not np.allclose(d["t_det"], t_det):
-                raise ValueError(f"Inconsistent t_det across files; first={files[0]}, bad={fp}")
+                raise ValueError(
+                    f"Inconsistent t_det across files; first={files[0]}, bad={fp}"
+                )
 
         stypes = list(map(str, d["signal_types"]))
         if signal_types is None:
@@ -107,7 +110,6 @@ def _load_entries(
 
 def _stack_to_2d(
     tcoh_vals: List[float],
-    t_det: np.ndarray,
     signal_types: List[str],
     per_sig_data: Dict[str, List[np.ndarray]],
 ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
@@ -126,8 +128,29 @@ def _stack_to_2d(
     return t_coh, stacked
 
 
+def _derive_info_path(data_file: Path) -> Path:
+    """Return the matching info file path for a given 1D data file."""
+
+    run_idx = extract_run_index_from_data_file(data_file)
+    name = data_file.name
+
+    if run_idx is None:
+        if not name.endswith("_data.npz"):
+            raise ValueError(f"Unexpected 1D data filename format: {name}")
+        return data_file.with_name(name[:-9] + "_info.pkl")
+
+    suffix = f"_data_{run_idx}.npz"
+    if not name.endswith(suffix):
+        raise ValueError(f"Unexpected enumerated 1D data filename format: {name}")
+
+    prefix = name[: -len(suffix)]
+    return data_file.with_name(f"{prefix}_info_{run_idx}.pkl")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Stack 1D per-t_coh outputs into a 2D dataset.")
+    parser = argparse.ArgumentParser(
+        description="Stack 1D per-t_coh outputs into a 2D dataset."
+    )
     parser.add_argument(
         "--abs_path",
         type=str,
@@ -141,24 +164,33 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    sanitized = args.abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
+    sanitized = (
+        args.abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
+    )
     in_dir = Path(sanitized).expanduser().resolve()
     print("=" * 80)
     print("STACK 1D -> 2D")
     print(f"Input directory: {in_dir}")
 
-    files = discover_1d_files(in_dir.parent)  # since in_dir is a data file
-    print(f"Found {len(files)} files to stack")
+    run_index = extract_run_index_from_data_file(in_dir)
+    all_candidates = sorted(in_dir.parent.glob("*_data*.npz"))
+    files = discover_1d_data_files(
+        in_dir.parent, run_index=run_index
+    )  # since in_dir is a data file
+    ignored = len(all_candidates) - len(files)
+
+    run_label = "base run" if run_index is None else f"run index {run_index}"
+    print(f"Found {len(files)} files to stack for {run_label}")
+    if ignored > 0:
+        print(f"Ignoring {ignored} file(s) belonging to other runs.")
+
     if not files:
-        print("No files found; aborting.")
+        print("No files found for the requested run; aborting.")
         sys.exit(1)
 
     # Load the 1D bundle info once and re-use it for saving via save_simulation_data
     first_data = files[0]
-    if str(first_data).endswith("_data.npz"):
-        first_info = Path(str(first_data)[:-9] + "_info.pkl")
-    else:
-        first_info = first_data.with_suffix(".pkl")
+    first_info = _derive_info_path(first_data)
 
     info = load_info_file(first_info)
     if not info:
@@ -178,31 +210,37 @@ def main() -> None:
     cfg_coh_stacked.inhom_index = 0
 
     # Compute expected output path to support skip_if_exists
-    # Mirror naming used by save_simulation_data: generate_unique_data_filename + suffixes
     try:
-        from qspectro2d.utils import (
-            generate_deterministic_data_base,
-        )
+        from qspectro2d.utils import generate_deterministic_data_base
 
         det_base = generate_deterministic_data_base(
             system, cfg_coh_stacked, data_root=DATA_DIR
         )  # pure stem
         folder = det_base.parent
-        pattern = det_base.name + "*_data.npz"
-        existing = list(folder.glob(pattern))
-        if args.skip_if_exists and existing:
-            print(f"⏭️  Skipping: found existing 2D dataset(s):")
-            for e in existing:
-                print(f"  - {e.name}")
-            print("Done.")
-            return
+        base_name = det_base.name
+        suffix = "" if run_index is None else f"_{run_index}"
+        candidate_path = folder / f"{base_name}_data{suffix}.npz"
+
+        if args.skip_if_exists:
+            if candidate_path.exists():
+                print(
+                    f"⏭️  Skipping: found existing 2D dataset for this run: {candidate_path.name}"
+                )
+                print("Done.")
+                return
+
+            siblings = sorted(folder.glob(f"{base_name}*_data.npz"))
+            if siblings:
+                print("ℹ️  Existing 2D dataset(s) in this folder:")
+                for sibling in siblings:
+                    print(f"  - {sibling.name}")
     except Exception as e:  # pragma: no cover
         if args.skip_if_exists:
             print(f"⚠️  Skip-if-exists heuristic failed: {e}")
 
     # Proceed with loading/staking since we didn't early-return
     tcoh_vals, t_det, signal_types, per_sig_data = _load_entries(files)
-    t_coh, stacked = _stack_to_2d(tcoh_vals, t_det, signal_types, per_sig_data)
+    t_coh, stacked = _stack_to_2d(tcoh_vals, signal_types, per_sig_data)
 
     # --- Contribution analysis & reporting ---
     # Build per-row non-zero masks from stacked data:
