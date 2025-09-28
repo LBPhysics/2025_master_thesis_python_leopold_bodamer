@@ -3,18 +3,26 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "thesis_paths"
+name = "2025-master-thesis-python-leopold-bodamer"
 version = "0.1.0"
-description = "contain the paths of the project"
-authors = [{name="Leopold Bodamer"}]
+description = "Scripts, helpers, and local packages for the 2025 master thesis pipeline."
+authors = [{name = "Leopold Bodamer"}]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "numpy",
-  "matplotlib", 
+  "matplotlib",
   "scipy",
   "pyyaml",
 ]
+keywords = ["spectroscopy", "quantum", "thesis"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Operating System :: OS Independent",
+]
 
-[project.urls]
-Repository = "https://github.com/LBPhysics/thesis_python"
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["thesis_paths"]
+
