@@ -24,6 +24,6 @@ dependencies:
   - ipython
   - pip:
       # Editable installs: ensure correct relative paths (leading './')
+      - -e .
       - -e ./qspectro2d
       - -e ./plotstyle
-      - -e ./
