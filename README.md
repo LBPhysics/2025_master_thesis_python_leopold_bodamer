@@ -48,5 +48,5 @@ Generated SLURM scripts store logs in `code/python/scripts/batch_jobs/`.
 
 ## Current problems (TODOS):
 
-- when trying to recreate Fig. 2. from https://pubs.aip.org/jcp/article/124/23/234504/930650/ -> inhomogeneous broadening doesnt work (I GET NO REPHASING SIGNAL after time t_det ~ t_coh)
-- when trying to recreate Fig. 3 of the same article / every other figure also Fig. 3 in https://pubs.aip.org/jcp/article/124/23/234505/930637/: the spectral features are rotated by 90 degrees
+- when trying to recreate Fig. 2. in the paper: https://pubs.aip.org/jcp/article/124/23/234504/930650/ -> inhomogeneous broadening doesn't work (I get no rephasing signal after time t_det ~ t_coh)
+- when trying to recreate Fig. 3 of the same article and also every other 2d-spectrum figure, like Fig. 3 in the paper where the dimer model is discussed: https://pubs.aip.org/jcp/article/124/23/234505/930637/: the spectral features seem to be rotated by 90 degrees
