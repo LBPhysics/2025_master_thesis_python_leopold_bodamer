@@ -96,7 +96,9 @@ def load_simulation(
     freqs_cm = list(atomic_cfg.get("frequencies_cm", dflt.FREQUENCIES_CM))
     dip_moments = list(atomic_cfg.get("dip_moments", dflt.DIP_MOMENTS))
     coupling_cm = float(atomic_cfg.get("coupling_cm", dflt.COUPLING_CM))
-    delta_inhomogen_cm = float(atomic_cfg.get("delta_inhomogen_cm", dflt.DELTA_INHOMOGEN_CM))
+    delta_inhomogen_cm = float(
+        atomic_cfg.get("delta_inhomogen_cm", dflt.DELTA_INHOMOGEN_CM)
+    )
     max_excitation = int(atomic_cfg.get("max_excitation", dflt.MAX_EXCITATION))
 
     atomic_system = AtomicSystem(

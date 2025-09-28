@@ -91,7 +91,9 @@ class SimulationModuleOQS:
         lowering_op = self.system.to_eigenbasis(lowering_op)
         if self.simulation_config.rwa_sl:
             E_plus_RWA = e_pulses(t, self.laser)
-            H_int = -(lowering_op * E_plus_RWA + lowering_op.dag() * np.conj(E_plus_RWA))
+            H_int = -(
+                lowering_op * E_plus_RWA + lowering_op.dag() * np.conj(E_plus_RWA)
+            )
             return H_int
         dipole_op = lowering_op + lowering_op.dag()
         E_plus = epsilon_pulses(t, self.laser)
@@ -126,10 +128,14 @@ class SimulationModuleOQS:
         dim = sys.dimension
         if dim > 1:
             # |g><e| for all  for e (1, ..., n_atoms)
-            ops.append(sum(eigenstates[0] * eigenstates[e].dag() for e in range(1, dim)))
+            ops.append(
+                sum(eigenstates[0] * eigenstates[e].dag() for e in range(1, dim))
+            )
         if dim > n + 1:
             # |g><f| for f (n_atoms+1, ..., dim)
-            ops.append(sum(eigenstates[0] * eigenstates[f].dag() for f in range(n + 1, dim)))
+            ops.append(
+                sum(eigenstates[0] * eigenstates[f].dag() for f in range(n + 1, dim))
+            )
             # |e><f| for e (1, ..., n_atoms) and f (n_atoms+1, ..., dim)
             ops.append(
                 sum(
@@ -222,7 +228,6 @@ class SimulationModuleOQS:
 
     # --- Helper functions -----------------------------------------------------------
     # MAKE THEM TIME DEP HERE
-
     # only for the paper solver
     def time_dep_paper_gamma_ij(self, i: int, j: int, t: float) -> float:
         """

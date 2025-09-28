@@ -23,7 +23,6 @@ dependencies:
   - jupyter
   - ipython
   - pip:
-      # Editable installs: ensure correct relative paths (leading './')
-      - -e .
-      - -e ./qspectro2d
-      - -e ./plotstyle
+    # Editable installs for local packages (relative to repository root)
+    - -e ./packages/qspectro2d
+    - -e ./packages/plotstyle

@@ -2,12 +2,12 @@
 
 Import from ``plotstyle``::
 
-        from plotstyle import init_style, save_fig, set_size
+    from plotstyle import init_style, save_fig, set_size
 
 Design goals:
-        * Idempotent style initialization (safe in parallel workers)
-        * Zero side effects until ``init_style()`` is called
-        * Minimal, readable set of defaults suitable for thesis figures
+    * Idempotent style initialization (safe in parallel workers)
+    * Zero side effects until ``init_style()`` is called
+    * Minimal, readable set of defaults suitable for thesis figures
 """
 
 from __future__ import annotations
@@ -16,9 +16,8 @@ import sys
 import shutil
 import math
 from pathlib import Path
-from typing import Optional, Iterable, Sequence, Union, List, Tuple
+from typing import Optional, Iterable, Sequence, Union, List, Tuple, TYPE_CHECKING
 import matplotlib as mpl
-from cycler import cycler
 from .constants import (
     LATEX_DOC_WIDTH,
     FONT_SIZE,
@@ -30,6 +29,10 @@ from .constants import (
     LINE_STYLES,
     MARKERS,
 )
+from .theme import DEFAULT_THEME
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .theme import PlotTheme
 
 __all__ = [
     # Public constants / defaults
@@ -50,47 +53,23 @@ _LATEX_PROBE_DONE = False
 
 
 # TODO only init_style and save_fig and set_size should be public
-def init_style(quiet: bool = True) -> None:
-    """Initialize matplotlib rcParams once (idempotent) for thesis-quality plots."""
+def init_style(quiet: bool = True, theme: "PlotTheme | None" = None) -> None:
+    """Initialize matplotlib rcParams once (idempotent) for thesis-quality plots.
+
+    Parameters
+    ----------
+    quiet:
+        Suppress informational prints when ``True`` (default).
+    theme:
+        Optional :class:`plotstyle.theme.PlotTheme` used to customize the rcParams
+        dictionary.  When ``None`` the package level :data:`DEFAULT_THEME` is used.
+    """
     _setup_backend()
-    base_settings = {
-        "font.family": "serif",
-        "font.serif": ["cmu serif", "times new roman", "serif"],
-        "font.size": FONT_SIZE,
-        "axes.titlesize": FONT_SIZE + 2,
-        "axes.labelsize": FONT_SIZE + 2,
-        "xtick.labelsize": FONT_SIZE,
-        "ytick.labelsize": FONT_SIZE,
-        "legend.fontsize": FONT_SIZE,
-        "figure.figsize": FIG_SIZE,
-        "figure.autolayout": True,
-        "axes.grid": False,
-        "axes.axisbelow": True,
-        # Cartesian product for more unique combinations before repeating
-        "axes.prop_cycle": cycler("color", COLORS) * cycler("linestyle", LINE_STYLES),
-        "legend.frameon": True,
-        "legend.fancybox": True,
-        "legend.framealpha": 0.8,
-        "savefig.transparent": TRANSPARENCY,
-        "savefig.format": FIG_FORMAT,
-        "savefig.dpi": DPI,
-        "mathtext.default": "regular",
-    }
+    active_theme = theme or DEFAULT_THEME
 
     _ensure_latex_probe()
-    if latex_available:
-        latex_settings = {
-            "text.usetex": True,
-            # Include AMS packages for \mathbb, \mathfrak, symbols, and bold math; Palatino text
-            "text.latex.preamble": r"\usepackage{amsmath}\usepackage{amssymb}\usepackage{amsfonts}\usepackage{bm}",  # TODO update here your desired LaTeX preamble \usepackage{mathpazo}
-        }
-        base_settings.update(latex_settings)
-    else:
-        non_latex_settings = {
-            "text.usetex": False,
-            "mathtext.default": "regular",
-        }
-        base_settings.update(non_latex_settings)
+    base_settings = active_theme.build_rcparams(latex_enabled=latex_available)
+
     mpl.rcParams.update(base_settings)
     if not quiet:
         print("[plotstyle.init_style] matplotlib style initialized")
@@ -129,7 +108,9 @@ def save_fig(
     # Determine formats and targets
     # Only treat a suffix as a format if Matplotlib supports it
     try:
-        supported_formats = {k.lower() for k in fig.canvas.get_supported_filetypes().keys()}
+        supported_formats = {
+            k.lower() for k in fig.canvas.get_supported_filetypes().keys()
+        }
     except Exception:
         # Reasonable fallback set
         supported_formats = {
@@ -178,7 +159,9 @@ def save_fig(
                 bbox_inches="tight",
                 transparent=transparent,
             )
-            _tight_failed = any("Tight layout not applied" in str(msg.message) for msg in _w)
+            _tight_failed = any(
+                "Tight layout not applied" in str(msg.message) for msg in _w
+            )
         if _tight_failed:
             fig.savefig(
                 str(out_path),
@@ -213,9 +196,14 @@ def set_size(
     if not (0 < fraction <= 1):
         raise ValueError("fraction must be in the interval (0, 1]")
     if not (
-        isinstance(subplots, tuple) and len(subplots) == 2 and subplots[0] >= 1 and subplots[1] >= 1
+        isinstance(subplots, tuple)
+        and len(subplots) == 2
+        and subplots[0] >= 1
+        and subplots[1] >= 1
     ):
-        raise ValueError("subplots must be a tuple of positive integers (n_rows, n_cols)")
+        raise ValueError(
+            "subplots must be a tuple of positive integers (n_rows, n_cols)"
+        )
     fig_width_pt = width_pt * fraction
     inches_per_pt = 1 / 72.27
     if height_ratio is None:
@@ -226,7 +214,9 @@ def set_size(
     return (round(fig_width_in, 4), round(fig_height_in, 4))
 
 
-def format_sci_notation(x: float, decimals: int = 1, include_dollar: bool = True) -> str:
+def format_sci_notation(
+    x: float, decimals: int = 1, include_dollar: bool = True
+) -> str:
     """Format a number into scientific notation suitable for axis labels.
 
     Uses LaTeX multiplication symbol when text.usetex is enabled, otherwise a dot.
@@ -306,13 +296,17 @@ def simplify_figure_text(
             prefer_integer = _near_integers(vmin, vmax)
 
         axis.set_major_locator(
-            MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10], integer=prefer_integer, min_n_ticks=3)
+            MaxNLocator(
+                nbins=6, steps=[1, 2, 2.5, 5, 10], integer=prefer_integer, min_n_ticks=3
+            )
         )
 
         if force_sci:
             axis.set_major_formatter(
                 FuncFormatter(
-                    lambda x, _pos=None: format_sci_notation(x, decimals=max(0, sci_decimals))
+                    lambda x, _pos=None: format_sci_notation(
+                        x, decimals=max(0, sci_decimals)
+                    )
                 )
             )
         else:

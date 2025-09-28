@@ -27,7 +27,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from thesis_paths import SCRIPTS_DIR
+SCRIPTS_DIR = Path(__file__).parent.resolve()
 
 
 def _slurm_script_text(
@@ -78,7 +78,9 @@ def _submit_job(script_path: Path) -> str:
     """
     sbatch = shutil.which("sbatch")
     if sbatch is None:
-        raise RuntimeError("sbatch not found on PATH. Run this on your cluster login node.")
+        raise RuntimeError(
+            "sbatch not found on PATH. Run this on your cluster login node."
+        )
 
     # Submit from within the batching directory so relative log paths work.
     result = subprocess.run(
@@ -136,9 +138,13 @@ def main() -> None:
     _ensure_dirs(job_dir, logs_subdir)
 
     action_verb = "Generating" if args.generate_only else "Creating and submitting"
-    print(f"{action_verb} {n_batches} SLURM jobs in {job_dir} (logs -> {logs_subdir}) ...")
+    print(
+        f"{action_verb} {n_batches} SLURM jobs in {job_dir} (logs -> {logs_subdir}) ..."
+    )
 
-    for batch_idx in range(n_batches):  # TODO also add the name of the config file to the job name
+    for batch_idx in range(
+        n_batches
+    ):  # TODO also add the name of the config file to the job name
         job_name = f"{sim_type}b{batch_idx:02d}of{n_batches:02d}"
         script_name = f"{job_name}.slurm"
         script_path = job_dir / script_name
