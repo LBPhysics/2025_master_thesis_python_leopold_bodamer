@@ -162,7 +162,7 @@ def _plot_components(
                             sim_config=sim_config,
                             domain=domain,
                             component=comp,
-                            figures_root=FIGURES_PYTHON_DIR,
+                            figures_root=FIGURES_DIR,
                         )
                     )
                     safe_label = str(st).replace(" ", "_")
@@ -206,7 +206,7 @@ def _plot_components(
                             sim_config=sim_config,
                             domain=domain,
                             component=comp,
-                            figures_root=FIGURES_PYTHON_DIR,
+                            figures_root=FIGURES_DIR,
                         )
                     )
                     safe_label = str(st).replace(" ", "_")
