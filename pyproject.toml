@@ -1,28 +1,42 @@
-[build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "2025-master-thesis-python-leopold-bodamer"
-version = "0.1.0"
-description = "Scripts, helpers, and local packages for the 2025 master thesis pipeline."
-authors = [{name = "Leopold Bodamer"}]
-readme = "README.md"
-requires-python = ">=3.11"
-dependencies = [
-  "numpy",
-  "matplotlib",
-  "scipy",
-  "pyyaml",
-]
-keywords = ["spectroscopy", "quantum", "thesis"]
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
-  "Operating System :: OS Independent",
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = [
+    "packages/plotstyle/src",
+    "packages/qspectro2d/src",
+    "scripts"
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["thesis_paths"]
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "B",
+    "I",
+    "UP",
+    "S",
+    "C4"
+]
+ignore = [
+    "E203",
+    "E501"
+]
 
+[tool.black]
+line-length = 100
+preview = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [
+    "packages/plotstyle/src",
+    "packages/qspectro2d/src"
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "packages/plotstyle/src",
+    "packages/qspectro2d/src"
+]

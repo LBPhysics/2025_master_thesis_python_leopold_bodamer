@@ -2,9 +2,8 @@
     // thesis_python workspace settings
     "python.defaultInterpreterPath": "C:\\Users\\leopo\\anaconda3\\envs\\m_env\\python.exe",
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/qspectro2d",
-        "${workspaceFolder}/plotstyle",
-        "${workspaceFolder}/thesis_paths",
+        "${workspaceFolder}/packages/qspectro2d/src",
+        "${workspaceFolder}/packages/plotstyle/src",
         "${workspaceFolder}/scripts"
     ],
     "python.analysis.diagnosticMode": "workspace",

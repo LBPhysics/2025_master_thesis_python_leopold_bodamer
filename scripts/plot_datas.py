@@ -39,12 +39,19 @@ from qspectro2d.core.bath_system.bath_fcts import extract_bath_parameters
 from qspectro2d import load_simulation_data
 from qspectro2d.utils.file_naming import _generate_unique_filename
 
-
-from thesis_paths import FIGURES_PYTHON_DIR
-
 from plotstyle import init_style, save_fig
 
 init_style()
+
+SCRIPTS_DIR = Path(__file__).parent.resolve()
+for _parent in SCRIPTS_DIR.parents:
+    if (_parent / ".git").is_dir():
+        PROJECT_ROOT = _parent
+        break
+DATA_DIR = (PROJECT_ROOT / "data").resolve()
+FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
+DATA_DIR.mkdir(exist_ok=True)
+FIGURES_DIR.mkdir(exist_ok=True)
 
 
 # Suppress noisy but harmless warnings

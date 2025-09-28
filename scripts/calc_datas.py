@@ -27,8 +27,9 @@ from __future__ import annotations
 import argparse
 import time
 import warnings
-
+from pathlib import Path
 import numpy as np
+
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d import save_simulation_data
@@ -36,7 +37,14 @@ from qspectro2d.config.create_sim_obj import create_base_sim_oqs
 from qspectro2d.core.simulation import SimulationModuleOQS
 from qspectro2d.utils.data_io import save_data_only
 
-from thesis_paths import DATA_DIR, SIM_CONFIGS_DIR
+SCRIPTS_DIR = Path(__file__).parent.resolve()
+for _parent in SCRIPTS_DIR.parents:
+    if (_parent / ".git").is_dir():
+        PROJECT_ROOT = _parent
+        break
+DATA_DIR = (PROJECT_ROOT / "data").resolve()
+SIM_CONFIGS_DIR = SCRIPTS_DIR / "simulation_configs"
+DATA_DIR.mkdir(exist_ok=True)
 
 
 # Silence noisy but harmless warnings

@@ -25,6 +25,7 @@ from .constants import (
     FIG_FORMAT,
     TRANSPARENCY,
 )
+from .theme import DEFAULT_THEME, PlotTheme
 
 __all__ = [
     "init_style",
@@ -33,6 +34,8 @@ __all__ = [
     "format_sci_notation",
     "simplify_figure_text",
     "beautify_colorbar",
+    "DEFAULT_THEME",
+    "PlotTheme",
     "COLORS",
     "LINE_STYLES",
     "MARKERS",

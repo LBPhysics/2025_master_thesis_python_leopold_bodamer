@@ -33,7 +33,13 @@ from qspectro2d.utils.data_io import (
 )
 
 
-from thesis_paths import DATA_DIR
+SCRIPTS_DIR = Path(__file__).parent.resolve()
+for _parent in SCRIPTS_DIR.parents:
+    if (_parent / ".git").is_dir():
+        PROJECT_ROOT = _parent
+        break
+DATA_DIR = (PROJECT_ROOT / "data").resolve()
+DATA_DIR.mkdir(exist_ok=True)
 
 
 def _load_entries(

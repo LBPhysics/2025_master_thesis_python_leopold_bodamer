@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run calc_datas (1D)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/calc_datas.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/scripts",
+            "args": [
+                "--sim_type",
+                "1d"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Run pytest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

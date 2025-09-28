@@ -1,20 +1,26 @@
-# Thesis Spectroscopy Python Toolkit (Minimal Edition)
+# Thesis spectroscopy toolkit
 
-This repository is a Python-only collection of the full Master Thesis repository.
+This repository contains the Python stack that powers the spectroscopy part of the master thesis.  The tree now follows a `packages/`-first layout so that the reusable libraries (`plotstyle` and `qspectro2d`) can be installed in editable mode while the CLI scripts remain thin orchestration layers.
 
-## Included Packages
-- `thesis_paths`: Paths.
-- `qspectro2d`: Core quantum spectroscopy simulation framework (1D/2D electronic spectroscopy; system, bath, laser, simulation orchestration, I/O, visualization).
-    - `config`: Validates default physics parameters and builds ready-to-run `SimulationModuleOQS` objects from YAML inputs.
-    - `core`: Defines the dynamical model (atomic systems, baths, laser pulses) and solver building blocks used across simulations.
-    - `spectroscopy`: Provides 1D/2D pulse evolution, polarization pipelines, inhomogeneous sampling, and post-processing transforms. For post-processing it follows https://doi.org/10.1063/5.0214023.
-    - `utils`: Shared constants, rotating-wave helpers, file naming, and data I/O utilities.
-    - `visualization`: High-level plotting helpers for pulse envelopes, fields, and spectroscopy datasets.
-- `plotstyle`: Drop-in Matplotlib styles for publication-ready figures—use these to get consistently “nice” plots that match the thesis aesthetic.
-- `scripts/`: *most important* CLI utilities for (batch) simulations and data post-processing (`calc_datas.py`, `plot_datas.py`, etc.).
-- `notebooks/`: Demonstration and exploratory notebooks.
+## Repository layout
 
-## Quick Start (Development Install)
+```
+thesis_python/
+├─ packages/
+│  ├─ plotstyle/        # LaTeX friendly Matplotlib helpers
+│  └─ qspectro2d/       # Spectroscopy simulations (systems, baths, pulses, solvers)
+├─ scripts/             # CLI entry points (simulate, stack, plot, HPC workflows)
+├─ notebooks/           # Interactive exploration and regression notebooks
+├─ environment.yml      # Conda environment used for development and HPC jobs
+├─ pyproject.toml       # Shared tooling configuration (ruff/black/pytest)
+├─ .vscode/             # Workspace settings, launch configs, tasks
+└─ README.md            # You are here
+```
+
+Each package in `packages/` is a standalone `pyproject` with a modern `src/` layout.  When you create the conda environment the packages are installed in editable mode automatically.  If you ever need to reinstall manually you can run `pip install -e packages/plotstyle -e packages/qspectro2d` or trigger the VS Code task “Install editable packages”.
+
+## Environment setup
+
 ```bash
 git clone https://github.com/LBPhysics/2025_master_thesis_python_leopold_bodamer.git
 cd 2025_master_thesis_python_leopold_bodamer
@@ -22,31 +28,29 @@ conda env create -f environment.yml
 conda activate m_env
 ```
 
-## Workflow summary
-1. **Configure** – Copy/edit a YAML under `scripts/simulation_configs/`. A template and the main schema are provided:
-    - `template.yaml` explains all options.
-    - `monomer.yaml` (reproduces https://pubs.aip.org/jcp/article/124/23/234504/930650/)
-    - `[un]coupled_dimer.yaml` (reproduces https://pubs.aip.org/jcp/article/124/23/234505/930637/)
-    - The script `calc_datas.py` will select the file that starts with an underscore e.g. `_monomer.yaml`.
+The environment file already performs the editable installs for `plotstyle` and `qspectro2d`, so no additional pip commands are required after activation.
 
-All parameters that are not specified in the YAML will take defaults located in `qspectro2d/config`.
+## Workflow overview
 
-2. **Simulate** – Run `calc_datas --sim_type {1d,2d}` locally or via SLURM (`hpc_calc_datas.py` with n_batches).
-3. **Aggregate** – Stack inhomogeneous runs (`stack_inhomogenity.py`) OR build 2D datasets (`stack_times`).
-4. **Plot** – Use `plot_datas.py` (or `hpc_plot_datas.py`) to create time/frequency figures; outputs land in `figures/figures_from_python/`.
+1. **Configure simulation** — duplicate a template in `scripts/simulation_configs/` and adjust physical parameters.  `_monomer.yaml` is still the default that `calc_datas.py` auto-selects.
+2. **Simulate** — run `python scripts/calc_datas.py --sim_type {1d,2d}` locally.  For batched/HPC jobs keep using `hpc_calc_datas.py` / `hpc_plot_datas.py` (unchanged).
+3. **Aggregate** — combine inhomogeneous traces with `stack_inhomogenity.py` or assemble 2D datasets with `stack_times.py`.
+4. **Visualise** — use `plot_datas.py` to create publication-ready figures.  For LaTeX manuscripts the `plotstyle` package enables consistent fonts and line styles.
 
-## HPC checklist
+Simulation outputs remain under `data/` and plots under `figures/figures_from_python/` just like before.
+
+## HPC reminder
+
 ```bash
 git pull --ff-only
-conda activate master_env
-conda env update -f environment.yml --prune   # only when dependencies changed
+conda activate m_env
+conda env update -f environment.yml --prune  # only when dependencies change
 python scripts/hpc_calc_datas.py --n_batches N --sim_type 2d
 ```
 
-Generated SLURM scripts store logs in `code/python/scripts/batch_jobs/`.
+Logs coming from batch submissions stay in the same directories referenced by the HPC helper scripts.
 
+## Outstanding physics TODOs
 
-## Current problems (TODOS):
-
-- when trying to recreate Fig. 2. in the paper: https://pubs.aip.org/jcp/article/124/23/234504/930650/ -> inhomogeneous broadening doesn't work (I get no rephasing signal after time t_det ~ t_coh)
-- when trying to recreate Fig. 3 of the same article and also every other 2d-spectrum figure, like Fig. 3 in the paper where the dimer model is discussed: https://pubs.aip.org/jcp/article/124/23/234505/930637/: the spectral features seem to be rotated by 90 degrees
+- Reproducing Fig. 2 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — inhomogeneous broadening still wipes out the rephasing signal after $t_{\text{det}} \approx t_{\text{coh}}$.
+- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ — 2D spectra remain rotated by $90^{\circ}$ compared to the reference.

@@ -24,7 +24,13 @@ from qspectro2d import (
 from qspectro2d.utils.data_io import collect_group_files
 from qspectro2d.utils import generate_deterministic_data_base
 
-from thesis_paths import DATA_DIR
+SCRIPTS_DIR = Path(__file__).parent.resolve()
+for _parent in SCRIPTS_DIR.parents:
+    if (_parent / ".git").is_dir():
+        PROJECT_ROOT = _parent
+        break
+DATA_DIR = (PROJECT_ROOT / "data").resolve()
+DATA_DIR.mkdir(exist_ok=True)
 
 
 def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
@@ -43,7 +49,9 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         try:
             first = load_simulation_data(files[first_file_idx])
         except Exception as e:
-            print(f"⚠️  Skipping corrupted file during metadata loading: {files[first_file_idx]}")
+            print(
+                f"⚠️  Skipping corrupted file during metadata loading: {files[first_file_idx]}"
+            )
             print(f"    Error: {e}")
             first_file_idx += 1
 
@@ -79,7 +87,9 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     if not valid_files:
         raise FileNotFoundError("No valid files found for averaging")
 
-    print(f"📊 Averaging {len(valid_files)} valid files out of {len(files)} total files")
+    print(
+        f"📊 Averaging {len(valid_files)} valid files out of {len(files)} total files"
+    )
 
     # Average
     averaged: List[np.ndarray] = []
@@ -127,14 +137,18 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             ensure=True,
         )
         folder = det_base.parent
-        pattern = det_base.name + "*_data.npz"  # matches base_data.npz or base_1_data.npz etc.
+        pattern = (
+            det_base.name + "*_data.npz"
+        )  # matches base_data.npz or base_1_data.npz etc.
         for p in folder.glob(pattern):
             try:
                 d = load_simulation_data(p)
-                if d.get("inhom_averaged", False) and d.get("inhom_group_id") == metadata.get(
+                if d.get("inhom_averaged", False) and d.get(
                     "inhom_group_id"
-                ):
-                    print(f"⏭️  Averaged file already exists for this t_coh in folder: {p}")
+                ) == metadata.get("inhom_group_id"):
+                    print(
+                        f"⏭️  Averaged file already exists for this t_coh in folder: {p}"
+                    )
                     return p
             except Exception:
                 continue
@@ -146,8 +160,12 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Average inhomogeneous 1D configs into one file.")
-    p.add_argument("--abs_path", type=str, required=True, help="Path to one *_data.npz file")
+    p = argparse.ArgumentParser(
+        description="Average inhomogeneous 1D configs into one file."
+    )
+    p.add_argument(
+        "--abs_path", type=str, required=True, help="Path to one *_data.npz file"
+    )
     p.add_argument(
         "--skip_if_exists",
         action="store_true",
