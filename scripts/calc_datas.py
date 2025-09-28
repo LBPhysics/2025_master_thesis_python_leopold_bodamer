@@ -27,18 +27,22 @@ from __future__ import annotations
 import argparse
 import time
 import warnings
+
 import numpy as np
 from qspectro2d.spectroscopy import sample_from_gaussian
-from qspectro2d.spectroscopy.one_d_field import parallel_compute_1d_e_comps
+from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d import save_simulation_data
 from qspectro2d.config.create_sim_obj import create_base_sim_oqs
 from qspectro2d.core.simulation import SimulationModuleOQS
+from qspectro2d.utils.data_io import save_data_only
 
 from thesis_paths import DATA_DIR, SIM_CONFIGS_DIR
 
 
 # Silence noisy but harmless warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered in exp")
+warnings.filterwarnings(
+    "ignore", category=RuntimeWarning, message="overflow encountered in exp"
+)
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -112,7 +116,9 @@ def run_1d_mode(args) -> None:
         else:
             chunks = np.array_split(np.arange(n_inhom), n_batches)
             if batch_idx < 0 or batch_idx >= len(chunks):
-                raise IndexError(f"batch_idx {batch_idx} out of range for n_batches={n_batches}")
+                raise IndexError(
+                    f"batch_idx {batch_idx} out of range for n_batches={n_batches}"
+                )
             indices = chunks[batch_idx]
             batch_note = f"batch {batch_idx+1}/{n_batches} (size={indices.size})"
 
@@ -132,6 +138,7 @@ def run_1d_mode(args) -> None:
 
         saved_paths: list[str] = []
         start_time = time.time()
+        first_save = True
         for idx in indices.tolist():
             cfg_freqs = samples_cm[idx, :].astype(float).tolist()
 
@@ -142,7 +149,9 @@ def run_1d_mode(args) -> None:
                 f"\n--- inhom_config={idx+1}/{n_inhom}  t_coh={t_coh_val:.2f} fs ---\n"
                 f"    freqs_cm = {np.array2string(np.asarray(cfg_freqs), precision=2)}"
             )
-            E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
+            E_sigs = _compute_e_components_for_tcoh(
+                sim_oqs, t_coh_val, time_cut=time_cut
+            )
 
             # Persist dataset for this configuration
             # Update config bookkeeping for this specific inhom configuration
@@ -153,9 +162,24 @@ def run_1d_mode(args) -> None:
                 "t_coh_value": t_coh_val,
                 "inhom_group_id": sim_cfg.inhom_group_id,
             }
-            out_path = save_simulation_data(
-                sim_oqs, metadata, E_sigs, t_det=sim_oqs.t_det, data_root=DATA_DIR
-            )
+            if first_save:
+                out_path = save_simulation_data(
+                    sim_oqs,
+                    metadata,
+                    E_sigs,
+                    t_det=sim_oqs.t_det,
+                    data_root=DATA_DIR,
+                )
+                first_save = False
+            else:
+                out_path = save_data_only(
+                    sim_oqs,
+                    metadata,
+                    E_sigs,
+                    sim_oqs.t_det,
+                    t_coh=None,
+                    data_root=DATA_DIR,
+                )
             saved_paths.append(str(out_path))
             print(f"    ✅ Saved {out_path}")
 
@@ -201,7 +225,9 @@ def run_2d_mode(args) -> None:
     print("🎯 Running 2D mode (iterate over t_det as t_coh)")
 
     # Reuse detection times as coherence-axis grid
-    t_coh_vals = sim_oqs.t_det  # NOTE can only take every 10th value to check on local pc
+    t_coh_vals = (
+        sim_oqs.t_det
+    )  # NOTE [::10] could take every 10th value to check functionality on local pc
     N_total = len(t_coh_vals)
 
     # Determine index subset for batching
@@ -231,6 +257,7 @@ def run_2d_mode(args) -> None:
 
     saved_paths: list[str] = []
     start_time = time.time()
+    first_save = True
     for t_i in indices.tolist():
         t_coh_val = float(t_coh_vals[t_i])
         print(f"\n--- t_coh={t_coh_val:.2f} fs  [{t_i} / {N_total}]---")
@@ -246,9 +273,25 @@ def run_2d_mode(args) -> None:
             "t_coh_value": t_coh_val,
             "inhom_group_id": sim_cfg.inhom_group_id,
         }
-        out_path = save_simulation_data(
-            sim_oqs, metadata, E_sigs, t_det=sim_oqs.t_det, data_root=DATA_DIR
-        )
+        if first_save:
+            out_path = save_simulation_data(
+                sim_oqs,
+                metadata,
+                E_sigs,
+                t_det=sim_oqs.t_det,
+                t_coh=None,
+                data_root=DATA_DIR,
+            )
+            first_save = False
+        else:
+            out_path = save_data_only(
+                sim_oqs,
+                metadata,
+                E_sigs,
+                sim_oqs.t_det,
+                t_coh=None,
+                data_root=DATA_DIR,
+            )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
 
@@ -292,7 +335,9 @@ def main() -> None:
         "--n_batches",
         type=int,
         default=1,
-        help=("Split the 2d run or 1d-inhom run into N batches (default: 1, i.e., no batching)"),
+        help=(
+            "Split the 2d run or 1d-inhom run into N batches (default: 1, i.e., no batching)"
+        ),
     )
     parser.add_argument(
         "--batch_idx",

@@ -6,18 +6,18 @@ including pulse evolution calculations, polarization computations, and post-proc
 routines for Fourier transforms and signal analysis.
 
 Main components:
-- one_d_field: 1D field and polarization computation pipeline
+- e_field_1d: 1D field and polarization computation pipeline
 - inhomogenity: Tools for handling inhomogeneous broadening
 - post_processing: FFT and signal processing utilities
 - simulation: High-level simulation runners and utilities
 """
 
 # CORE CALCULATION FUNCTIONS
-from .one_d_field import (
+from .e_field_1d import (
     compute_evolution,
     parallel_compute_1d_e_comps,
+    phase_cycle_component,
 )
-from .one_d_field import phase_cycle_component
 from .polarization import complex_polarization
 
 from .solver_check import check_the_solver

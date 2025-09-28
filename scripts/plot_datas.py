@@ -16,6 +16,7 @@ Examples (Windows PowerShell):
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+from pathlib import Path
 from typing import Any, List, Optional, Sequence, Dict, cast
 from qutip import BosonicEnvironment
 import sys
@@ -36,6 +37,7 @@ from qspectro2d.spectroscopy.post_processing import (
 from qspectro2d import generate_unique_plot_filename
 from qspectro2d.core.bath_system.bath_fcts import extract_bath_parameters
 from qspectro2d import load_simulation_data
+from qspectro2d.utils.file_naming import _generate_unique_filename
 
 
 from thesis_paths import FIGURES_PYTHON_DIR
@@ -46,7 +48,9 @@ init_style()
 
 
 # Suppress noisy but harmless warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered in exp")
+warnings.filterwarnings(
+    "ignore", category=RuntimeWarning, message="overflow encountered in exp"
+)
 
 
 # Helper to collect paths from save_fig (which may return a single path or a list of paths)
@@ -145,16 +149,20 @@ def _plot_components(
                             **md,
                         )
                     )
-                    base_name = generate_unique_plot_filename(
-                        system=system,
-                        sim_config=sim_config,
-                        domain=domain,
-                        component=comp,
-                        figures_root=FIGURES_PYTHON_DIR,
+                    base_name = Path(
+                        generate_unique_plot_filename(
+                            system=system,
+                            sim_config=sim_config,
+                            domain=domain,
+                            component=comp,
+                            figures_root=FIGURES_PYTHON_DIR,
+                        )
                     )
-                    # Append the freq-domain label to the filename for clear linkage
                     safe_label = str(st).replace(" ", "_")
-                    filename = f"{base_name}_{safe_label}"
+                    unique_path = _generate_unique_filename(
+                        base_name.parent, f"{base_name.name}_{safe_label}"
+                    )
+                    filename = unique_path
                     saved = save_fig(
                         fig,
                         filename=filename,
@@ -185,15 +193,20 @@ def _plot_components(
                             **md,
                         )
                     )
-                    base_name = generate_unique_plot_filename(
-                        system=system,
-                        sim_config=sim_config,
-                        domain=domain,
-                        component=comp,
-                        figures_root=FIGURES_PYTHON_DIR,
+                    base_name = Path(
+                        generate_unique_plot_filename(
+                            system=system,
+                            sim_config=sim_config,
+                            domain=domain,
+                            component=comp,
+                            figures_root=FIGURES_PYTHON_DIR,
+                        )
                     )
                     safe_label = str(st).replace(" ", "_")
-                    filename = f"{base_name}_{safe_label}"
+                    unique_path = _generate_unique_filename(
+                        base_name.parent, f"{base_name.name}_{safe_label}"
+                    )
+                    filename = unique_path
                     saved = save_fig(
                         fig,
                         filename=filename,
@@ -259,7 +272,12 @@ def main():
         if len(args.section) == 2:
             section = (args.section[0], args.section[1])
         elif len(args.section) == 4:
-            section = (args.section[0], args.section[1], args.section[2], args.section[3])
+            section = (
+                args.section[0],
+                args.section[1],
+                args.section[2],
+                args.section[3],
+            )
         else:
             raise ValueError("--section expects 2 (1D/2D) or 4 (2D) floats")
 
@@ -290,10 +308,18 @@ def main():
 
         # Print axes info
         n_t_det = len(t_det) if t_det is not None else 0
-        det_rng = f"[{float(t_det[0]):.2f},{float(t_det[-1]):.2f}] fs" if n_t_det > 0 else "[—]"
+        det_rng = (
+            f"[{float(t_det[0]):.2f},{float(t_det[-1]):.2f}] fs"
+            if n_t_det > 0
+            else "[—]"
+        )
         if is_2d:
             n_t_coh = len(t_coh) if t_coh is not None else 0
-            coh_rng = f"[{float(t_coh[0]):.2f},{float(t_coh[-1]):.2f}] fs" if n_t_coh > 0 else "[—]"
+            coh_rng = (
+                f"[{float(t_coh[0]):.2f},{float(t_coh[-1]):.2f}] fs"
+                if n_t_coh > 0
+                else "[—]"
+            )
         else:
             n_t_coh, coh_rng = 0, "—"
         print(
@@ -311,7 +337,8 @@ def main():
         # Detect if time-domain signals are all-zero (informative warning only)
         try:
             if datas and all(
-                isinstance(a, np.ndarray) and a.size > 0 and np.allclose(a, 0) for a in datas
+                isinstance(a, np.ndarray) and a.size > 0 and np.allclose(a, 0)
+                for a in datas
             ):
                 print("⚠️  All-zero time-domain signals detected.")
         except Exception:
@@ -399,7 +426,9 @@ def main():
                     pad_factor=pad_factor,
                     dimension=dimension,
                 )
-                axis_det_f, axis_coh_f = (freq_axes, None) if dimension == "1d" else freq_axes
+                axis_det_f, axis_coh_f = (
+                    (freq_axes, None) if dimension == "1d" else freq_axes
+                )
                 saved = _plot_components(
                     datas=freq_datas,
                     signal_types=kept_types,

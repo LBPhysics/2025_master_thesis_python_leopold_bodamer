@@ -37,7 +37,9 @@ def _generate_base_filename(sim_config: "SimulationConfig") -> str:
 
     t_coh_val = sim_config.t_coh
     if t_coh_val is not None:
-        t_coh_part = f"t_coh_{float(t_coh_val):.6g}"  # removes trailing zeros if possible
+        t_coh_part = (
+            f"t_coh_{float(t_coh_val):.6g}"  # removes trailing zeros if possible
+        )
         parts.append(t_coh_part)
 
     parts.append(f"inhom_{int(sim_config.inhom_index):03d}")
