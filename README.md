@@ -16,6 +16,8 @@ This repository is a Python-only collection of the full Master Thesis repository
 
 ## Quick Start (Development Install)
 ```bash
+git clone https://github.com/LBPhysics/2025_master_thesis_python_leopold_bodamer.git
+cd 2025_master_thesis_python_leopold_bodamer
 conda env create -f environment.yml
 conda activate m_env
 ```
