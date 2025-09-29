@@ -83,14 +83,15 @@ def ensure_2d_dataset(abs_path: str) -> Path:
 def create_plotting_script(
     abs_path: str,
     job_dir: Path,
+    logs_dir: Path,
 ) -> Path:
     """Create a SLURM script that runs plot_datas.py with the given abs_path."""
     plot_py = (SCRIPTS_DIR / "plot_datas.py").resolve()
     content = f"""#!/bin/bash
 #SBATCH --job-name=plot_data
 #SBATCH --chdir={job_dir}
-#SBATCH --output=logs/plotting.out
-#SBATCH --error=logs/plotting.err
+#SBATCH --output={logs_dir.name}/plotting.out
+#SBATCH --error={logs_dir.name}/plotting.err
 #SBATCH --partition=GPGPU
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=200G
@@ -156,20 +157,21 @@ def main() -> None:
         print(f"❌ Stacking failed: {e}")
         return
 
-    # Create a unique job directory under scripts/batch_jobs
+    # Create job directory (always the same) and unique logs directory inside
     base_name = "plotting"
     job_root = SCRIPTS_DIR / "batch_jobs"
     job_dir = job_root / base_name
-    suffix = 0
-    while job_dir.exists():
-        suffix += 1
-        job_dir = job_root / f"{base_name}_{suffix}"
+    job_dir.mkdir(parents=True, exist_ok=True)
 
     logs_dir = job_dir / "logs"
+    suffix = 0
+    while logs_dir.exists():
+        suffix += 1
+        logs_dir = job_dir / f"logs_{suffix}"
     logs_dir.mkdir(parents=True, exist_ok=False)
 
     # Create the script
-    create_plotting_script(abs_path=str(two_d_file), job_dir=job_dir)
+    create_plotting_script(abs_path=str(two_d_file), job_dir=job_dir, logs_dir=logs_dir)
 
     print(f"Generated plotting script in: {job_dir}")
 
