@@ -104,7 +104,7 @@ def _load_entries(
     if unique_count != len(tcoh_vals):
         raise ValueError(
             "Found duplicate t_coh_value entries. If this directory contains raw inhomogeneous "
-            "per-config files, run stack_inhomogenity.py first or point this script to the folder "
+            "per-config files, run avg_inhomogenity.py first or point this script to the folder "
             "containing only averaged files (with inhom_avg prefix)."
         )
 

@@ -1,7 +1,7 @@
 """Stack/average inhomogeneous 1D configurations produced by calc_datas.py.
 
 Usage:
-    python stack_inhomogenity.py --abs_path "<path to one _data.npz>" [--skip_if_exists]
+    python avg_inhomogenity.py --abs_path "<path to one _data.npz>" [--skip_if_exists]
 
 Given one file path from an inhomogeneous batch (same t_coh, same group id),
 this script finds all sibling files in the same directory tree with matching

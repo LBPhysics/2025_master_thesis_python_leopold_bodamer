@@ -36,7 +36,7 @@ The environment file already performs the editable installs for `plotstyle` and 
 
 1. **Configure simulation** — duplicate a template in `scripts/simulation_configs/` and adjust physical parameters.  `_monomer.yaml` is still the default that `calc_datas.py` auto-selects.
 2. **Simulate** — run `python scripts/calc_datas.py --sim_type {1d,2d}` locally.  For batched/HPC jobs keep using `hpc_calc_datas.py` / `hpc_plot_datas.py` (unchanged).
-3. **Aggregate** — combine inhomogeneous traces with `stack_inhomogenity.py` or assemble 2D datasets with `stack_times.py`.
+3. **Aggregate** — combine inhomogeneous traces with `avg_inhomogenity.py` or assemble 2D datasets with `stack_times.py`.
 4. **Visualise** — use `plot_datas.py` to create publication-ready figures.  For LaTeX manuscripts the `plotstyle` package enables consistent fonts and line styles.
 
 Simulation outputs remain under `data/` and plots under `figures/figures_from_python/` just like before.
@@ -54,5 +54,20 @@ Logs coming from batch submissions stay in the same directories referenced by th
 
 ## Outstanding physics TODOs
 
-- Reproducing Fig. 2 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — inhomogeneous broadening still wipes out the rephasing signal after $t_{\text{det}} \approx t_{\text{coh}}$.
-- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ — 2D spectral features remain rotated by $90^{\circ}$ compared to the reference.
+- Reproducing Fig. 2 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — When including inhomogeneous broadening, the simulated signal still shows no rephasing after $t_{\text{det}} \approx t_{\text{coh}}$. Different realizations of the system have different transition energies. Different realizations of the system do have different transition energies, but under a constant drive they all dephase in exactly the same way. As a result, the curve looks essentially identical to the case without inhomogeneous broadening. → This seems counterintuitive: I would expect a partial rephasing signal, since some realizations should come back in phase around $t_{¥text{det}} ¥approx t_{¥text{coh}}$, just like in the paper.
+
+ 
+
+- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — The 2d spectra is at the same position as in the article, but I would say that the features are
+
+1. somehow "rotated" by 90 degrees and
+
+2. not exactly the same shape.
+
+Also, I of cant't reproduce the boradening along the diagonal for a homogeneously broadened system.
+
+ 
+
+- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ —  Again the position of the spectral features look good, but remain rotated by $90^{¥circ}$ compared to the reference. In my simulation, both the real and imaginary parts show sign changes, while in the paper the real part only shows positive contributions.
+
+ 
