@@ -165,5 +165,5 @@ def main() -> None:
     print("All jobs generated." if args.generate_only else "All jobs submitted.")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()

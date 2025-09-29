@@ -243,7 +243,7 @@ def main() -> None:
                 print("ℹ️  Existing 2D dataset(s) in this folder:")
                 for sibling in siblings:
                     print(f"  - {sibling.name}")
-    except Exception as e:  # pragma: no cover
+    except Exception as e:
         if args.skip_if_exists:
             print(f"⚠️  Skip-if-exists heuristic failed: {e}")
 
@@ -315,5 +315,5 @@ def main() -> None:
     print(f"python plot_datas.py --abs_path {out_path}")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()

@@ -184,9 +184,7 @@ def run_1d_mode(args) -> None:
         print(f"    ✅ Saved {out_path}")
 
     elapsed = time.time() - start_time
-    print(
-        f"\n✅ Finished computing {len(saved_paths)} configs in {elapsed:.2f} s"
-    )
+    print(f"\n✅ Finished computing {len(saved_paths)} configs in {elapsed:.2f} s")
     if saved_paths:
         example = saved_paths[-1]
         if n_inhom > 1:
@@ -341,5 +339,5 @@ def main() -> None:
     print("DONE")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()

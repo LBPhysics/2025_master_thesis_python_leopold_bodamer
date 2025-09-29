@@ -2,11 +2,8 @@
 atomic:
   n_atoms: 1
   frequencies_cm: [16000.0]
-  # TEMP: enable inhomogeneous sampling for diagnostic comparison
-  # Set back to n_inhomogen: 1 for homogeneous runs.
-  n_inhomogen: 2
-  delta_inhomogen_cm: 600.0
-  dip_moments: [1.0]
+  n_inhomogen: 1
+  delta_inhomogen_cm: 0.0
 
 laser:
   base_amplitude: 0.05
@@ -25,7 +22,7 @@ config:
   signal_types: [rephasing]
 
 window:
-  t_det_max: 60.0
+  t_det_max: 600.0
   t_wait: 1000.0
   t_coh: 300.0
-  dt: 1
+  dt: 2

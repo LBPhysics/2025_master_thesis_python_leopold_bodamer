@@ -1,6 +1,5 @@
 {
     // thesis_python workspace settings
-    "python.defaultInterpreterPath": "C:\\Users\\leopo\\anaconda3\\envs\\m_env\\python.exe",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/packages/qspectro2d/src",
         "${workspaceFolder}/packages/plotstyle/src",
@@ -8,10 +7,6 @@
     ],
     "python.analysis.diagnosticMode": "workspace",
     "python.analysis.autoImportCompletions": true,
-    // Python formatting
-    "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter"
-    },
     // Hide build/temporary files
     "files.exclude": {
         "**/__pycache__": true,

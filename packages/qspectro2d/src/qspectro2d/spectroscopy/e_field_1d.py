@@ -22,7 +22,6 @@ from qutip import Qobj, Result, mesolve, brmesolve
 
 from .polarization import complex_polarization
 from ..core.simulation.simulation_class import SimulationModuleOQS
-from ..core.laser_system.laser_class import LaserPulse, LaserPulseSequence
 from ..config.default_simulation_params import (
     PHASE_CYCLING_PHASES,
     COMPONENT_MAP,
@@ -149,25 +148,12 @@ def compute_polarization_over_window(
     # Ensure we store states to extract polarization
     res: Result = compute_evolution(sim, store_states=store_states)
 
-    # print length of state-indices that are NOT THE GROUND STATE
-    non_ground_state_indices = [
-        i for i, state in enumerate(res.states) if not (state == sim.system.psi_ini)
-    ]
-    """    print("Length of non-ground state indices:", len(non_ground_state_indices))
-    if len(non_ground_state_indices) != 0:
-        print("found other states than ground state")
-    else:
-        print("no states other than ground state were stored")
-    """
     window_states = slice_states_to_window(res, window)
 
     if sim.simulation_config.rwa_sl:
         # States are stored in the rotating frame; convert back to lab for polarization
-        # Use RELATIVE times w.r.t. the start of the simulation window to avoid
-        # imprinting a t_coh-dependent global phase across traces.
-        window_rel = np.asarray(window) - float(res.times[0])
         window_states = from_rotating_frame_list(
-            window_states, window_rel, sim.system.n_atoms, sim.laser.carrier_freq_fs
+            window_states, window, sim.system.n_atoms, sim.laser.carrier_freq_fs
         )
 
     # Analytical polarization using positive-frequency part of dipole operator
@@ -206,14 +192,14 @@ def _compute_P_phi1_phi2(
     ]  # NOTE: last pulse phase fixed to the DETECTION_PHASE (0)
 
     # Total signal with all pulses
-    t_det_actual = sim_work.t_det_actual
-    t_det_a, P_total = compute_polarization_over_window(sim_work, t_det_actual)
+    t_det = sim_work.t_det
+    t_det_a, P_total = compute_polarization_over_window(sim_work, t_det)
 
     # Linear signals: only pulse i active
     P_linear_sum = np.zeros_like(P_total, dtype=np.complex128)
     for i in range(len(sim_work.laser.pulses)):
         sim_i = sim_with_only_pulses(sim_work, [i])
-        _, P_i = compute_polarization_over_window(sim_i, t_det_actual)
+        _, P_i = compute_polarization_over_window(sim_i, t_det)
         P_linear_sum += P_i
 
     P_phi = P_total - P_linear_sum
@@ -306,12 +292,7 @@ def parallel_compute_1d_e_comps(
     # Optional time mask (keep length constant)
     # NOTE:
     # - `time_cut` is returned by solver validation in ABSOLUTE simulation time.
-    # - For 2D runs (varying t_coh), the detection window is shifted by
-    #   t0_det = t_coh + t_wait. Applying an absolute cutoff directly to
-    #   `t_det_actual` would incorrectly truncate traces once t0_det > time_cut
-    #   (observed as a diagonal "cut" in 2D maps around a given t_coh).
-    # - Convert the absolute cutoff to a RELATIVE cutoff with respect to the
-    #   start of the detection window so all t_coh share the same usable span.
+    # TODO NOW THE cutoff is absolutely from the detection time! so t0_det == 0!
     t_mask = None
     if time_cut is not None and np.isfinite(time_cut):
         t0_det = float(sim_oqs.simulation_config.t_coh + sim_oqs.simulation_config.t_wait)
