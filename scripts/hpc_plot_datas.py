@@ -163,17 +163,18 @@ def main() -> None:
     job_dir = job_root / base_name
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    logs_dir = job_dir / "logs"
+    logs_subdir = "logs"
     suffix = 0
-    while logs_dir.exists():
+    while (job_dir / logs_subdir).exists():
         suffix += 1
-        logs_dir = job_dir / f"logs_{suffix}"
+        logs_subdir = f"logs_{suffix}"
+    logs_dir = job_dir / logs_subdir
     logs_dir.mkdir(parents=True, exist_ok=False)
 
     # Create the script
     create_plotting_script(abs_path=str(two_d_file), job_dir=job_dir, logs_dir=logs_dir)
 
-    print(f"Generated plotting script in: {job_dir}")
+    print(f"Generated plotting script in: {job_dir} (logs -> {logs_subdir})")
 
     # Optionally submit
     if not args.no_submit:
