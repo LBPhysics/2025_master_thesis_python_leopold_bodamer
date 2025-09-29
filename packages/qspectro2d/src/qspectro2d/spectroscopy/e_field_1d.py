@@ -30,7 +30,6 @@ from ..config.default_simulation_params import (
 )
 from qspectro2d.utils.rwa_utils import from_rotating_frame_list
 
-
 __all__ = [
     "parallel_compute_1d_e_comps",
 ]
@@ -321,7 +320,7 @@ def parallel_compute_1d_e_comps(
         t_mask = (sim_oqs.t_det <= cut_rel).astype(np.float64)
 
     # Compute P_{phi1,phi2} grid once for this realization (probe phase fixed to 0)
-    P_grid = np.zeros((len(phases_eff), len(phases_eff), n_t), dtype=np.complex128)
+    P_grid = np.zeros((len(phases_eff), len(phases_eff), n_t), dtype=np.complex64)
     futures = []
     # Respect configured/SLURM CPU allocation to avoid oversubscription on HPC
     max_workers = sim_oqs.simulation_config.max_workers

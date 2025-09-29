@@ -32,7 +32,6 @@ from qspectro2d.utils.data_io import (
     extract_run_index_from_data_file,
 )
 
-
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
     if (_parent / ".git").is_dir():
@@ -75,9 +74,7 @@ def _load_entries(
             t_det = d["t_det"]
         else:
             if d["t_det"].shape != t_det.shape or not np.allclose(d["t_det"], t_det):
-                raise ValueError(
-                    f"Inconsistent t_det across files; first={files[0]}, bad={fp}"
-                )
+                raise ValueError(f"Inconsistent t_det across files; first={files[0]}, bad={fp}")
 
         stypes = list(map(str, d["signal_types"]))
         if signal_types is None:
@@ -154,9 +151,7 @@ def _derive_info_path(data_file: Path) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Stack 1D per-t_coh outputs into a 2D dataset."
-    )
+    parser = argparse.ArgumentParser(description="Stack 1D per-t_coh outputs into a 2D dataset.")
     parser.add_argument(
         "--abs_path",
         type=str,
@@ -170,9 +165,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    sanitized = (
-        args.abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
-    )
+    sanitized = args.abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
     in_dir = Path(sanitized).expanduser().resolve()
     print("=" * 80)
     print("STACK 1D -> 2D")
@@ -195,13 +188,25 @@ def main() -> None:
         sys.exit(1)
 
     # Load the 1D bundle info once and re-use it for saving via save_simulation_data
-    first_data = files[0]
-    first_info = _derive_info_path(first_data)
+    info: Dict[str, Any] | None = None
+    info_path: Path | None = None
 
-    info = load_info_file(first_info)
-    if not info:
-        print(f"❌ Could not load info from {first_info}; cannot save 2D bundle.")
+    for data_file in files:
+        try:
+            candidate_info = _derive_info_path(data_file)
+            info_candidate = load_info_file(candidate_info)
+            if info_candidate:
+                info = info_candidate
+                info_path = candidate_info
+                break
+        except FileNotFoundError:
+            continue
+
+    if not info or info_path is None:
+        print("❌ Could not locate a valid *_info.pkl companion file; cannot save 2D bundle.")
         sys.exit(1)
+    else:
+        print(f"Loading info: {info_path}")
 
     # Prepare a minimal sim module stub with adjusted sim_type for 2D naming
     system = info["system"]
@@ -229,9 +234,7 @@ def main() -> None:
 
         if args.skip_if_exists:
             if candidate_path.exists():
-                print(
-                    f"⏭️  Skipping: found existing 2D dataset for this run: {candidate_path.name}"
-                )
+                print(f"⏭️  Skipping: found existing 2D dataset for this run: {candidate_path.name}")
                 print("Done.")
                 return
 

@@ -56,8 +56,8 @@ def _slurm_script_text(
 #SBATCH --output={logs_subdir}/%x.out
 #SBATCH --error={logs_subdir}/%x.err
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=2G
-#SBATCH --time=0-02:00:00
+#SBATCH --mem=500M
+#SBATCH --time=0-01:00:00
 {mail_lines}
 
 python ../../calc_datas.py --sim_type {sim_type} --n_batches {n_batches} --batch_idx {batch_idx}
@@ -78,9 +78,7 @@ def _submit_job(script_path: Path) -> str:
     """
     sbatch = shutil.which("sbatch")
     if sbatch is None:
-        raise RuntimeError(
-            "sbatch not found on PATH. Run this on your cluster login node."
-        )
+        raise RuntimeError("sbatch not found on PATH. Run this on your cluster login node.")
 
     # Submit from within the batching directory so relative log paths work.
     result = subprocess.run(
@@ -138,13 +136,9 @@ def main() -> None:
     _ensure_dirs(job_dir, logs_subdir)
 
     action_verb = "Generating" if args.generate_only else "Creating and submitting"
-    print(
-        f"{action_verb} {n_batches} SLURM jobs in {job_dir} (logs -> {logs_subdir}) ..."
-    )
+    print(f"{action_verb} {n_batches} SLURM jobs in {job_dir} (logs -> {logs_subdir}) ...")
 
-    for batch_idx in range(
-        n_batches
-    ):  # TODO also add the name of the config file to the job name
+    for batch_idx in range(n_batches):  # TODO also add the name of the config file to the job name
         job_name = f"{sim_type}b{batch_idx:02d}of{n_batches:02d}"
         script_name = f"{job_name}.slurm"
         script_path = job_dir / script_name

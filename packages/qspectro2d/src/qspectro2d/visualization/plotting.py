@@ -1,3 +1,4 @@
+from flask_migrate import show
 from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -552,6 +553,8 @@ def plot_2d_el_field(
     ax.set_ylabel(y_title)
 
     # Optional: draw diagonal x==y for convenience
+    if domain == "time":
+        show_diagonal = False  # typically not useful in time domain
     if show_diagonal:
         # Only draw over the overlapping range
         x_min, x_max = axis_det.min(), axis_det.max()
@@ -562,8 +565,8 @@ def plot_2d_el_field(
             ax.plot(
                 [d_min, d_max],
                 [d_min, d_max],
-                linestyle=":",
-                color="k",
+                linestyle=LINE_STYLES[-1],
+                color=COLORS[-3],
                 linewidth=1.0,
                 alpha=0.8,
             )
@@ -762,7 +765,7 @@ def add_custom_contour_lines(
                 y,
                 data,
                 levels=positive_levels,
-                colors="black",
+                colors=COLORS[0],
                 linewidths=0.7,
                 alpha=0.8,
             )
@@ -773,10 +776,10 @@ def add_custom_contour_lines(
                 y,
                 data,
                 levels=negative_levels,
-                colors="black",
+                colors=COLORS[1],
                 linewidths=0.7,
                 alpha=0.8,
-                linestyles="dashed",
+                linestyles=LINE_STYLES[1],
             )
 
             ### NOTE optional: Add contour labels to every other contour line
@@ -789,7 +792,7 @@ def add_custom_contour_lines(
             y,
             data,
             levels=level_count,
-            colors="black",
+            colors=COLORS[1],
             linewidths=0.7,
             alpha=0.8,
         )
