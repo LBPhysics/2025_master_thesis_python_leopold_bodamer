@@ -23,9 +23,7 @@ def _derive_1d_dir(abs_path: str) -> Path:
 
     Also sanitizes accidental newlines/carriage-returns or stray quotes from copy/paste.
     """
-    sanitized = (
-        abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
-    )
+    sanitized = abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
     p = Path(sanitized).expanduser().resolve()
     return p if p.is_dir() else p.parent
 
@@ -49,9 +47,7 @@ def ensure_2d_dataset(abs_path: str) -> Path:
     As a fallback, we search the derived 2D directory for the newest "*_data.npz".
     """
     # Accept both a single 1D data file or a directory containing them.
-    sanitized = (
-        abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
-    )
+    sanitized = abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
     orig_path = Path(sanitized).expanduser().resolve()
     one_d_dir = _derive_1d_dir(abs_path)
 
@@ -76,9 +72,7 @@ def ensure_2d_dataset(abs_path: str) -> Path:
     # Fallback: discover newest *_data.npz in the derived 2D directory
     base_for_2d = orig_path.parent if orig_path.is_file() else one_d_dir
     two_d_dir = _derive_2d_dir(base_for_2d)
-    candidates = sorted(
-        two_d_dir.glob("*_data.npz"), key=lambda p: p.stat().st_mtime, reverse=True
-    )
+    candidates = sorted(two_d_dir.glob("*_data.npz"), key=lambda p: p.stat().st_mtime, reverse=True)
     if candidates:
         return candidates[0]
     raise RuntimeError(
