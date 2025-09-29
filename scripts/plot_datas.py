@@ -55,9 +55,7 @@ FIGURES_DIR.mkdir(exist_ok=True)
 
 
 # Suppress noisy but harmless warnings
-warnings.filterwarnings(
-    "ignore", category=RuntimeWarning, message="overflow encountered in exp"
-)
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered in exp")
 
 
 # Helper to collect paths from save_fig (which may return a single path or a list of paths)
@@ -315,18 +313,10 @@ def main():
 
         # Print axes info
         n_t_det = len(t_det) if t_det is not None else 0
-        det_rng = (
-            f"[{float(t_det[0]):.2f},{float(t_det[-1]):.2f}] fs"
-            if n_t_det > 0
-            else "[—]"
-        )
+        det_rng = f"[{float(t_det[0]):.2f},{float(t_det[-1]):.2f}] fs" if n_t_det > 0 else "[—]"
         if is_2d:
             n_t_coh = len(t_coh) if t_coh is not None else 0
-            coh_rng = (
-                f"[{float(t_coh[0]):.2f},{float(t_coh[-1]):.2f}] fs"
-                if n_t_coh > 0
-                else "[—]"
-            )
+            coh_rng = f"[{float(t_coh[0]):.2f},{float(t_coh[-1]):.2f}] fs" if n_t_coh > 0 else "[—]"
         else:
             n_t_coh, coh_rng = 0, "—"
         print(
@@ -344,8 +334,7 @@ def main():
         # Detect if time-domain signals are all-zero (informative warning only)
         try:
             if datas and all(
-                isinstance(a, np.ndarray) and a.size > 0 and np.allclose(a, 0)
-                for a in datas
+                isinstance(a, np.ndarray) and a.size > 0 and np.allclose(a, 0) for a in datas
             ):
                 print("⚠️  All-zero time-domain signals detected.")
         except Exception:
@@ -433,9 +422,7 @@ def main():
                     pad_factor=pad_factor,
                     dimension=dimension,
                 )
-                axis_det_f, axis_coh_f = (
-                    (freq_axes, None) if dimension == "1d" else freq_axes
-                )
+                axis_det_f, axis_coh_f = (freq_axes, None) if dimension == "1d" else freq_axes
                 saved = _plot_components(
                     datas=freq_datas,
                     signal_types=kept_types,
@@ -460,6 +447,9 @@ def main():
 
         # Final summary
         print(f"✅ Done. Saved {len(all_saved)} file(s).")
+        print(
+            f" To see them go to the directory:\n   {Path(all_saved[0]).parent if all_saved else '—'}"
+        )
     except Exception as e:
         print(f"❌ Error: {e}")
         sys.exit(1)
