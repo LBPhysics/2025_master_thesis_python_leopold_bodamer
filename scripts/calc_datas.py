@@ -48,9 +48,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 
 # Silence noisy but harmless warnings
-warnings.filterwarnings(
-    "ignore", category=RuntimeWarning, message="overflow encountered in exp"
-)
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered in exp")
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -124,9 +122,7 @@ def run_1d_mode(args) -> None:
         else:
             chunks = np.array_split(np.arange(n_inhom), n_batches)
             if batch_idx < 0 or batch_idx >= len(chunks):
-                raise IndexError(
-                    f"batch_idx {batch_idx} out of range for n_batches={n_batches}"
-                )
+                raise IndexError(f"batch_idx {batch_idx} out of range for n_batches={n_batches}")
             indices = chunks[batch_idx]
             batch_note = f"batch {batch_idx+1}/{n_batches} (size={indices.size})"
 
@@ -157,9 +153,7 @@ def run_1d_mode(args) -> None:
                 f"\n--- inhom_config={idx+1}/{n_inhom}  t_coh={t_coh_val:.2f} fs ---\n"
                 f"    freqs_cm = {np.array2string(np.asarray(cfg_freqs), precision=2)}"
             )
-            E_sigs = _compute_e_components_for_tcoh(
-                sim_oqs, t_coh_val, time_cut=time_cut
-            )
+            E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
 
             # Persist dataset for this configuration
             # Update config bookkeeping for this specific inhom configuration
@@ -225,6 +219,7 @@ def run_1d_mode(args) -> None:
 
 
 def run_2d_mode(args) -> None:
+    # TODO ONLY validate THE simulation object once for the first batch
     # Auto-pick YAML config (prefer '*' marked, else first sorted)
     config_path = _pick_config_yaml()
     print(f"🧩 Using config: {config_path.name}")
@@ -343,9 +338,7 @@ def main() -> None:
         "--n_batches",
         type=int,
         default=1,
-        help=(
-            "Split the 2d run or 1d-inhom run into N batches (default: 1, i.e., no batching)"
-        ),
+        help=("Split the 2d run or 1d-inhom run into N batches (default: 1, i.e., no batching)"),
     )
     parser.add_argument(
         "--batch_idx",

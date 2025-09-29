@@ -2,6 +2,9 @@
 
 This repository contains the Python stack that powers the spectroscopy part (and overall all the figures) of my master thesis.  The tree now follows a `packages/`-first layout so that the reusable libraries (`plotstyle` and `qspectro2d`) can be installed in editable mode while the CLI scripts remain thin orchestration layers. These scripts can be run locally for small test jobs or on HPC clusters for large parameter sweeps and generate the spectrocopic data and figures
 
+My latex thesis can be found in the dedicated repository:
+https://github.com/LBPhysics/2025_master_thesis_latex_leopold_bodamer.git
+
 ## Repository layout
 
 ```

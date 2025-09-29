@@ -1,0 +1,6 @@
+# Normalize line endings and enforce LF for shell and slurm scripts
+* text=auto
+
+*.sh      text eol=lf
+*.slurm   text eol=lf
+scripts/**.slurm text eol=lf
