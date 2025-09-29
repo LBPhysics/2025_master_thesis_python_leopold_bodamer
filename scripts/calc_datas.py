@@ -106,116 +106,96 @@ def run_1d_mode(args) -> None:
     n_inhom = sim_cfg.n_inhomogen
     delta_cm = sim_oqs.system.delta_inhomogen_cm
 
-    if n_inhom > 1 and delta_cm > 0.0:
-        # Sample site frequencies (cm^-1) for each configuration
-        base_freqs_cm = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
-        samples_cm = sample_from_gaussian(
-            n_samples=n_inhom, fwhm=delta_cm, mu=base_freqs_cm
-        )  # shape (n_inhom, n_sites)
+    # Always prepare configurations: sample if inhomogeneous, else use base
+    base_freqs_cm = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
+    samples_cm = sample_from_gaussian(
+        n_samples=n_inhom, fwhm=delta_cm, mu=base_freqs_cm
+    )  # shape (n_inhom, n_sites)
 
-        # Determine index subset for batching
-        batch_idx: int = int(getattr(args, "batch_idx", 0))
-        n_batches: int = int(getattr(args, "n_batches", 1))
-        if n_batches == 1:
-            indices = np.arange(n_inhom)
-            batch_note = "all"
-        else:
-            chunks = np.array_split(np.arange(n_inhom), n_batches)
-            if batch_idx < 0 or batch_idx >= len(chunks):
-                raise IndexError(f"batch_idx {batch_idx} out of range for n_batches={n_batches}")
-            indices = chunks[batch_idx]
-            batch_note = f"batch {batch_idx+1}/{n_batches} (size={indices.size})"
+    # Determine index subset for batching
+    batch_idx: int = int(getattr(args, "batch_idx", 0))
+    n_batches: int = int(getattr(args, "n_batches", 1))
+    if n_batches == 1:
+        indices = np.arange(n_inhom)
+        batch_note = "all"
+    else:
+        chunks = np.array_split(np.arange(n_inhom), n_batches)
+        if batch_idx < 0 or batch_idx >= len(chunks):
+            raise IndexError(f"batch_idx {batch_idx} out of range for n_batches={n_batches}")
+        indices = chunks[batch_idx]
+        batch_note = f"batch {batch_idx+1}/{n_batches} (size={indices.size})"
 
-        print(
-            f"🎯 Running 1D inhomogeneous mode with t_coh = {t_coh_val:.2f} fs; "
-            f"n_inhom={n_inhom}, Δ_inhom={delta_cm:g} cm⁻¹"
-        )
-        if indices.size:
-            print(
-                f"📦 Batching: {batch_note}; total configs={n_inhom}; "
-                f"this job covers indices [{indices[0]}..{indices[-1]}]"
-            )
-        else:
-            print(
-                f"📦 Batching: {batch_note}; total configs={n_inhom}; this job covers no indices (empty chunk)"
-            )
-
-        saved_paths: list[str] = []
-        start_time = time.time()
-        first_save = True
-        for idx in indices.tolist():
-            cfg_freqs = samples_cm[idx, :].astype(float).tolist()
-
-            # Update system frequencies for this configuration
-            sim_oqs.system.update_frequencies_cm(cfg_freqs)
-
-            print(
-                f"\n--- inhom_config={idx+1}/{n_inhom}  t_coh={t_coh_val:.2f} fs ---\n"
-                f"    freqs_cm = {np.array2string(np.asarray(cfg_freqs), precision=2)}"
-            )
-            E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
-
-            # Persist dataset for this configuration
-            # Update config bookkeeping for this specific inhom configuration
-            sim_cfg.inhom_index = int(idx)
-
-            metadata = {
-                "signal_types": sim_cfg.signal_types,
-                "t_coh_value": t_coh_val,
-                "inhom_group_id": sim_cfg.inhom_group_id,
-            }
-            if first_save:
-                out_path = save_simulation_data(
-                    sim_oqs,
-                    metadata,
-                    E_sigs,
-                    t_det=sim_oqs.t_det,
-                    data_root=DATA_DIR,
-                )
-                first_save = False
-            else:
-                out_path = save_data_only(
-                    sim_oqs,
-                    metadata,
-                    E_sigs,
-                    sim_oqs.t_det,
-                    t_coh=None,
-                    data_root=DATA_DIR,
-                )
-            saved_paths.append(str(out_path))
-            print(f"    ✅ Saved {out_path}")
-
-        elapsed = time.time() - start_time
-        print(
-            f"\n✅ Finished computing {len(saved_paths)} inhomogeneous configs in {elapsed:.2f} s"
-        )
-        if saved_paths:
-            example = saved_paths[-1]
-            print("\n🎯 Next step (average inhomogeneous configs):")
-            print(f"     python stack_inhomogenity.py --abs_path '{example}'")
-        else:
-            print("ℹ️  No files saved.")
-        return
-
-    # Homogeneous or single-config 1D
-    print(f"🎯 Running 1D mode with t_coh = {t_coh_val:.2f} fs (from config)")
-
-    E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
-
-    # Persist dataset
-    # Homogeneous / single config bookkeeping
-    sim_cfg.inhom_index = 0
-    metadata = {
-        "signal_types": sim_cfg.signal_types,
-        "t_coh_value": t_coh_val,
-        "inhom_group_id": sim_cfg.inhom_group_id,
-    }
-    abs_data_path = save_simulation_data(
-        sim_oqs, metadata, E_sigs, t_det=sim_oqs.t_det, data_root=DATA_DIR
+    print(
+        f"🎯 Running 1D mode with t_coh = {t_coh_val:.2f} fs; "
+        f"n_inhom={n_inhom}, Δ_inhom={delta_cm:g} cm⁻¹"
     )
+    if indices.size:
+        print(
+            f"📦 Batching: {batch_note}; total configs={n_inhom}; "
+            f"this job covers indices [{indices[0]}..{indices[-1]}]"
+        )
+    else:
+        print(
+            f"📦 Batching: {batch_note}; total configs={n_inhom}; this job covers no indices (empty chunk)"
+        )
 
-    print(f"✅ Saved 1D result for t_coh={t_coh_val:.2f} fs.")
-    print(f'\n🎯 To plot run: \npython plot_datas.py --abs_path "{abs_data_path}"')
+    saved_paths: list[str] = []
+    start_time = time.time()
+    first_save = True
+    for idx in indices.tolist():
+        cfg_freqs = samples_cm[idx, :].astype(float).tolist()
+
+        # Update system frequencies for this configuration
+        sim_oqs.system.update_frequencies_cm(cfg_freqs)
+
+        print(
+            f"\n--- config={idx+1}/{n_inhom}  t_coh={t_coh_val:.2f} fs ---\n"
+            f"    freqs_cm = {np.array2string(np.asarray(cfg_freqs), precision=2)}"
+        )
+        E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
+
+        # Persist dataset for this configuration
+        sim_cfg.inhom_index = int(idx)
+
+        metadata = {
+            "signal_types": sim_cfg.signal_types,
+            "t_coh_value": t_coh_val,
+            "inhom_group_id": sim_cfg.inhom_group_id,
+        }
+        if first_save:
+            out_path = save_simulation_data(
+                sim_oqs,
+                metadata,
+                E_sigs,
+                t_det=sim_oqs.t_det,
+                data_root=DATA_DIR,
+            )
+            first_save = False
+        else:
+            out_path = save_data_only(
+                sim_oqs,
+                metadata,
+                E_sigs,
+                sim_oqs.t_det,
+                t_coh=None,
+                data_root=DATA_DIR,
+            )
+        saved_paths.append(str(out_path))
+        print(f"    ✅ Saved {out_path}")
+
+    elapsed = time.time() - start_time
+    print(
+        f"\n✅ Finished computing {len(saved_paths)} configs in {elapsed:.2f} s"
+    )
+    if saved_paths:
+        example = saved_paths[-1]
+        if n_inhom > 1:
+            print("\n🎯 Next step (average inhomogeneous configs):")
+            print(f"     python avg_inhomogenity.py --abs_path '{example}'")
+        else:
+            print(f'\n🎯 To plot run: \npython plot_datas.py --abs_path "{example}"')
+    else:
+        print("ℹ️  No files saved.")
 
 
 def run_2d_mode(args) -> None:
