@@ -1,6 +1,6 @@
 # Thesis spectroscopy toolkit
 
-This repository contains the Python stack that powers the spectroscopy part of the master thesis.  The tree now follows a `packages/`-first layout so that the reusable libraries (`plotstyle` and `qspectro2d`) can be installed in editable mode while the CLI scripts remain thin orchestration layers.
+This repository contains the Python stack that powers the spectroscopy part (and overall all the figures) of my master thesis.  The tree now follows a `packages/`-first layout so that the reusable libraries (`plotstyle` and `qspectro2d`) can be installed in editable mode while the CLI scripts remain thin orchestration layers. These scripts can be run locally for small test jobs or on HPC clusters for large parameter sweeps and generate the spectrocopic data and figures
 
 ## Repository layout
 
@@ -17,8 +17,7 @@ thesis_python/
 └─ README.md            # You are here
 ```
 
-Each package in `packages/` is a standalone `pyproject` with a modern `src/` layout.  When you create the conda environment the packages are installed in editable mode automatically.  If you ever need to reinstall manually you can run `pip install -e packages/plotstyle -e packages/qspectro2d` or trigger the VS Code task “Install editable packages”.
-
+Each package in `packages/` is a standalone `pyproject`.  When you create the conda environment the packages are installed in editable mode automatically.
 ## Environment setup
 
 ```bash
@@ -53,4 +52,4 @@ Logs coming from batch submissions stay in the same directories referenced by th
 ## Outstanding physics TODOs
 
 - Reproducing Fig. 2 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — inhomogeneous broadening still wipes out the rephasing signal after $t_{\text{det}} \approx t_{\text{coh}}$.
-- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ — 2D spectra remain rotated by $90^{\circ}$ compared to the reference.
+- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ — 2D spectral features remain rotated by $90^{\circ}$ compared to the reference.
