@@ -64,7 +64,7 @@ class SimulationModuleOQS:
             H_diag -= omega_L * self.system.number_op  # is the same in both bases
         return H_diag
 
-    def paper_eqs_evo(self, t: float) -> Qobj:  # pragma: no cover simple wrapper
+    def paper_eqs_evo(self, t: float) -> Qobj:
         """Global helper for 'Paper_eqs' solver evolution.
 
         Kept at module scope so partial(paper_eqs_evo, sim) remains pickleable.
@@ -91,9 +91,7 @@ class SimulationModuleOQS:
         lowering_op = self.system.to_eigenbasis(lowering_op)
         if self.simulation_config.rwa_sl:
             E_plus_RWA = e_pulses(t, self.laser)
-            H_int = -(
-                lowering_op * E_plus_RWA + lowering_op.dag() * np.conj(E_plus_RWA)
-            )
+            H_int = -(lowering_op * E_plus_RWA + lowering_op.dag() * np.conj(E_plus_RWA))
             return H_int
         dipole_op = lowering_op + lowering_op.dag()
         E_plus = epsilon_pulses(t, self.laser)
@@ -128,14 +126,10 @@ class SimulationModuleOQS:
         dim = sys.dimension
         if dim > 1:
             # |g><e| for all  for e (1, ..., n_atoms)
-            ops.append(
-                sum(eigenstates[0] * eigenstates[e].dag() for e in range(1, dim))
-            )
+            ops.append(sum(eigenstates[0] * eigenstates[e].dag() for e in range(1, dim)))
         if dim > n + 1:
             # |g><f| for f (n_atoms+1, ..., dim)
-            ops.append(
-                sum(eigenstates[0] * eigenstates[f].dag() for f in range(n + 1, dim))
-            )
+            ops.append(sum(eigenstates[0] * eigenstates[f].dag() for f in range(n + 1, dim)))
             # |e><f| for e (1, ..., n_atoms) and f (n_atoms+1, ..., dim)
             ops.append(
                 sum(
@@ -186,13 +180,12 @@ class SimulationModuleOQS:
         if hasattr(self, "_times_local_manual"):
             return self._times_local_manual
 
-        t0 = -1 * self.laser.pulse_fwhms[0]
         cfg = self.simulation_config
-        t_max_curr = cfg.t_coh + cfg.t_wait + cfg.t_det_max
+        t0 = -2 * self.laser.pulse_fwhms[0] - cfg.t_coh - cfg.t_wait
         dt = cfg.dt
-        # Compute number of steps to cover from t0 to t_max_curr with step dt
-        n_steps = int(np.floor((t_max_curr - t0) / dt)) + 1
-        # Generate time grid: [t0, t0 + dt, ..., t_max_curr]
+        # Compute number of steps to cover from t0 to t_det_max with step dt
+        n_steps = int(np.floor((cfg.t_det_max - t0) / dt)) + 1
+        # Generate time grid: [t0, t0 + dt, ..., t_det_max]
         times = t0 + dt * np.arange(n_steps, dtype=float)
         return times
 
@@ -219,12 +212,6 @@ class SimulationModuleOQS:
             n_steps = int(np.floor((t_det_max - t_start) / dt)) + 1
             n_steps = min(n_steps, times_local[times_local >= 0].size)
         return t_start + dt * np.arange(n_steps, dtype=float)
-
-    @property
-    def t_det_actual(self):
-        cfg = self.simulation_config
-        t_det0 = cfg.t_coh + cfg.t_wait
-        return self.t_det + t_det0
 
     # --- Helper functions -----------------------------------------------------------
     # MAKE THEM TIME DEP HERE

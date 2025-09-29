@@ -52,22 +52,11 @@ python scripts/hpc_calc_datas.py --n_batches N --sim_type 2d
 
 Logs coming from batch submissions stay in the same directories referenced by the HPC helper scripts.
 
-## Outstanding physics TODOs
+## Persisting Problems:
 
-- Reproducing Fig. 2 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — When including inhomogeneous broadening, the simulated signal still shows no rephasing after $t_{\text{det}} \approx t_{\text{coh}}$. Different realizations of the system have different transition energies. Different realizations of the system do have different transition energies, but under a constant drive they all dephase in exactly the same way. As a result, the curve looks essentially identical to the case without inhomogeneous broadening. → This seems counterintuitive: I would expect a partial rephasing signal, since some realizations should come back in phase around $t_{¥text{det}} ¥approx t_{¥text{coh}}$, just like in the paper.
+- Reproducing Fig. 2 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — When including inhomogeneous broadening, the simulated signal still shows no rephasing after $t_{\text{det}} \approx t_{\text{coh}}$. Different realizations of the system have different transition energies, while the laser pulses drive at constant frequency of $\omega_L = 16000 cm^{-1}$. As a result, I would expect some realizations to dephase quicker the curve looks essentially identical to the case without inhomogeneous broadening. → This seems counterintuitive: I would expect a partial rephasing signal, since some realizations should come back in phase around $t_{\text{det}} \approx t_{\text{coh}}$, just like in the paper.
 
- 
+- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — The 2d spectra is at the same position as in the article, but I would say that the features are not exactly the same shape.
+Also, I can't reproduce the broadening along the diagonal for a homogeneously broadened system.
 
-- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — The 2d spectra is at the same position as in the article, but I would say that the features are
-
-1. somehow "rotated" by 90 degrees and
-
-2. not exactly the same shape.
-
-Also, I of cant't reproduce the boradening along the diagonal for a homogeneously broadened system.
-
- 
-
-- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ —  Again the position of the spectral features look good, but remain rotated by $90^{¥circ}$ compared to the reference. In my simulation, both the real and imaginary parts show sign changes, while in the paper the real part only shows positive contributions.
-
- 
+- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ —  Again the position of the spectral features look good, but in my simulation, both the real and imaginary parts show sign changes, while in the paper the real part only shows positive contributions. the features of every pulse appear to be rotated by $90^{\circ}$ compared to the reference. They are aligned along the anti-diagonal, while in the papers they are always aligned along the diagonal.

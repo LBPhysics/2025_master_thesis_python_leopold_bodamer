@@ -33,10 +33,13 @@ DATA_DIR = (PROJECT_ROOT / "data").resolve()
 DATA_DIR.mkdir(exist_ok=True)
 
 
-def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
-    """Average all 1D arrays across inhomogeneous configs for current group.
+def sort_inhom_data(abs_path: Path) -> tuple[dict[str, List[np.ndarray]], dict, List[Path]]:
+    """Sort and collect inhomogeneous data from files.
 
-    Returns the path to the newly written averaged file.
+    Returns:
+        stacks: dict of signal_type -> list of arrays
+        metadata: dict with signal_types, t_coh_value, inhom_group_id
+        valid_files: list of valid file paths
     """
     files = collect_group_files(Path(abs_path))
 
@@ -49,9 +52,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         try:
             first = load_simulation_data(files[first_file_idx])
         except Exception as e:
-            print(
-                f"⚠️  Skipping corrupted file during metadata loading: {files[first_file_idx]}"
-            )
+            print(f"⚠️  Skipping corrupted file during metadata loading: {files[first_file_idx]}")
             print(f"    Error: {e}")
             first_file_idx += 1
 
@@ -87,15 +88,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     if not valid_files:
         raise FileNotFoundError("No valid files found for averaging")
 
-    print(
-        f"📊 Averaging {len(valid_files)} valid files out of {len(files)} total files"
-    )
-
-    # Average
-    averaged: List[np.ndarray] = []
-    for k in signal_types:
-        data = np.stack(stacks[k], axis=0)  # (n_files, t_det)
-        averaged.append(np.mean(data, axis=0))
+    print(f"📊 Collected {len(valid_files)} valid files out of {len(files)} total files")
 
     # Compose metadata for output
     metadata = {
@@ -103,6 +96,28 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         "t_coh_value": first.get("t_coh_value", None),
         "inhom_group_id": first.get("inhom_group_id", None),
     }
+
+    return stacks, metadata, valid_files
+
+
+def average_sorted_data(
+    stacks: dict[str, List[np.ndarray]],
+    metadata: dict,
+    valid_files: List[Path],
+    *,
+    skip_if_exists: bool = False,
+) -> Path:
+    """Average the sorted inhomogeneous data and save.
+
+    Returns the path to the saved averaged file.
+    """
+    signal_types = metadata["signal_types"]
+
+    # Average
+    averaged: List[np.ndarray] = []
+    for k in signal_types:
+        data = np.stack(stacks[k], axis=0)  # (n_files, t_det)
+        averaged.append(np.mean(data, axis=0))
 
     # Use original module info to build save context
     first_bundle = load_simulation_data(valid_files[0])
@@ -137,35 +152,40 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             ensure=True,
         )
         folder = det_base.parent
-        pattern = (
-            det_base.name + "*_data.npz"
-        )  # matches base_data.npz or base_1_data.npz etc.
+        pattern = det_base.name + "*_data.npz"  # matches base_data.npz or base_1_data.npz etc.
         for p in folder.glob(pattern):
             try:
                 d = load_simulation_data(p)
-                if d.get("inhom_averaged", False) and d.get(
+                if d.get("inhom_averaged", False) and d.get("inhom_group_id") == metadata.get(
                     "inhom_group_id"
-                ) == metadata.get("inhom_group_id"):
-                    print(
-                        f"⏭️  Averaged file already exists for this t_coh in folder: {p}"
-                    )
+                ):
+                    print(f"⏭️  Averaged file already exists for this t_coh in folder: {p}")
                     return p
             except Exception:
                 continue
 
     out_path = save_simulation_data(
-        sim_inhom_stacked, metadata, averaged, t_det, data_root=DATA_DIR
+        sim_inhom_stacked,
+        metadata,
+        averaged,
+        np.asarray(first_bundle["t_det"], dtype=float),
+        data_root=DATA_DIR,
     )
     return out_path
 
 
+def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
+    """Average all 1D arrays across inhomogeneous configs for current group.
+
+    Returns the path to the newly written averaged file.
+    """
+    stacks, metadata, valid_files = sort_inhom_data(abs_path)
+    return average_sorted_data(stacks, metadata, valid_files, skip_if_exists=skip_if_exists)
+
+
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description="Average inhomogeneous 1D configs into one file."
-    )
-    p.add_argument(
-        "--abs_path", type=str, required=True, help="Path to one *_data.npz file"
-    )
+    p = argparse.ArgumentParser(description="Average inhomogeneous 1D configs into one file.")
+    p.add_argument("--abs_path", type=str, required=True, help="Path to one *_data.npz file")
     p.add_argument(
         "--skip_if_exists",
         action="store_true",

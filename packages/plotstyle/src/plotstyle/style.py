@@ -31,7 +31,7 @@ from .constants import (
 )
 from .theme import DEFAULT_THEME
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from .theme import PlotTheme
 
 __all__ = [
@@ -108,9 +108,7 @@ def save_fig(
     # Determine formats and targets
     # Only treat a suffix as a format if Matplotlib supports it
     try:
-        supported_formats = {
-            k.lower() for k in fig.canvas.get_supported_filetypes().keys()
-        }
+        supported_formats = {k.lower() for k in fig.canvas.get_supported_filetypes().keys()}
     except Exception:
         # Reasonable fallback set
         supported_formats = {
@@ -159,9 +157,7 @@ def save_fig(
                 bbox_inches="tight",
                 transparent=transparent,
             )
-            _tight_failed = any(
-                "Tight layout not applied" in str(msg.message) for msg in _w
-            )
+            _tight_failed = any("Tight layout not applied" in str(msg.message) for msg in _w)
         if _tight_failed:
             fig.savefig(
                 str(out_path),
@@ -196,14 +192,9 @@ def set_size(
     if not (0 < fraction <= 1):
         raise ValueError("fraction must be in the interval (0, 1]")
     if not (
-        isinstance(subplots, tuple)
-        and len(subplots) == 2
-        and subplots[0] >= 1
-        and subplots[1] >= 1
+        isinstance(subplots, tuple) and len(subplots) == 2 and subplots[0] >= 1 and subplots[1] >= 1
     ):
-        raise ValueError(
-            "subplots must be a tuple of positive integers (n_rows, n_cols)"
-        )
+        raise ValueError("subplots must be a tuple of positive integers (n_rows, n_cols)")
     fig_width_pt = width_pt * fraction
     inches_per_pt = 1 / 72.27
     if height_ratio is None:
@@ -214,9 +205,7 @@ def set_size(
     return (round(fig_width_in, 4), round(fig_height_in, 4))
 
 
-def format_sci_notation(
-    x: float, decimals: int = 1, include_dollar: bool = True
-) -> str:
+def format_sci_notation(x: float, decimals: int = 1, include_dollar: bool = True) -> str:
     """Format a number into scientific notation suitable for axis labels.
 
     Uses LaTeX multiplication symbol when text.usetex is enabled, otherwise a dot.
@@ -296,17 +285,13 @@ def simplify_figure_text(
             prefer_integer = _near_integers(vmin, vmax)
 
         axis.set_major_locator(
-            MaxNLocator(
-                nbins=6, steps=[1, 2, 2.5, 5, 10], integer=prefer_integer, min_n_ticks=3
-            )
+            MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10], integer=prefer_integer, min_n_ticks=3)
         )
 
         if force_sci:
             axis.set_major_formatter(
                 FuncFormatter(
-                    lambda x, _pos=None: format_sci_notation(
-                        x, decimals=max(0, sci_decimals)
-                    )
+                    lambda x, _pos=None: format_sci_notation(x, decimals=max(0, sci_decimals))
                 )
             )
         else:

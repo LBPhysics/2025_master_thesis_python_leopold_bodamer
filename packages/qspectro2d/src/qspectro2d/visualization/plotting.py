@@ -1,4 +1,3 @@
-from flask_migrate import show
 from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import matplotlib.pyplot as plt

@@ -79,5 +79,5 @@ class SimulationConfig:
     def to_dict(self) -> dict:
         return asdict(self)
 
-    def __str__(self) -> str:  # pragma: no cover simple repr
+    def __str__(self) -> str:
         return self.summary()

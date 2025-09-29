@@ -171,40 +171,45 @@ class LaserPulseSequence:
 
     @pulse_delays.setter
     def pulse_delays(self, new_pulse_delays: List[float]) -> None:
-        """Set inter-pulse pulse_delays
+        """Set inter-pulse delays.
+
+        Interpretation (right-to-left):
+        For pulses = [p1, p2, ..., pN], the last pulse pN occurs at t=0.
+        Let delays = [d1, d2, ..., d_{N-1}] where d_k is the positive time
+        between p_k and p_{k+1}. Then:
+            t_{pN}      = 0
+            t_{pN-1}    = -d_{N-1}
+            t_{pN-2}    = -(d_{N-2} + d_{N-1})
+            ...
+            t_{p1}      = -(d_1 + d_2 + ... + d_{N-1})
+
         Parameters
         ----------
         new_pulse_delays : list[float]
-            Must have length ``len(pulses)-1``. Represents the time differences
-            between consecutive pulse peaks starting from t=0 for the first pulse.
-
-        Raises
-        ------
-        ValueError
-            If the length does not match ``n_pulses - 1``.
-
-        Examples
-        --------
-        >>> seq.pulse_delays  # [d1, d2, ...]
-        >>> ds = seq.pulse_delays; ds[0] = 40.0; seq.pulse_delays = ds  # modify first delay
+            Must have length len(pulses)-1. Each entry is the time between
+            consecutive pulses (earlier → later), all non-negative.
         """
         # Accept any sequence convertible to list of floats
         if not isinstance(new_pulse_delays, (list, tuple, np.ndarray)):
             raise TypeError("new_pulse_delays must be a list/tuple/ndarray of floats")
         new_pulse_delays = list(map(float, list(new_pulse_delays)))
 
-        # Validate length matches n_pulses - 1
-        if len(new_pulse_delays) != len(self.pulses) - 1:
+        n = len(self.pulses)
+        if n == 0:
+            raise ValueError("No pulses defined.")
+        if len(new_pulse_delays) != n - 1:
             raise ValueError(
-                f"Number of pulse_delays ({len(new_pulse_delays)}) must be one less than number of pulses ({len(self.pulses)})"
+                f"Number of pulse_delays ({len(new_pulse_delays)}) must be one less than number of pulses ({n})"
             )
-
-        # Ensure non-negative pulse_delays (cumulative schedule assumes forward-in-time spacing)
         if any(d < 0 for d in new_pulse_delays):
             raise ValueError("All pulse_delays must be non-negative.")
 
-        # Compute absolute peak times from t0 = 0 fs and apply
-        peak_times = np.insert(np.cumsum(new_pulse_delays), 0, 0.0)
+        # Build forward cumulative times [0, d1, d1+d2, ..., sum(d1..d_{n-1})]
+        t_forward = np.insert(np.cumsum(new_pulse_delays), 0, 0.0)
+        # Shift so the last pulse is at 0 → earlier pulses become negative
+        peak_times = t_forward - t_forward[-1]
+
+        # Apply to pulses
         for pulse, new_peak in zip(self.pulses, peak_times):
             pulse.pulse_peak_time = new_peak
             if hasattr(pulse, "_recompute_envelope_support"):
@@ -266,6 +271,18 @@ class LaserPulseSequence:
         relative_E0s: Optional[List[float]] = None,
         phases: Optional[List[float]] = None,
     ) -> "LaserPulseSequence":
+        """
+        Construct a sequence with right-to-left timing:
+        For n pulses, provide pulse_delays = [d1, d2, ..., d_{n-1}] with d_k >= 0.
+        Then the absolute peak times are:
+            t_n      =  0
+            t_{n-1}  = -d_{n-1}
+            t_{n-2}  = -(d_{n-2} + d_{n-1})
+            ...
+            t_1      = -(d_1 + ... + d_{n-1})
+        """
+        if any(d < 0 for d in pulse_delays):
+            raise ValueError("All pulse_delays must be non-negative.")
         n_pulses = len(pulse_delays) + 1
         if relative_E0s is None:
             relative_E0s = [1.0] * n_pulses
@@ -276,7 +293,10 @@ class LaserPulseSequence:
         if not (len(relative_E0s) == len(phases) == n_pulses):
             raise ValueError("Lengths of pulse_delays, relative_E0s, and phases must match")
 
-        peak_times = np.insert(np.cumsum(pulse_delays), 0, 0.0)
+        # Build forward cumulative times [0, d1, d1+d2, ..., sum(d1..d_{n-1})]
+        t_forward = np.insert(np.cumsum(pulse_delays), 0, 0.0)
+        # Shift so the last pulse is at 0 → earlier pulses become negative
+        peak_times = t_forward - t_forward[-1]
 
         pulses = [
             LaserPulse(
