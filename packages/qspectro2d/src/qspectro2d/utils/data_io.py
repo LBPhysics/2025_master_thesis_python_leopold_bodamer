@@ -81,9 +81,7 @@ def save_data_file(
                     )
             else:
                 if not isinstance(data, np.ndarray) or data.shape != (len(t_det),):
-                    raise ValueError(
-                        f"1D data must have shape (len(t_det),) = ({len(t_det)},)"
-                    )
+                    raise ValueError(f"1D data must have shape (len(t_det),) = ({len(t_det)},)")
             payload[sig_key] = data
 
         # Single write
@@ -157,9 +155,7 @@ def save_simulation_data(
     laser: "LaserPulseSequence" = sim_module.laser
 
     # Deterministic non-enumerated base (no suffix yet)
-    abs_base_path = Path(
-        generate_unique_data_filename(system, sim_config, data_root=data_root)
-    )
+    abs_base_path = Path(generate_unique_data_filename(system, sim_config, data_root=data_root))
     base_dir = abs_base_path.parent
     base_stem = abs_base_path.name  # e.g. 1d_t_coh_33.3_inhom_000 (no _data suffix yet)
 
@@ -195,9 +191,7 @@ def save_data_only(
     sim_config: "SimulationConfig" = sim_module.simulation_config
     system: "AtomicSystem" = sim_module.system
 
-    abs_base_path = Path(
-        generate_unique_data_filename(system, sim_config, data_root=data_root)
-    )
+    abs_base_path = Path(generate_unique_data_filename(system, sim_config, data_root=data_root))
     base_dir = abs_base_path.parent
     base_stem = abs_base_path.name
 
@@ -221,14 +215,14 @@ def load_data_file(abs_data_path: Path) -> dict:
         dict: Dictionary containing loaded numpy data arrays
     """
     try:
-        print(f"Loading data: {abs_data_path}")
+        # NOTE for debugging print(f"Loading data: {abs_data_path}")
 
         with np.load(abs_data_path, allow_pickle=True) as data_file:
             data_dict = {key: data_file[key] for key in data_file.files}
         # Enforce required key
         if "t_det" not in data_dict:
             raise KeyError("Missing 't_det' axis in data file (new format requirement)")
-        print(f"Loaded data: {abs_data_path}")
+        # NOTE for debugging print(f"Loaded data: {abs_data_path}")
         return data_dict
     except Exception as e:
         print(f"Failed to load data: {abs_data_path}; error: {e}")
@@ -246,13 +240,13 @@ def load_info_file(abs_info_path: Path) -> dict:
         dict: Dictionary containing system parameters and data configuration
     """
     try:
-        print(f"Loading info: {abs_info_path}")
+        # NOTE for debugging print(f"Loading info: {abs_info_path}")
 
         # Try to load the file directly if it exists
         if abs_info_path.exists():
             with open(abs_info_path, "rb") as info_file:
                 info = pickle.load(info_file)
-            print(f"Loaded info: {abs_info_path}")
+            # NOTE for debugging  print(f"Loaded info: {abs_info_path}")
             return info
 
         # Gracefully handle absent info files (e.g., post-processed averaged data)
@@ -328,7 +322,7 @@ def load_simulation_data(abs_path: Path | str) -> dict:
                     "Unrecognized filename pattern. Expected '*_data.npz' or '*_info.pkl' (including enumerated base variants)."
                 )
 
-    print(f"Loading data bundle: {abs_data_path}")
+    # NOTE for debugging print(f"Loading data bundle: {abs_data_path}")
     data_dict = load_data_file(abs_data_path)
     info_dict = load_info_file(abs_info_path)
 
@@ -419,15 +413,11 @@ def discover_1d_data_files(folder: Path, run_index: int | None = None) -> List[P
     candidates = sorted(folder.glob("*_data*.npz"))
 
     if run_index is None:
-        base_only = [
-            p for p in candidates if extract_run_index_from_data_file(p) is None
-        ]
+        base_only = [p for p in candidates if extract_run_index_from_data_file(p) is None]
         if base_only:
             candidates = base_only
     else:
-        run_specific = [
-            p for p in candidates if extract_run_index_from_data_file(p) == run_index
-        ]
+        run_specific = [p for p in candidates if extract_run_index_from_data_file(p) == run_index]
         candidates = run_specific
 
     avgs = [p for p in candidates if "/inhom_avg_" in str(p).replace("\\", "/")]
@@ -546,9 +536,7 @@ def collect_group_files(anchor: Path) -> List[Path]:
                 candidate_tcoh = float(np.asarray(d.get("t_coh_value", 0.0)))
             except Exception:
                 candidate_tcoh = None
-            if candidate_tcoh is None or not np.isclose(
-                candidate_tcoh, float(anchor_tcoh)
-            ):
+            if candidate_tcoh is None or not np.isclose(candidate_tcoh, float(anchor_tcoh)):
                 continue
 
         matches.append(p)

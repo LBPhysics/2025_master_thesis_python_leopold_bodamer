@@ -67,11 +67,12 @@ def _average_inhom(files: List[Path]) -> tuple[np.ndarray, dict]:
     first_data = load_simulation_data(files[0])
     signal_types = list(first_data["signal_types"])
     t_det = np.asarray(first_data["t_det"], dtype=float)
-
+    print(f"Reference t_det shape: {t_det.shape}")
     # Collect arrays
     stacks = {sig: [] for sig in signal_types}
     for file_path in files:
         data = load_simulation_data(file_path)
+        print(f"Current file t_det shape: {np.asarray(data['t_det']).shape}")
         if not np.allclose(data["t_det"], t_det):
             raise ValueError(f"Inconsistent t_det in {file_path}")
         for sig in signal_types:
@@ -90,7 +91,9 @@ def _average_inhom(files: List[Path]) -> tuple[np.ndarray, dict]:
     return averaged, metadata
 
 
-def _stack_to_2d(averaged_data: List[tuple[np.ndarray, dict]], t_det: np.ndarray) -> tuple[np.ndarray, np.ndarray, List[str]]:
+def _stack_to_2d(
+    averaged_data: List[tuple[np.ndarray, dict]], t_det: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, List[str]]:
     """Stack averaged 1D data into 2D."""
     if not averaged_data:
         raise ValueError("No data to stack")
@@ -163,6 +166,7 @@ def main() -> None:
         # Need to create a sim stub for saving
         # For simplicity, load from one of the original files
         original_data = load_simulation_data(data_files[0])
+
         class SimStub:
             system = original_data["system"]
             bath = original_data["bath"]
