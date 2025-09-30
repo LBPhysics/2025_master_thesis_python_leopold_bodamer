@@ -121,7 +121,7 @@ def compute_evolution(
     current_state = sim_oqs.system.psi_ini
 
     # Evolve over each interval where active pulses are constant
-    for i in range(len(event_times)):
+    for i in range(len(event_times) - 1):
         t_start = event_times[i]
 
         active_pulses = get_active_pulses(t_start)
