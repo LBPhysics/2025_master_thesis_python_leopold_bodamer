@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import List, Sequence, Tuple, Optional, Dict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from unittest import result
 import numpy as np
 from copy import deepcopy
 from qutip import Qobj, Result, mesolve, brmesolve
@@ -55,81 +56,104 @@ def compute_evolution(
     **solver_options: dict,
 ) -> Result:
     """
-    Compute the evolution of the quantum system for a given pulse sequence.
+    Compute the evolution of the quantum system for a given pulse sequence, handling overlapping pulses.
 
     Parameters
     ----------
     sim_oqs : SimulationModuleOQS
-        Prepared simulation object containing:
+        Prepared simulation object.
     **solver_options : dict
-        User overrides for solver options (highest precedence).
-        Examples: store_states=True, atol=1e-8, rtol=1e-6
+        Optional solver arguments to override defaults.
 
     Returns
     -------
     Result
-        QuTiP Result object containing:
-        - states: List of density matrices at each time point (if store_states=True)
-        - times: Array of time points corresponding to states
-        - final_state: Final density matrix (if store_final_state=True)
-
-    Notes
-    -----
-    The evolution is computed using either mesolve (master equation) or brmesolve
-    (Bloch-Redfield master equation) depending on the ode_solver setting.
-    Evolution starts from the beginning of the first pulse's active window and fills
-    vacant beginning slots with the initial state.
+        QuTiP Result object containing states, times, and final_state.
     """
+    import numpy as np
+    from qutip import mesolve, brmesolve
     from qspectro2d.config.default_simulation_params import SOLVER_OPTIONS
 
-    options: dict = SOLVER_OPTIONS
-    if solver_options:
-        options.update(solver_options)
+    options: dict = SOLVER_OPTIONS.copy()
+    options.update(solver_options)
+    options.setdefault("store_states", True)
 
-    # Get the starting point of the first pulse's active window
-    if sim_oqs.laser.pulses:
-        pulse_start_time = sim_oqs.laser.pulses[0].active_time_range[0]
-        # print(f"Pulse start time: {pulse_start_time} fs")
-    else:
-        pulse_start_time = sim_oqs.times_local[0]  # fallback if no pulses
-
-    # Find the index in times_local that corresponds to pulse_start_time
     times_array = np.asarray(sim_oqs.times_local)
-    start_idx = np.argmin(np.abs(times_array - pulse_start_time))
-
-    # Create modified time list starting from pulse active window
-    modified_times = times_array[start_idx:]
-
+    pulses = sim_oqs.laser.pulses
     ode_solver = sim_oqs.simulation_config.ode_solver
-    if ode_solver == "BR":
-        # Optional Bloch-Redfield secular cutoff passthrough TODO add to options
-        # sec_cutoff = options.get("sec_cutoff", None)
-        res = brmesolve(
-            H=sim_oqs.evo_obj,
-            psi0=sim_oqs.system.psi_ini,
-            tlist=modified_times,
-            a_ops=sim_oqs.decay_channels,
-            options=options,
-            # sec_cutoff=sec_cutoff,
-        )
-    else:
-        res = mesolve(
-            H=sim_oqs.evo_obj,
-            rho0=sim_oqs.system.psi_ini,
-            tlist=modified_times,
-            c_ops=sim_oqs.decay_channels,
-            options=options,
-        )
 
-    # Fill vacant beginning slots with initial state if needed
-    if start_idx > 0:
-        # Create states list with initial state for the vacant beginning slots
-        initial_states = [sim_oqs.system.psi_ini] * start_idx
-        if hasattr(res, "states") and res.states is not None:
-            res.states = initial_states + res.states
+    def run_solver(H, psi0, tlist):
+        if len(tlist) < 2:
+            return None  # No evolution needed
+        if ode_solver == "BR":
+            return brmesolve(
+                H=H,
+                psi0=psi0,
+                tlist=tlist,
+                a_ops=sim_oqs.decay_channels,
+                options=options,
+            )
+        else:
+            return mesolve(
+                H=H,
+                rho0=psi0,
+                tlist=tlist,
+                c_ops=sim_oqs.decay_channels,
+                options=options,
+            )
 
-        # Restore original time list
-        res.times = sim_oqs.times_local
+    # Helper to get active pulses at time t
+    def get_active_pulses(t):
+        return [p for p in pulses if p.active_time_range[0] <= t < p.active_time_range[1]]
+
+    # Get all event times: pulse starts, ends, and simulation boundaries
+    event_times = [p.active_time_range[0] for p in pulses] + [p.active_time_range[1] for p in pulses]
+    event_times = [times_array[0]] + event_times + [times_array[-1]]
+    event_times = sorted(set(event_times))  # Unique and sorted
+    print(f"Event times: {event_times}")
+    # Initialize
+    all_states = []
+    all_times = []
+    current_state = sim_oqs.system.psi_ini
+
+    def slice_times(t_start, t_end):
+        # Use index-based slicing to avoid floating-point inclusivity issues
+        i0 = int(np.searchsorted(times_array, t_start, side="left"))
+        i1 = int(np.searchsorted(times_array, t_end, side="right"))
+        t_slice = times_array[i0:i1]
+        return t_slice if len(t_slice) > 1 else None
+
+    # Evolve over each interval where active pulses are constant
+    for i in range(len(event_times) - 1):
+        t_start = event_times[i]
+        t_end = event_times[i + 1]
+
+        active_pulses = get_active_pulses(t_start)
+        active_indices = [pulses.index(p) for p in active_pulses]
+
+        # Determine Hamiltonian
+        if active_indices:
+            sim_active = sim_with_only_pulses(sim_oqs, active_indices)
+            H = sim_active.evo_obj
+        else:
+            H = sim_oqs.H0_diagonalized
+
+        # Evolve over this interval
+        t_slice = slice_times(t_start, t_end)
+        if t_slice is not None:
+            res = run_solver(H, current_state, t_slice)
+            if res:
+                if len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12:
+                    # Drop the first point only if it would duplicate the previous segment's last time
+                    all_states += res.states[1:]
+                    all_times += list(t_slice[1:])
+                else:
+                    all_states += res.states
+                    all_times += list(t_slice)
+                current_state = res.states[-1]
+
+    res.states = all_states
+    res.times = np.array(all_times)
 
     return res
 

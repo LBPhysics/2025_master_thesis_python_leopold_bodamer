@@ -55,6 +55,10 @@ class AtomBathCoupling:
                     add_projector(
                         idx - 1
                     )  # each double excited state gets one contribution from each site
+            if n_atoms == 2:  # to match the paper
+                return br_ops
+            for i_atom in range(1, n_atoms):  # otherwise add decay channels
+                for j_atom in range(i_atom + 1, n_atoms + 1):
 
                     # Double -> single lowering (if double manifold present)
                     # |i> corresponds to basis index i, etc.

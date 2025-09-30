@@ -189,18 +189,17 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     """
     # print(f"Checking '{sim_oqs.simulation_config.ode_solver}' solver")
     copy_sim_oqs = deepcopy(sim_oqs)
-    t_max = 2 * sim_oqs.times_local[-1]
-    dt = 10 * copy_sim_oqs.simulation_config.dt
-    t0 = -2 * copy_sim_oqs.laser.pulse_fwhms[0]
-    times = np.linspace(t0, t_max, int((t_max - t0) / dt) + 1)
-    copy_sim_oqs.times_local = times
+    t0 = sim_oqs.times_local[0]
+    dt = sim_oqs.times_local[1] - sim_oqs.times_local[0]
+    times = copy_sim_oqs.times_local
+    copy_sim_oqs.times_local = times    
     copy_sim_oqs.laser.pulse_phases = [1.0] * len(copy_sim_oqs.laser.pulses)
 
     # DETAILED SYSTEM DIAGNOSTICS
 
     print(f"=== SOLVER DIAGNOSTICS ===")
     print(f"Solver: {copy_sim_oqs.simulation_config.ode_solver}")
-    print(f"Time range: t0={t0:.3f}, t_max={t_max:.3f}, dt={dt:.6f}")
+    print(f"Time range: t0={t0:.3f}, t_max={times[-1]:.3f}, dt={dt:.6f}")
     print(f"Number of time points: {len(times)}")
     print(f"RWA enabled: {getattr(copy_sim_oqs.simulation_config, 'rwa_sl', False)}")
 
@@ -209,13 +208,14 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     # INPUT VALIDATION
     _validate_simulation_input(copy_sim_oqs)
 
-    result = compute_evolution(copy_sim_oqs, **{"store_states": True})
+    result = compute_evolution(copy_sim_oqs)
     states = result.states
 
     # CHECK THE RESULT
     if not isinstance(result, Result):
         raise TypeError("Result must be a Result object")
     if list(result.times) != list(times):
+        print(result.times, times)
         raise ValueError("Result times do not match input times")
     if len(result.states) != len(times):
         raise ValueError("Number of output states does not match number of time points")
