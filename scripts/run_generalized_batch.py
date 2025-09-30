@@ -265,8 +265,8 @@ def main() -> None:
         # Find the job directory by going up from combos_file
         combos_dir = Path(args.combos_file).parent
         job_dir = combos_dir.parent  # batch_jobs_generalized/<job_label>
-        print("\n🎯 All batches completed! To post-process the data, run:")
-        print(f"python {SCRIPTS_DIR / 'post_process_datas.py'} --job_dir {job_dir}")
+        print("\n🎯 All batches completed! To post-process the data, from SCIRPTS_DIR run:")
+        print(f"python post_process_datas.py --job_dir {job_dir.resolve()}")
 
 
 if __name__ == "__main__":

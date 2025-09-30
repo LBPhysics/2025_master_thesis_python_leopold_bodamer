@@ -181,7 +181,7 @@ def main() -> None:
         )
         print(f"Saved averaged 1D dataset: {out_path}")
         print("=" * 80)
-        print("\n🎯 To plot the data, run:")
+        print("\n🎯 To plot the data, from SCRIPTS_DIR run:")
         print(f"python plot_datas.py --abs_path {out_path}")
         return
 
@@ -215,7 +215,7 @@ def main() -> None:
 
     print(f"Saved 2D dataset: {out_path}")
     print("=" * 80)
-    print("\n🎯 To plot the data, run:")
+    print("\n🎯 To plot the data, from SCRIPTS_DIR run:")
     print(f"python plot_datas.py --abs_path {out_path}")
 
 

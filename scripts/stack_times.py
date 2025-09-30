@@ -311,7 +311,7 @@ def main() -> None:
 
     print(f"Saved 2D dataset: {out_path}")
     print("=" * 80)
-    print(f"\n🎯 To plot the 2D data, run:")
+    print(f"\n🎯 To plot the 2D data, from SCRIPTS_DIR run:")
     print(f"python plot_datas.py --abs_path {out_path}")
 
 
