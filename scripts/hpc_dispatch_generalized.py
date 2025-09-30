@@ -126,8 +126,6 @@ def _render_slurm_script(
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
-
 {python_cmd} {worker_arg} \
     --config_path {config_arg} \
     --combos_file "{combos_filename}" \
