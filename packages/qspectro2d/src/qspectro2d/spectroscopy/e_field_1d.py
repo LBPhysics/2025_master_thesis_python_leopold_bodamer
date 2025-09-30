@@ -110,7 +110,7 @@ def compute_evolution(
     event_times = [p.active_time_range[0] for p in pulses] + [p.active_time_range[1] for p in pulses]
     event_times = [times_array[0]] + event_times + [times_array[-1]]
     event_times = sorted(set(event_times))  # Unique and sorted
-    print(f"Event times: {event_times}")
+
     # Initialize
     all_states = []
     all_times = []
