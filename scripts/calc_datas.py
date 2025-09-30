@@ -188,10 +188,10 @@ def run_1d_mode(args) -> None:
     if saved_paths:
         example = saved_paths[-1]
         if n_inhom > 1:
-            print("\n🎯 Next step (average inhomogeneous configs):")
+            print("\n🎯 Next step (average inhomogeneous configs), from SCRIPTS_DIR run:")
             print(f"     python avg_inhomogenity.py --abs_path '{example}'")
         else:
-            print(f'\n🎯 To plot run: \npython plot_datas.py --abs_path "{example}"')
+            print(f'\n🎯 To plot, from SCRIPTS_DIR run: \npython plot_datas.py --abs_path "{example}"')
     else:
         print("ℹ️  No files saved.")
 
