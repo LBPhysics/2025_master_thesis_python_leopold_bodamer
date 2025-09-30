@@ -41,8 +41,9 @@ def _generate_base_filename(sim_config: "SimulationConfig") -> str:
             f"t_coh_{float(t_coh_val):.6g}"  # removes trailing zeros if possible
         )
         parts.append(t_coh_part)
-
-    parts.append(f"inhom_{int(sim_config.inhom_index):03d}")
+    
+    if sim_config.inhom_index is not None:
+        parts.append(f"inhom_{int(sim_config.inhom_index):03d}")
     base = f"{'_'.join(parts)}"
     return base
 
