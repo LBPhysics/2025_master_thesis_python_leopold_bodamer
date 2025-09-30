@@ -90,49 +90,49 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--config-path",
+        "--config_path",
         type=str,
         required=True,
         help="Absolute or relative path to the YAML configuration used for the simulation",
     )
     parser.add_argument(
-        "--combos-file",
+        "--combos_file",
         type=str,
         required=True,
         help="JSON file with the combinations assigned to this batch",
     )
     parser.add_argument(
-        "--samples-file",
+        "--samples_file",
         type=str,
         required=True,
         help="NumPy .npy file containing the sampled frequency grid (shape: n_inhom × n_sites)",
     )
     parser.add_argument(
-        "--time-cut",
+        "--time_cut",
         type=float,
         required=True,
         help="Maximum safe evolution time determined during solver diagnostics",
     )
     parser.add_argument(
-        "--sim-type",
+        "--sim_type",
         choices=["1d", "2d"],
         required=True,
         help="Simulation dimensionality (affects metadata only)",
     )
     parser.add_argument(
-        "--batch-id",
+        "--batch_id",
         type=int,
         default=None,
         help="Optional batch identifier for logging",
     )
     parser.add_argument(
-        "--n-batches",
+        "--n_batches",
         type=int,
         default=None,
         help="Total number of batches (metadata only)",
     )
     parser.add_argument(
-        "--output-root",
+        "--output_root",
         type=str,
         default=str(DATA_DIR),
         help="Destination root directory for saved data",

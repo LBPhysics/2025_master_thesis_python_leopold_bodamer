@@ -136,14 +136,14 @@ SCRIPT_DIR="$(cd \"$(dirname \"${{BASH_SOURCE[0]}}\")\" && pwd)"
 PROJECT_SCRIPTS_DIR="$(cd \"${{SCRIPT_DIR}}/../..\" && pwd)"
 
 python \"${{PROJECT_SCRIPTS_DIR}}/{worker_rel_path}\" \
-    --config-path {config_arg} \
-  --combos-file \"${{SCRIPT_DIR}}/{combos_filename}\" \
-  --samples-file \"${{SCRIPT_DIR}}/{samples_filename}\" \
-  --time-cut {time_cut:.12g} \
-  --sim-type {sim_type} \
-  --batch-id {batch_idx} \
-    --n-batches {n_batches} \
-    --output-root {output_arg}
+    --config_path {config_arg} \
+  --combos_file \"${{SCRIPT_DIR}}/{combos_filename}\" \
+  --samples_file \"${{SCRIPT_DIR}}/{samples_filename}\" \
+  --time_cut {time_cut:.12g} \
+  --sim_type {sim_type} \
+  --batch_id {batch_idx} \
+    --n_batches {n_batches} \
+    --output_root {output_arg}
 """
 
 
@@ -168,48 +168,48 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--sim-type",
+        "--sim_type",
         choices=["1d", "2d"],
         default="2d",
         help="Simulation dimensionality",
     )
     parser.add_argument(
-        "--n-inhom",
+        "--n_inhom",
         type=int,
         default=None,
         help="Number of inhomogeneous samples (defaults to config value)",
     )
     parser.add_argument(
-        "--n-batches",
+        "--n_batches",
         type=int,
         default=1,
         help="Total number of batches to split the combination space into",
     )
     parser.add_argument(
-        "--rng-seed",
+        "--rng_seed",
         type=int,
         default=None,
         help="Optional NumPy random seed for reproducible sampling",
     )
     parser.add_argument(
-        "--config-path",
+        "--config_path",
         type=str,
         default=None,
         help="Override configuration YAML (otherwise auto-selected)",
     )
     parser.add_argument(
-        "--job-name-prefix",
+        "--job_name_prefix",
         type=str,
         default="spec",
         help="Prefix for generated SLURM job names",
     )
     parser.add_argument(
-        "--no-submit",
+        "--no_submit",
         action="store_true",
         help="Only generate local artifacts; skip sbatch submission",
     )
     parser.add_argument(
-        "--output-root",
+        "--output_root",
         type=str,
         default=str(PROJECT_ROOT / "data"),
         help="Root directory for saved simulation data",
@@ -312,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"Artifacts written to {job_dir}")
 
     if args.no_submit:
-        print("Skipping submission (--no-submit set).")
+        print("Skipping submission (--no_submit set).")
         return
 
     print("Submitting SLURM jobs...")
