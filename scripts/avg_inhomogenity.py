@@ -132,7 +132,7 @@ def average_sorted_data(
             # Normalize config bookkeeping for averaged output:
             cfg = self.simulation_config
             # Use canonical index 0 for averaged file naming
-            cfg.inhom_index = 0
+            cfg.inhom_index = None
             cfg.inhom_averaged = True
             cfg.inhom_enabled = True
 
