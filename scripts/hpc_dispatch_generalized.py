@@ -270,6 +270,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "generated_at": timestamp,
         "output_root": str(Path(args.output_root).resolve()),
         "rng_seed": args.rng_seed,
+        "inhom_group_id": str(sim.simulation_config.inhom_group_id),
     }
     _write_json(job_dir / "metadata.json", metadata)
 

@@ -260,6 +260,14 @@ def main() -> None:
         print(f"  {saved_paths[-1]}")
     print("=" * 80)
 
+    # If this is the last batch, suggest post-processing
+    if args.batch_id == args.n_batches - 1:
+        # Find the job directory by going up from combos_file
+        combos_dir = Path(args.combos_file).parent
+        job_dir = combos_dir.parent  # batch_jobs_generalized/<job_label>
+        print("\n🎯 All batches completed! To post-process the data, run:")
+        print(f"python {SCRIPTS_DIR / 'post_process_datas.py'} --job_dir {job_dir}")
+
 
 if __name__ == "__main__":
     main()
