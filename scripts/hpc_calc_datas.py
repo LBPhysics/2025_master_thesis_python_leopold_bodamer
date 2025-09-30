@@ -17,7 +17,7 @@ Each job runs (from the batching directory):
     python ../../calc_datas.py --sim_type {sim_type} --n_batches {n_batches} --batch_idx {batch_idx}
 
 Notes:
-- Mail notifications are included ONLY for the first and last batch indices.
+
 """
 
 from __future__ import annotations
@@ -38,19 +38,7 @@ def _slurm_script_text(
     sim_type: str,
     logs_subdir: str,
 ) -> str:
-    """Render the SLURM script text for a single batch index.
-
-    Mail directives are included only for first and last batches.
-    """
-    mail_lines = (
-        (
-            '#SBATCH --mail-type="END,FAIL"\n'
-            "#SBATCH --mail-user=leopold.bodamer@student.uni-tuebingen.de\n"
-        )
-        if (batch_idx == 0 or batch_idx == n_batches - 1)
-        else ""
-    )
-
+    """Render the SLURM script text for a single batch index."""
     return f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output={logs_subdir}/%x.out
@@ -58,7 +46,6 @@ def _slurm_script_text(
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=500M
 #SBATCH --time=0-01:00:00
-{mail_lines}
 
 python ../../calc_datas.py --sim_type {sim_type} --n_batches {n_batches} --batch_idx {batch_idx}
 """
