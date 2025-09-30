@@ -244,10 +244,9 @@ def run_2d_mode(args) -> None:
         print(f"\n--- t_coh={t_coh_val:.2f} fs  [{t_i} / {N_total}]---")
         E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
 
-        sim_cfg.t_coh = t_coh_val
-        sim_cfg.inhom_index = 0
+        sim_cfg.inhom_index = None
         sim_cfg.inhom_enabled = (
-            sim_cfg.inhom_enabled and sim_cfg.inhom_index > 0
+            sim_cfg.inhom_enabled and sim_cfg.inhom_index is not None and sim_cfg.inhom_index > 0
         )  # stays False for 2D loop here
         metadata = {
             "signal_types": sim_cfg.signal_types,

@@ -2,8 +2,8 @@
 atomic:
   n_atoms: 1
   frequencies_cm: [16000.0]
-  n_inhomogen: 1
-  delta_inhomogen_cm: 0.0
+  n_inhomogen: 100
+  delta_inhomogen_cm: 300.0
 
 laser:
   base_amplitude: 0.05
@@ -18,10 +18,11 @@ bath:
   coupling: 0.1
 
 config:
-  solver: BR
+  solver: ME
   signal_types: [rephasing]
 
 window:
-  t_det_max: 60.0
-  t_wait: 0.0
-  dt: 0.1
+  t_det_max: 600.0
+  t_wait: 1000.0
+  t_coh: 300.0
+  dt: 2.0

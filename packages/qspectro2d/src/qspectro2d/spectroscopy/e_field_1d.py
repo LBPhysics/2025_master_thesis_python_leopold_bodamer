@@ -111,22 +111,18 @@ def compute_evolution(
     event_times = [times_array[0]] + event_times + [times_array[-1]]
     event_times = sorted(set(event_times))  # Unique and sorted
 
+    # Precompute indices for efficient slicing
+    event_i0 = np.searchsorted(times_array, event_times, side='left')
+    event_i1 = np.searchsorted(times_array, event_times, side='right')
+
     # Initialize
     all_states = []
     all_times = []
     current_state = sim_oqs.system.psi_ini
 
-    def slice_times(t_start, t_end):
-        # Use index-based slicing to avoid floating-point inclusivity issues
-        i0 = int(np.searchsorted(times_array, t_start, side="left"))
-        i1 = int(np.searchsorted(times_array, t_end, side="right"))
-        t_slice = times_array[i0:i1]
-        return t_slice if len(t_slice) > 1 else None
-
     # Evolve over each interval where active pulses are constant
-    for i in range(len(event_times) - 1):
+    for i in range(len(event_times)):
         t_start = event_times[i]
-        t_end = event_times[i + 1]
 
         active_pulses = get_active_pulses(t_start)
         active_indices = [pulses.index(p) for p in active_pulses]
@@ -139,8 +135,10 @@ def compute_evolution(
             H = sim_oqs.H0_diagonalized
 
         # Evolve over this interval
-        t_slice = slice_times(t_start, t_end)
-        if t_slice is not None:
+        i0 = event_i0[i]
+        i1 = event_i1[i + 1]
+        t_slice = times_array[i0:i1]
+        if len(t_slice) > 1:
             res = run_solver(H, current_state, t_slice)
             if res:
                 if len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12:
@@ -314,15 +312,9 @@ def parallel_compute_1d_e_comps(
         raise ValueError("3 pulses (pump, pump, probe) are required.")
 
     # Optional time mask (keep length constant)
-    # NOTE:
-    # - `time_cut` is returned by solver validation in ABSOLUTE simulation time.
-    # TODO NOW THE cutoff is absolutely from the detection time! so t0_det == 0!
     t_mask = None
     if time_cut is not None and np.isfinite(time_cut):
-        t0_det = float(sim_oqs.simulation_config.t_coh + sim_oqs.simulation_config.t_wait)
-        cut_rel = float(time_cut) - t0_det  # cutoff measured from start of detection window
-        # Build mask over the local detection axis; negative cut -> all zeros
-        t_mask = (sim_oqs.t_det <= cut_rel).astype(np.float64)
+        t_mask = (sim_oqs.t_det <= time_cut).astype(np.float64)
 
     # Compute P_{phi1,phi2} grid once for this realization (probe phase fixed to 0)
     P_grid = np.zeros((len(phases_eff), len(phases_eff), n_t), dtype=np.complex64)
