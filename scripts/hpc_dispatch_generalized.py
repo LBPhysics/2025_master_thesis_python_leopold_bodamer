@@ -98,18 +98,9 @@ def _write_json(path: Path, payload: dict | list) -> None:
         handle.write("\n")
 
 
-def _relative_worker_path(job_dir: Path) -> str:
-    rel = Path("../../run_generalized_batch.py")
-    depth = len(job_dir.relative_to(SCRIPTS_DIR).parts)
-    if depth != 2:  # Expect batch_jobs_generalized/<job_name>
-        rel = Path("../" * depth) / "run_generalized_batch.py"
-    return str(rel)
-
-
 def _render_slurm_script(
     *,
     job_name: str,
-    job_dir: Path,
     batch_idx: int,
     n_batches: int,
     sim_type: str,
@@ -118,8 +109,11 @@ def _render_slurm_script(
     samples_filename: str,
     time_cut: float,
     output_root: Path,
+    worker_path: Path,
+    python_executable: Path,
 ) -> str:
-    worker_rel_path = _relative_worker_path(job_dir)
+    python_cmd = shlex.quote(str(python_executable))
+    worker_arg = shlex.quote(str(worker_path))
     config_arg = shlex.quote(str(config_path))
     output_arg = shlex.quote(str(output_root))
     return f"""#!/bin/bash
@@ -132,16 +126,15 @@ def _render_slurm_script(
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd \"$(dirname \"${{BASH_SOURCE[0]}}\")\" && pwd)"
-PROJECT_SCRIPTS_DIR="$(cd \"${{SCRIPT_DIR}}/../..\" && pwd)"
+cd "$(dirname "$0")"
 
-python \"${{PROJECT_SCRIPTS_DIR}}/{worker_rel_path}\" \
+{python_cmd} {worker_arg} \
     --config_path {config_arg} \
-  --combos_file \"${{SCRIPT_DIR}}/{combos_filename}\" \
-  --samples_file \"${{SCRIPT_DIR}}/{samples_filename}\" \
-  --time_cut {time_cut:.12g} \
-  --sim_type {sim_type} \
-  --batch_id {batch_idx} \
+    --combos_file "{combos_filename}" \
+    --samples_file "{samples_filename}" \
+    --time_cut {time_cut:.12g} \
+    --sim_type {sim_type} \
+    --batch_id {batch_idx} \
     --n_batches {n_batches} \
     --output_root {output_arg}
 """
@@ -284,6 +277,17 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     batch_indices = _split_indices(len(combinations), args.n_batches)
     script_paths: list[Path] = []
+    worker_path = (SCRIPTS_DIR / "run_generalized_batch.py").resolve()
+    if not worker_path.exists():
+        raise FileNotFoundError(f"Missing worker script: {worker_path}")
+
+    if sys.executable:
+        python_executable = Path(sys.executable).resolve()
+    else:  # pragma: no cover - defensive fallback
+        candidate = shutil.which("python") or shutil.which("python3")
+        if candidate is None:
+            raise RuntimeError("Unable to determine python executable for SLURM script")
+        python_executable = Path(candidate).resolve()
     for batch_idx, indices in enumerate(batch_indices):
         combos_subset = [combinations[i].to_dict() for i in indices.tolist()]
         combos_file = job_dir / f"batch_{batch_idx:03d}.json"
@@ -292,7 +296,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         job_name = f"{args.job_name_prefix}b{batch_idx:02d}of{args.n_batches:02d}"
         slurm_text = _render_slurm_script(
             job_name=job_name,
-            job_dir=job_dir,
             batch_idx=batch_idx,
             n_batches=args.n_batches,
             sim_type=args.sim_type,
@@ -301,6 +304,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             samples_filename=samples_file.name,
             time_cut=time_cut,
             output_root=Path(args.output_root).resolve(),
+            worker_path=worker_path,
+            python_executable=python_executable,
         )
         script_path = job_dir / f"{job_name}.slurm"
         script_path.write_text(slurm_text, encoding="utf-8")
