@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Execute a batch of (t_coh, inhomogeneity) combinations for spectroscopy runs.
 
 This worker script is intended to be called from generated SLURM jobs. It receives a
@@ -25,7 +24,7 @@ from qspectro2d.utils.data_io import (
     save_run_artifact,
     compute_sample_id,
     resolve_run_prefix,
-    ensure_run_sidecar,
+    ensure_info_file,
 )
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
@@ -33,7 +32,7 @@ for _parent in SCRIPTS_DIR.parents:
     if (_parent / ".git").is_dir():
         PROJECT_ROOT = _parent
         break
-else:  # pragma: no cover - defensive branch
+else:
     raise RuntimeError("Could not locate project root (missing .git directory)")
 
 DATA_DIR = (PROJECT_ROOT / "data").resolve()
@@ -53,39 +52,15 @@ def _load_combinations(path: Path) -> list[dict[str, Any]]:
     else:
         combos = payload
 
-    if not isinstance(combos, list):  # pragma: no cover - defensive
+    if not isinstance(combos, list):
         raise TypeError(f"Expected list of combinations, got {type(combos)!r}")
 
     return combos
 
 
-def _coerce_float(value: Any) -> float:
-    try:
-        return float(value)
-    except Exception as exc:  # pragma: no cover - defensive
-        raise ValueError(f"Cannot convert {value!r} to float") from exc
-
-
-def _coerce_int(value: Any) -> int:
-    try:
-        return int(value)
-    except Exception as exc:  # pragma: no cover - defensive
-        raise ValueError(f"Cannot convert {value!r} to int") from exc
-
-
-def _format_combo(combo: dict[str, Any]) -> str:
-    parts = [
-        f"t_idx={combo.get('t_index', '?')}",
-        f"t_coh={combo.get('t_coh', '?')}",
-        f"inhom={combo.get('inhom_index', '?')}",
-        f"idx={combo.get('index', '?')}",
-    ]
-    return ", ".join(parts)
-
-
 def _iter_combos(subset: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
     for entry in subset:
-        if not isinstance(entry, dict):  # pragma: no cover - defensive
+        if not isinstance(entry, dict):
             raise TypeError("Each combination must be a dictionary")
         yield entry
 
@@ -122,13 +97,13 @@ def main() -> None:
     parser.add_argument(
         "--batch_id",
         type=int,
-        default=None,
+        default=0,
         help="Optional batch identifier for logging",
     )
     parser.add_argument(
         "--n_batches",
         type=int,
-        default=None,
+        default=1,
         help="Total number of batches (metadata only)",
     )
     args = parser.parse_args()
@@ -165,9 +140,6 @@ def main() -> None:
     n_inhom, n_sites = samples.shape
 
     sim = load_simulation(config_path, validate=False)
-    sim.simulation_config.n_inhomogen = n_inhom
-    sim.simulation_config.sample_size = n_inhom
-    sim.simulation_config.current_sample_id = None
 
     base_freqs = np.asarray(sim.system.frequencies_cm, dtype=float)
     if base_freqs.size != n_sites:
@@ -176,9 +148,8 @@ def main() -> None:
             f"sample columns = {n_sites}, system sites = {base_freqs.size}"
         )
 
+    # OKE UP TO HERE
     run_dir, run_prefix = resolve_run_prefix(sim.system, sim.simulation_config, DATA_DIR)
-    extra_sidecar_payload = {"job": job_metadata} if job_metadata is not None else None
-    ensure_run_sidecar(sim, data_root=DATA_DIR, extra_payload=extra_sidecar_payload)
 
     samples_target = run_dir / f"{run_prefix}_samples.npy"
     if not samples_target.exists():
@@ -193,10 +164,10 @@ def main() -> None:
     saved_paths: list[str] = []
 
     for combo in _iter_combos(combinations):
-        t_idx = _coerce_int(combo.get("t_index", combo.get("t_idx", 0)))
-        inhom_idx = _coerce_int(combo.get("inhom_index"))
-        global_idx = _coerce_int(combo.get("index", len(saved_paths)))
-        t_coh_val = _coerce_float(combo.get("t_coh_value"))
+        t_idx = combo.get("t_index", 0)
+        inhom_idx = combo.get("inhom_index")
+        global_idx = combo.get("index", len(saved_paths))
+        t_coh_val = combo.get("t_coh_value")
 
         if inhom_idx < 0 or inhom_idx >= n_inhom:
             raise IndexError(
@@ -204,13 +175,15 @@ def main() -> None:
             )
 
         # Update simulation configuration for this combination
-        sim.update_delays(t_coh=t_coh_val)
-
         freq_vector = samples[inhom_idx, :].astype(float)
+
+        sim.update_delays(t_coh=t_coh_val)
         sim.system.update_frequencies_cm(freq_vector.tolist())
 
         sample_id = compute_sample_id(freq_vector)
-        sim.simulation_config.current_sample_id = sample_id
+        sim.simulation_config.current_sample_id = (
+            sample_id  # TODO do i even need this sample_id attribute?
+        )
 
         print(
             f"\n--- combo {global_idx}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
@@ -229,7 +202,6 @@ def main() -> None:
             "n_batches": args.n_batches,
             "sample_index": inhom_idx,
             "sample_id": sample_id,
-            "sample_size": n_inhom,
         }
 
         t_det_axis = sim.t_det
@@ -240,10 +212,10 @@ def main() -> None:
             t_det=t_det_axis,
             metadata=metadata,
             frequency_sample_cm=freq_vector,
-            sample_id=sample_id,
             data_root=DATA_DIR,
             t_coh=None,
         )
+
         saved_paths.append(str(path))
         print(f"    ✅ saved {path}")
 

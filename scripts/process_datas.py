@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# TODO Read expected count from metadata.json (n_inhomogen) and compare with the number of found samples per t_index. Warn if short.
 """Post-process generalized batch outputs into averaged 1D and stacked 2D artifacts."""
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from qspectro2d.utils.data_io import load_run_artifact
 # Keys we want to remove from artifact metadata after post-processing
 _POSTPROC_META_KEYS_TO_DROP = {
     # run/batch bookkeeping
-    "sample_size",
     "sample_id",
     "sample_index",
     "batch_id",
@@ -32,6 +31,10 @@ _POSTPROC_META_KEYS_TO_DROP = {
     # stacking/averaging helpers
     "stacked_points",
     "averaged_count",
+    "t_indices",
+    "t_coh_axis",
+    "t_coh_value",
+    "t_coh",
 }
 
 
@@ -94,7 +97,6 @@ class PostProcessResult:
     data_dir: Path
     prefix: str
     sim_type: str
-    sample_size: int
     averaged_paths: List[Path]
     final_path: Path
     stacked: bool
@@ -102,7 +104,7 @@ class PostProcessResult:
 
 def _discover_artifacts(base_dir: Path, prefix: str) -> List[ArtifactRecord]:
     artifacts: List[ArtifactRecord] = []
-    for candidate in sorted(base_dir.glob(f"{prefix}_run_t*_c*_s*.npz")):
+    for candidate in sorted(base_dir.glob(f"{prefix}_run_t*_c*.npz")):
         try:
             artifact = load_run_artifact(candidate)
         except Exception as exc:
@@ -113,8 +115,6 @@ def _discover_artifacts(base_dir: Path, prefix: str) -> List[ArtifactRecord]:
         if not metadata:
             print(f"⚠️  Missing metadata in artifact: {candidate}")
             continue
-        if "t_coh_value" not in metadata:
-            raise KeyError(f"Missing 't_coh_value' in artifact metadata: {candidate}")
         metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
         artifacts.append(ArtifactRecord(path=candidate, metadata=metadata))
 
@@ -164,13 +164,11 @@ def post_process_job(
 
     metadata = _load_metadata(job_path)
     sim_type = metadata.get("sim_type", "1d")
-    sample_size = int(metadata.get("sample_size", 1) or 1)
     base_path = Path(metadata["data_base_path"]).resolve()
     data_dir = base_path.parent
     prefix = base_path.name
 
     print(f"Sim type: {sim_type}")
-    print(f"Sample size: {sample_size}")
     print(f"Artifact directory: {data_dir}")
     print(f"Artifact prefix: {prefix}")
 
@@ -229,7 +227,6 @@ def post_process_job(
             data_dir=data_dir,
             prefix=prefix,
             sim_type=sim_type,
-            sample_size=sample_size,
             averaged_paths=unique_averaged,
             final_path=final_path,
             stacked=False,
@@ -258,7 +255,6 @@ def post_process_job(
         data_dir=data_dir,
         prefix=prefix,
         sim_type=sim_type,
-        sample_size=sample_size,
         averaged_paths=unique_averaged,
         final_path=stacked_path,
         stacked=True,

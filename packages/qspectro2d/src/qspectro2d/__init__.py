@@ -51,7 +51,6 @@ from .core import (
 from .utils.data_io import (
     save_run_artifact,
     load_run_artifact,
-    save_simulation_data,
     load_simulation_data,
 )
 from .utils import generate_unique_plot_filename
@@ -81,7 +80,6 @@ __all__ = [
     # Data management
     "save_run_artifact",
     "load_run_artifact",
-    "save_simulation_data",
     "load_simulation_data",
     # Plotting helpers
     "generate_unique_plot_filename",

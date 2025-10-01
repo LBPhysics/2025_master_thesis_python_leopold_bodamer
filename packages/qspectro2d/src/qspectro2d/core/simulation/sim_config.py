@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import List
 from dataclasses import dataclass, asdict, field
-import warnings
 
 
 @dataclass
@@ -19,9 +18,7 @@ class SimulationConfig:
 
     ode_solver: str = "ME"
     # Solver and pulse/detection options
-    solver_options: dict[str, float | int] = field(
-        default_factory=lambda: {"nsteps": 200000, "atol": 1e-6, "rtol": 1e-4}
-    )
+    solver_options: dict[str, float | int] = field(default_factory=lambda: {})
     rwa_sl: bool = True
 
     dt: float = 0.1
@@ -37,7 +34,6 @@ class SimulationConfig:
 
     # Sampling / batching metadata
     inhom_averaged: bool = False  # True if data represent an average over inhom configs
-    sample_size: int = 1  # Total number of inhomogeneous samples considered for this job
     current_sample_id: str | None = None  # Stable identifier (hash) for the active frequency sample
 
     max_workers: int = 1
@@ -46,8 +42,8 @@ class SimulationConfig:
     def __post_init__(self) -> None:
         # Enforce RWA for Paper_eqs
         if self.ode_solver == "Paper_eqs" and not self.rwa_sl:
-            warnings.warn(
-                "rwa_sl forced True for Paper_eqs solver.",
+            print(
+                "⚠️  Warning: rwa_sl forced True for Paper_eqs solver.",
                 category=UserWarning,
                 stacklevel=2,
             )
@@ -72,7 +68,6 @@ class SimulationConfig:
             f"Inhom Points      : {self.n_inhomogen}\n"
             f"Inhom Active       : {self.n_inhomogen > 1}\n"
             f"Inhom Averaged     : {self.inhom_averaged}\n"
-            f"Sample Size        : {self.sample_size}\n"
             f"Sample ID          : {self.current_sample_id}\n"
             f"Max Workers        : {self.max_workers}\n"
             "-------------------------------\n"

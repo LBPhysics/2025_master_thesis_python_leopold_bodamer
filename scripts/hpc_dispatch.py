@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+# TODO make the requested parameters RAM / TIME / CPUS depend on size of the combinations / n_batches, len(times)
 """Generate and (optionally) submit SLURM jobs for combined t_coh × inhom runs.
 
-This dispatcher generalizes the original 1D/2D workflows by creating the full
+This dispatcher creates 1D/2D workflows by creating the full
 Cartesian product of coherence times and inhomogeneous samples. It validates the
-simulation locally before launching any remote jobs, ensuring that solver
-instabilities are detected early.
+simulation locally before launching any jobs to an hpc cluster, ensuring that solver
+instabilities are detected once and early.
 """
 
 from __future__ import annotations
@@ -130,18 +130,29 @@ set -euo pipefail
 """
 
 
-def _submit_local_job(script_path: Path) -> str:
+def submit_sbatch(script_path: Path, cwd: Path | None = None) -> str:
+    """Submit a SLURM script via sbatch."""
     sbatch = shutil.which("sbatch")
     if sbatch is None:
         raise RuntimeError("sbatch not found on PATH. Run this on your cluster login node.")
 
-    result = subprocess.run(
-        [sbatch, script_path.name],
-        cwd=str(script_path.parent),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    if cwd is None:
+        cwd = script_path.parent
+
+    try:
+        result = subprocess.run(
+            [sbatch, str(script_path)],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("sbatch command not found. Submit the script manually.")
+    except subprocess.CalledProcessError as exc:
+        msg = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+        raise RuntimeError(f"sbatch failed with exit code {exc.returncode}: {msg}")
+
     return result.stdout.strip()
 
 
@@ -167,12 +178,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         default=None,
         help="Optional NumPy random seed for reproducible sampling",
-    )
-    parser.add_argument(
-        "--job_name_prefix",
-        type=str,
-        default="spec",
-        help="Prefix for generated SLURM job names",
     )
     parser.add_argument(
         "--no_submit",
@@ -243,9 +248,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         "generated_at": timestamp,
         "data_base_path": str(data_base_path),
         "rng_seed": args.rng_seed,
-        "sample_size": int(n_inhom),
     }
-    _write_json(job_dir / "metadata.json", metadata)
+    _write_json(job_dir / "metadata.json", metadata)  # TODO this can be removed
+    from qspectro2d.utils.data_io import ensure_info_file
+
+    ensure_info_file(
+        sim,
+        data_root=PROJECT_ROOT / "data",
+        extra_payload=metadata,
+    )
 
     batch_indices = _split_indices(len(combinations), args.n_batches)
     script_paths: list[Path] = []
@@ -255,7 +266,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if sys.executable:
         python_executable = Path(sys.executable).resolve()
-    else:  # pragma: no cover - defensive fallback
+    else:
         candidate = shutil.which("python") or shutil.which("python3")
         if candidate is None:
             raise RuntimeError("Unable to determine python executable for SLURM script")
@@ -265,7 +276,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         combos_file = job_dir / f"batch_{batch_idx:03d}.json"
         _write_json(combos_file, {"combos": combos_subset})
 
-        job_name = f"{args.job_name_prefix}b{batch_idx:02d}of{args.n_batches:02d}"
+        job_name = f"{args.sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
         slurm_text = _render_slurm_script(
             job_name=job_name,
             batch_idx=batch_idx,
@@ -290,7 +301,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     print("Submitting SLURM jobs...")
     for script_path in script_paths:
-        submit_msg = _submit_local_job(script_path)
+        submit_msg = submit_sbatch(script_path)
         print(f"  {script_path.name}: {submit_msg}")
 
     print("Done.")
