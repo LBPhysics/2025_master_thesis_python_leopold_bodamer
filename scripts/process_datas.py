@@ -37,6 +37,9 @@ _POSTPROC_META_KEYS_TO_DROP = {
     "t_coh",
 }
 
+# For averaged artifacts, keep t_coh_value for potential stacking
+_POSTPROC_META_KEYS_TO_DROP_AVERAGED = _POSTPROC_META_KEYS_TO_DROP - {"t_coh_value"}
+
 
 def _sanitize_artifact_metadata(path: Path, *, keys_to_drop: set[str]) -> Path:
     """Remove unwanted keys from the metadata_json of a run artifact in-place.
@@ -193,7 +196,7 @@ def post_process_job(
         print(f"  → Averaged artifact: {averaged_path}")
         # Sanitize metadata of the produced averaged artifact
         sanitized_path = _sanitize_artifact_metadata(
-            Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+            Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP_AVERAGED
         )
         averaged_paths.append(sanitized_path)
 
@@ -218,7 +221,7 @@ def post_process_job(
         print("Single coherence point detected; stacking is not required.")
         # Ensure the single averaged artifact is sanitized
         final_path = _sanitize_artifact_metadata(
-            unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+            unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP_AVERAGED
         ).resolve()
         print("=" * 80)
         print("🎯 To plot the averaged 1D data run:")
