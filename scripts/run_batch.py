@@ -2,7 +2,7 @@
 """Execute a batch of (t_coh, inhomogeneity) combinations for spectroscopy runs.
 
 This worker script is intended to be called from generated SLURM jobs. It receives a
-list of combinations produced by ``hpc_dispatch_generalized.py`` and performs the
+list of combinations produced by ``hpc_dispatch.py`` and performs the
 actual field computations, saving the resulting datasets to the standard ``data``
 folder of the repository.
 """
@@ -267,7 +267,7 @@ def main() -> None:
     ):
         # Find the job directory by going up from combos_file
         combos_dir = Path(args.combos_file).parent
-        job_dir = combos_dir.parent  # batch_jobs_generalized/<job_label>
+        job_dir = combos_dir.parent  # batch_jobs/<job_label>
         print("\n🎯 All batches completed! Finalize and queue plotting from SCRIPTS_DIR with:")
         print(f"python hpc_plot_datas.py --job_dir {job_dir.resolve()}")
 

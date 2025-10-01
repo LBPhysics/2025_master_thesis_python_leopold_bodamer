@@ -271,7 +271,7 @@ def main() -> None:
         "--job_dir",
         type=str,
         required=True,
-        help="Path to batch_jobs_generalized/<job_label> (must contain metadata.json)",
+        help="Path to batch_jobs/<job_label> (must contain metadata.json)",
     )
     parser.add_argument(
         "--skip_inhom",
