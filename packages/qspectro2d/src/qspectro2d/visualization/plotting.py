@@ -809,7 +809,7 @@ def add_text_box(
     ax,
     kwargs: dict,
     position: tuple = (0.98, 0.98),
-    fontsize: int = 11,
+    fontsize: int = 7,
     coords: Literal["axes", "figure"] = "axes",
 ):
     """
