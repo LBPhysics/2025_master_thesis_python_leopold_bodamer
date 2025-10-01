@@ -32,8 +32,6 @@ for _parent in SCRIPTS_DIR.parents:
     if (_parent / ".git").is_dir():
         PROJECT_ROOT = _parent
         break
-else:  # pragma: no cover - defensive
-    raise RuntimeError("Could not locate project root (missing .git)")
 
 JOB_ROOT = SCRIPTS_DIR / "batch_jobs_generalized"
 JOB_ROOT.mkdir(parents=True, exist_ok=True)
