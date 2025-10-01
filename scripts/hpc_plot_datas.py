@@ -101,13 +101,6 @@ def _render_slurm_script(
     return "\n".join(lines) + "\n"
 
 
-def _write_script(job_dir: Path, script_name: str, content: str) -> Path:
-    target = job_dir / script_name
-    target.write_text(content, encoding="utf-8", newline="\n")
-    target.chmod(0o755)
-    return target
-
-
 def _submit_script(script_path: Path) -> bool:
     try:
         subprocess.run(["sbatch", str(script_path)], check=True)
@@ -186,7 +179,8 @@ def main() -> None:
         mem=SLURM_MEM,
         time_limit=SLURM_TIME,
     )
-    script_path = _write_script(job_dir, args.script_name, script_content)
+    script_path = job_dir / f"{JOB_NAME}.slurm"
+    script_path.write_text(script_content, encoding="utf-8")
     _record_target(job_dir, final_artifact)
 
     print(f"📝 Generated plotting script: {script_path}")
