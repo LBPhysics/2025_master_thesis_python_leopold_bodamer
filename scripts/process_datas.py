@@ -192,7 +192,7 @@ def post_process_job(
         print(f"  → Averaged artifact: {averaged_path}")
         # Sanitize metadata of the produced averaged artifact
         sanitized_path = _sanitize_artifact_metadata(
-            Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP_AVERAGED
+            Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
         )
         averaged_paths.append(sanitized_path)
 
