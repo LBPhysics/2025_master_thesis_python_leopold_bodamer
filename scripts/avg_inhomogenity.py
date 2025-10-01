@@ -52,7 +52,8 @@ def _load_entry(path: Path) -> RunEntry:
     artifact = load_run_artifact(path)
 
     metadata = dict(artifact["metadata"])
-    metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
+    if "t_coh_value" in metadata:
+        metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
 
     signals = {key: np.asarray(val) for key, val in artifact["signals"].items()}
     t_det = np.asarray(artifact["t_det"], dtype=float)
@@ -198,7 +199,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         metadata=metadata_out,
         frequency_sample_cm=avg_freq,
         data_root=DATA_DIR,
-        t_coh=None,
+        t_coh=metadata_out.get("t_coh_value"),
     )
 
     print(f"✅ Averaged {len(raw_entries)} artifacts for t_index={t_index} → {out_path}")

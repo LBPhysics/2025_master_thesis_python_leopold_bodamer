@@ -134,7 +134,8 @@ def _load_metadata_for_paths(paths: Iterable[Path]) -> List[ArtifactRecord]:
     for path in paths:
         artifact = load_run_artifact(path)
         metadata = dict(artifact.get("metadata", {}))
-        metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
+        if "t_coh_value" in metadata:
+            metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
         records.append(ArtifactRecord(path=path, metadata=metadata))
     return records
 
