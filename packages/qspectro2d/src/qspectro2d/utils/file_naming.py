@@ -196,16 +196,6 @@ def generate_unique_plot_filename(
     if ensure:
         abs_path.mkdir(parents=True, exist_ok=True)
 
-    if abs_path.exists():
-        i = 1
-        while True:
-            candidate_name = f"{str(abs_path)}_{i}"
-            candidate_full = Path(candidate_name)
-            if not candidate_full.exists():
-                break
-            i += 1
-        abs_path = candidate_full
-
     # Mirror flipped ordering for averaged markers so plots group nicely
     base_core = _generate_base_stem(sim_config)
     base_name = f"{base_core}_{domain}_domain"
