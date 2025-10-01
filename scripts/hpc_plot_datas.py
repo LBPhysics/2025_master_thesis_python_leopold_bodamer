@@ -68,9 +68,9 @@ def _render_slurm_script(
     plot_path = final_artifact.as_posix()
     plot_py = PLOT_SCRIPT.as_posix()
 
+    # Important: SBATCH lines must come before any non-comment command
     lines = [
         "#!/bin/bash",
-        "set -euo pipefail",
         f"#SBATCH --job-name={JOB_NAME}",
         # Use absolute paths for output/error and include job id for uniqueness
         f"#SBATCH --output={logs_abs}/plotting.%j.out",
@@ -90,6 +90,7 @@ def _render_slurm_script(
     lines.extend(
         [
             "",
+            "set -euo pipefail",
             # Ensure working dir and logs dir exist at runtime regardless of --chdir support
             f"mkdir -p {logs_abs}",
             f"cd {job_dir_posix}",
