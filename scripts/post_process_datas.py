@@ -17,6 +17,57 @@ from avg_inhomogenity import average_inhom_1d
 from stack_times import stack_artifacts
 from qspectro2d.utils.data_io import load_run_artifact
 
+# Keys we want to remove from artifact metadata after post-processing
+_POSTPROC_META_KEYS_TO_DROP = {
+    "sample_size",
+    "sample_id",
+    "sample_index",
+    "batch_id",
+    "combination_index",
+    "t_index",
+}
+
+
+def _sanitize_artifact_metadata(path: Path, *, keys_to_drop: set[str]) -> Path:
+    """Remove unwanted keys from the metadata_json of a run artifact in-place.
+
+    This rewrites the .npz file preserving all arrays and only updating the
+    embedded JSON string under the "metadata_json" key.
+    """
+    path = Path(path)
+    try:
+        with np.load(path, allow_pickle=False) as bundle:
+            contents = {key: bundle[key] for key in bundle.files}
+
+        meta_key = "metadata_json"
+        if meta_key not in contents:
+            return path
+
+        # Parse, drop, and re-serialize
+        try:
+            meta = json.loads(str(contents[meta_key].item()))
+        except Exception:
+            return path
+
+        changed = False
+        for k in list(keys_to_drop):
+            if k in meta:
+                meta.pop(k, None)
+                changed = True
+
+        if not changed:
+            return path
+
+        contents[meta_key] = np.array(json.dumps(meta, separators=(",", ":")), dtype=np.str_)
+
+        tmp_path = path.with_suffix(".tmp.npz")
+        np.savez_compressed(tmp_path, **contents)
+        tmp_path.replace(path)
+        return path
+    except Exception:
+        # Best-effort: ignore failures so post-processing can continue
+        return path
+
 
 def _load_metadata(job_dir: Path) -> dict[str, Any]:
     metadata_path = job_dir / "metadata.json"
@@ -138,7 +189,11 @@ def post_process_job(
         _log(f"Processing t_index={t_index} using anchor {anchor_path.name}")
         averaged_path = average_inhom_1d(anchor_path, skip_if_exists=skip_inhom)
         _log(f"  → Averaged artifact: {averaged_path}")
-        averaged_paths.append(averaged_path)
+        # Sanitize metadata of the produced averaged artifact
+        sanitized_path = _sanitize_artifact_metadata(
+            Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+        )
+        averaged_paths.append(sanitized_path)
 
     unique_averaged: List[Path] = []
     seen: set[str] = set()
@@ -159,7 +214,10 @@ def post_process_job(
     # Determine whether stacking is required
     if sim_type == "1d" and len(grouped) == 1:
         _log("Single coherence point detected; stacking is not required.")
-        final_path = unique_averaged[0].resolve()
+        # Ensure the single averaged artifact is sanitized
+        final_path = _sanitize_artifact_metadata(
+            unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+        ).resolve()
         _log("=" * 80)
         _log("🎯 To plot the averaged 1D data run:")
         _log(f"python plot_datas.py --abs_path {final_path}")
@@ -183,6 +241,10 @@ def post_process_job(
     _log(f"  {stack_anchor_path}")
 
     stacked_path = stack_artifacts(stack_anchor_path, skip_if_exists=skip_stack).resolve()
+    # Sanitize metadata of the final stacked artifact
+    stacked_path = _sanitize_artifact_metadata(
+        stacked_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+    ).resolve()
 
     _log("=" * 80)
     _log("🎯 To plot the 2D data run:")
