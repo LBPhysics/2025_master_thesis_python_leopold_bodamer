@@ -9,7 +9,7 @@ This helper combines two manual steps executed after HPC computations finish:
    resulting artifact and optionally submit it via ``sbatch``.
 
 The script targets the new run-artifact workflow. It expects the same job
-structure created by ``hpc_dispatch_generalized.py`` and ``run_generalized_batch.py``.
+structure created by ``hpc_dispatch.py`` and ``run_batch.py``.
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def main() -> None:
         "--job_dir",
         type=str,
         required=True,
-        help="Path to batch_jobs_generalized/<job_label> (contains metadata.json)",
+        help="Path to batch_jobs/<job_label> (contains metadata.json)",
     )
     parser.add_argument(
         "--skip_inhom",

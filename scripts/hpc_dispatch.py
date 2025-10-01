@@ -33,7 +33,7 @@ for _parent in SCRIPTS_DIR.parents:
         PROJECT_ROOT = _parent
         break
 
-JOB_ROOT = SCRIPTS_DIR / "batch_jobs_generalized"
+JOB_ROOT = SCRIPTS_DIR / "batch_jobs"
 JOB_ROOT.mkdir(parents=True, exist_ok=True)
 
 
@@ -249,7 +249,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     batch_indices = _split_indices(len(combinations), args.n_batches)
     script_paths: list[Path] = []
-    worker_path = (SCRIPTS_DIR / "run_generalized_batch.py").resolve()
+    worker_path = (SCRIPTS_DIR / "run_batch.py").resolve()
     if not worker_path.exists():
         raise FileNotFoundError(f"Missing worker script: {worker_path}")
 
