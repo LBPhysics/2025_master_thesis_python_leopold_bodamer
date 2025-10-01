@@ -32,6 +32,8 @@ _META_KEY = "metadata_json"
 _T_DET_KEY = "t_det"
 _T_COH_KEY = "t_coh"
 _SAMPLE_KEY = "frequency_sample_cm"
+
+
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -213,7 +215,7 @@ def load_info_file(abs_info_path: Path) -> dict:
         dict: Dictionary containing system parameters and data configuration
     """
     try:
-        print(f"Loading info: {abs_info_path}")
+        # print(f"Loading info: {abs_info_path}")
 
         if not abs_info_path.exists():
             raise FileNotFoundError(f"Info file not found: {abs_info_path}")
@@ -221,7 +223,7 @@ def load_info_file(abs_info_path: Path) -> dict:
         with open(abs_info_path, "rb") as info_file:
             info = pickle.load(info_file)
 
-        print(f"Loaded info: {abs_info_path}")
+        # print(f"Loaded info: {abs_info_path}")
         return info
     except Exception as e:
         print(f"Failed to load info: {abs_info_path}; error: {e}")
