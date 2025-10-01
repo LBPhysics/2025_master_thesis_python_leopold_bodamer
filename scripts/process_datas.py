@@ -33,12 +33,8 @@ _POSTPROC_META_KEYS_TO_DROP = {
     "averaged_count",
     "t_indices",
     "t_coh_axis",
-    "t_coh_value",
     "t_coh",
 }
-
-# For averaged artifacts, keep t_coh_value for potential stacking
-_POSTPROC_META_KEYS_TO_DROP_AVERAGED = _POSTPROC_META_KEYS_TO_DROP - {"t_coh_value"}
 
 
 def _sanitize_artifact_metadata(path: Path, *, keys_to_drop: set[str]) -> Path:

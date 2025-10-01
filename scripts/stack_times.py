@@ -53,7 +53,8 @@ class SimulationSnapshot:
 def _load_entry(path: Path) -> RunEntry:
     artifact = load_run_artifact(path)
     metadata = dict(artifact["metadata"])
-    metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
+    if "t_coh_value" in metadata:
+        metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
 
     signals = {key: np.asarray(val) for key, val in artifact["signals"].items()}
     t_det = np.asarray(artifact["t_det"], dtype=float)
@@ -130,7 +131,8 @@ def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]
 def _sort_entries(entries: Iterable[RunEntry]) -> list[RunEntry]:
     def _sort_key(entry: RunEntry) -> tuple[int, float]:
         t_index = int(entry.metadata.get("t_index", 0))
-        return t_index, float(entry.metadata["t_coh_value"])
+        t_coh = float(entry.metadata.get("t_coh_value", 0.0))
+        return t_index, t_coh
 
     return sorted(entries, key=_sort_key)
 
@@ -151,7 +153,7 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     t_det, signal_types = _ensure_consistency(entries)
 
     t_indices = [int(entry.metadata.get("t_index", idx)) for idx, entry in enumerate(entries)]
-    t_coh_values = [float(entry.metadata["t_coh_value"]) for entry in entries]
+    t_coh_values = [float(entry.metadata.get("t_coh_value", 0.0)) for entry in entries]
     t_coh_axis = np.asarray(t_coh_values, dtype=float)
 
     stacked_signals = {
