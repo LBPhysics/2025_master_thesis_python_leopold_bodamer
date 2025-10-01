@@ -25,11 +25,12 @@ PLOT_SCRIPT = (SCRIPTS_DIR / "plot_datas.py").resolve()
 DEFAULT_SCRIPT_NAME = "plotting.slurm"
 
 JOB_NAME = "plot_data"
-# Default SLURM settings (can be overridden via CLI). Use None to defer to cluster defaults.
-SLURM_PARTITION: str | None = None
-SLURM_CPUS: int | None = 1
-SLURM_MEM: str | None = None
-SLURM_TIME: str | None = None
+# Default SLURM settings used in the generated plotting script.
+# Adjust these to match your cluster and workload.
+SLURM_PARTITION: str | None = "GPGPU"
+SLURM_CPUS: int | None = 2
+SLURM_MEM: str | None = "200G"
+SLURM_TIME: str | None = "30:00"
 
 
 def _next_logs_dir(job_dir: Path) -> Path:
