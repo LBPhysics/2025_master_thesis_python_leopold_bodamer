@@ -35,7 +35,7 @@ from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d import save_simulation_data
 from qspectro2d.config.create_sim_obj import create_base_sim_oqs
 from qspectro2d.core.simulation import SimulationModuleOQS
-from qspectro2d.utils.data_io import save_data_only
+from qspectro2d.utils.data_io import compute_sample_id
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -141,7 +141,6 @@ def run_1d_mode(args) -> None:
 
     saved_paths: list[str] = []
     start_time = time.time()
-    first_save = True
     for idx in indices.tolist():
         cfg_freqs = samples_cm[idx, :].astype(float).tolist()
 
@@ -155,31 +154,26 @@ def run_1d_mode(args) -> None:
         E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
 
         # Persist dataset for this configuration
-        sim_cfg.inhom_index = int(idx)
+        sample_id = compute_sample_id(cfg_freqs)
+        sim_cfg.current_sample_id = sample_id
+        sim_cfg.sample_size = n_inhom
 
         metadata = {
             "signal_types": sim_cfg.signal_types,
             "t_coh_value": t_coh_val,
-            "inhom_group_id": sim_cfg.inhom_group_id,
+            "t_index": 0,
+            "combination_index": int(idx),
+            "sample_index": int(idx),
+            "sample_id": sample_id,
+            "sample_size": n_inhom,
         }
-        if first_save:
-            out_path = save_simulation_data(
-                sim_oqs,
-                metadata,
-                E_sigs,
-                t_det=sim_oqs.t_det,
-                data_root=DATA_DIR,
-            )
-            first_save = False
-        else:
-            out_path = save_data_only(
-                sim_oqs,
-                metadata,
-                E_sigs,
-                sim_oqs.t_det,
-                t_coh=None,
-                data_root=DATA_DIR,
-            )
+        out_path = save_simulation_data(
+            sim_oqs,
+            metadata,
+            E_sigs,
+            t_det=sim_oqs.t_det,
+            data_root=DATA_DIR,
+        )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
 
@@ -191,7 +185,9 @@ def run_1d_mode(args) -> None:
             print("\n🎯 Next step (average inhomogeneous configs), from SCRIPTS_DIR run:")
             print(f"     python avg_inhomogenity.py --abs_path '{example}'")
         else:
-            print(f'\n🎯 To plot, from SCRIPTS_DIR run: \npython plot_datas.py --abs_path "{example}"')
+            print(
+                f'\n🎯 To plot, from SCRIPTS_DIR run: \npython plot_datas.py --abs_path "{example}"'
+            )
     else:
         print("ℹ️  No files saved.")
 
@@ -236,42 +232,35 @@ def run_2d_mode(args) -> None:
             f"📦 Batching: {batch_note}; total t_coh points={N_total}; this job covers no indices (empty chunk)"
         )
 
+    freq_vector = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
+    base_sample_id = compute_sample_id(freq_vector)
+    sim_cfg.sample_size = 1
+
     saved_paths: list[str] = []
     start_time = time.time()
-    first_save = True
     for t_i in indices.tolist():
         t_coh_val = float(t_coh_vals[t_i])
         print(f"\n--- t_coh={t_coh_val:.2f} fs  [{t_i} / {N_total}]---")
         E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
 
-        sim_cfg.inhom_index = None
-        sim_cfg.inhom_enabled = (
-            sim_cfg.inhom_enabled and sim_cfg.inhom_index is not None and sim_cfg.inhom_index > 0
-        )  # stays False for 2D loop here
+        sim_cfg.current_sample_id = base_sample_id
         metadata = {
             "signal_types": sim_cfg.signal_types,
             "t_coh_value": t_coh_val,
-            "inhom_group_id": sim_cfg.inhom_group_id,
+            "t_index": int(t_i),
+            "combination_index": int(t_i),
+            "sample_index": 0,
+            "sample_id": base_sample_id,
+            "sample_size": 1,
         }
-        if first_save:
-            out_path = save_simulation_data(
-                sim_oqs,
-                metadata,
-                E_sigs,
-                t_det=sim_oqs.t_det,
-                t_coh=None,
-                data_root=DATA_DIR,
-            )
-            first_save = False
-        else:
-            out_path = save_data_only(
-                sim_oqs,
-                metadata,
-                E_sigs,
-                sim_oqs.t_det,
-                t_coh=None,
-                data_root=DATA_DIR,
-            )
+        out_path = save_simulation_data(
+            sim_oqs,
+            metadata,
+            E_sigs,
+            t_det=sim_oqs.t_det,
+            t_coh=None,
+            data_root=DATA_DIR,
+        )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
 

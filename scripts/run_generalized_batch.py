@@ -11,16 +11,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
 
+from calc_datas import _pick_config_yaml
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_data_only, save_simulation_data
-
+from qspectro2d.utils.data_io import (
+    save_run_artifact,
+    compute_sample_id,
+    resolve_run_prefix,
+    ensure_run_sidecar,
+)
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -90,12 +96,6 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--config_path",
-        type=str,
-        required=True,
-        help="Absolute or relative path to the YAML configuration used for the simulation",
-    )
-    parser.add_argument(
         "--combos_file",
         type=str,
         required=True,
@@ -131,31 +131,24 @@ def main() -> None:
         default=None,
         help="Total number of batches (metadata only)",
     )
-    parser.add_argument(
-        "--output_root",
-        type=str,
-        default=str(DATA_DIR),
-        help="Destination root directory for saved data",
-    )
-    parser.add_argument(
-        "--revalidate",
-        action="store_true",
-        help="If set, rerun full solver validation on the worker node",
-    )
     args = parser.parse_args()
 
     combos_path = Path(args.combos_file).resolve()
     samples_path = Path(args.samples_file).resolve()
-    config_path = Path(args.config_path).resolve()
-    output_root = Path(args.output_root).resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
+    config_path = _pick_config_yaml().resolve()
+    job_dir = combos_path.parent
+    job_metadata_path = job_dir / "metadata.json"
+    job_metadata: dict[str, Any] | None = None
+    if job_metadata_path.exists():
+        with job_metadata_path.open("r", encoding="utf-8") as handle:
+            job_metadata = json.load(handle)
 
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")
     print(f"Config: {config_path}")
     print(f"Combos file: {combos_path}")
     print(f"Samples file: {samples_path}")
-    print(f"Output root: {output_root}")
+    print(f"Output root: {DATA_DIR}")
 
     combinations = _load_combinations(combos_path)
     if not combinations:
@@ -171,10 +164,11 @@ def main() -> None:
         )
     n_inhom, n_sites = samples.shape
 
-    sim = load_simulation(config_path, validate=args.revalidate)
+    sim = load_simulation(config_path, validate=False)
     sim.simulation_config.sim_type = args.sim_type
     sim.simulation_config.n_inhomogen = n_inhom
-    sim.simulation_config.inhom_enabled = n_inhom > 1
+    sim.simulation_config.sample_size = n_inhom
+    sim.simulation_config.current_sample_id = None
 
     base_freqs = np.asarray(sim.system.frequencies_cm, dtype=float)
     if base_freqs.size != n_sites:
@@ -183,15 +177,27 @@ def main() -> None:
             f"sample columns = {n_sites}, system sites = {base_freqs.size}"
         )
 
+    run_dir, run_prefix = resolve_run_prefix(sim.system, sim.simulation_config, DATA_DIR)
+    extra_sidecar_payload = {"job": job_metadata} if job_metadata is not None else None
+    ensure_run_sidecar(sim, data_root=DATA_DIR, extra_payload=extra_sidecar_payload)
+
+    samples_target = run_dir / f"{run_prefix}_samples.npy"
+    if not samples_target.exists():
+        shutil.copy2(samples_path, samples_target)
+
+    batch_suffix = f"batch_{args.batch_id:03d}.json" if args.batch_id is not None else "batch.json"
+    combos_target = run_dir / f"{run_prefix}_{batch_suffix}"
+    if not combos_target.exists():
+        shutil.copy2(combos_path, combos_target)
+
     t_start = time.time()
     saved_paths: list[str] = []
-    first_save = True
 
     for combo in _iter_combos(combinations):
         t_idx = _coerce_int(combo.get("t_index", combo.get("t_idx", 0)))
         inhom_idx = _coerce_int(combo.get("inhom_index"))
         global_idx = _coerce_int(combo.get("index", len(saved_paths)))
-        t_coh_val = _coerce_float(combo.get("t_coh"))
+        t_coh_val = _coerce_float(combo.get("t_coh_value"))
 
         if inhom_idx < 0 or inhom_idx >= n_inhom:
             raise IndexError(
@@ -199,12 +205,13 @@ def main() -> None:
             )
 
         # Update simulation configuration for this combination
-        sim.simulation_config.inhom_index = inhom_idx
-        sim.simulation_config.t_coh = t_coh_val
         sim.update_delays(t_coh=t_coh_val)
 
         freq_vector = samples[inhom_idx, :].astype(float)
         sim.system.update_frequencies_cm(freq_vector.tolist())
+
+        sample_id = compute_sample_id(freq_vector)
+        sim.simulation_config.current_sample_id = sample_id
 
         print(
             f"\n--- combo {global_idx}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
@@ -217,35 +224,27 @@ def main() -> None:
             "signal_types": sim.simulation_config.signal_types,
             "t_coh_value": t_coh_val,
             "t_index": t_idx,
-            "inhom_index": inhom_idx,
             "combination_index": global_idx,
-            "inhom_group_id": sim.simulation_config.inhom_group_id,
             "sim_type": args.sim_type,
             "batch_id": args.batch_id,
             "n_batches": args.n_batches,
+            "sample_index": inhom_idx,
+            "sample_id": sample_id,
+            "sample_size": n_inhom,
         }
 
         t_det_axis = sim.t_det
 
-        if first_save:
-            path = save_simulation_data(
-                sim,
-                metadata,
-                e_components,
-                t_det=t_det_axis,
-                t_coh=None,
-                data_root=output_root,
-            )
-            first_save = False
-        else:
-            path = save_data_only(
-                sim,
-                metadata,
-                e_components,
-                t_det=t_det_axis,
-                t_coh=None,
-                data_root=output_root,
-            )
+        path = save_run_artifact(
+            sim,
+            signal_arrays=e_components,
+            t_det=t_det_axis,
+            metadata=metadata,
+            frequency_sample_cm=freq_vector,
+            sample_id=sample_id,
+            data_root=DATA_DIR,
+            t_coh=None,
+        )
         saved_paths.append(str(path))
         print(f"    ✅ saved {path}")
 
@@ -261,12 +260,16 @@ def main() -> None:
     print("=" * 80)
 
     # If this is the last batch, suggest post-processing
-    if args.batch_id == args.n_batches - 1:
+    if (
+        args.batch_id is not None
+        and args.n_batches is not None
+        and args.batch_id == args.n_batches - 1
+    ):
         # Find the job directory by going up from combos_file
         combos_dir = Path(args.combos_file).parent
         job_dir = combos_dir.parent  # batch_jobs_generalized/<job_label>
-        print("\n🎯 All batches completed! To post-process the data, from SCIRPTS_DIR run:")
-        print(f"python post_process_datas.py --job_dir {job_dir.resolve()}")
+        print("\n🎯 All batches completed! Finalize and queue plotting from SCRIPTS_DIR with:")
+        print(f"python hpc_plot_datas.py --job_dir {job_dir.resolve()}")
 
 
 if __name__ == "__main__":

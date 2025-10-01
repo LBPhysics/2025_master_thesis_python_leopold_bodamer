@@ -1,186 +1,182 @@
-"""
-Generate and (optionally) submit a SLURM job to plot data.
+#!/usr/bin/env python3
+"""Post-process generalized spectroscopy runs and queue plotting jobs.
 
-Flow (kept simple to match the new stacking script):
-    1) Normalize the provided path to the 1D results directory.
-    2) Invoke `stack_times.py --abs_path <1d_dir>` to build/update the 2D dataset.
-    3) Derive the 2D path deterministically and submit a job to run
-       `plot_datas.py --abs_path <2d_data.npz>`.
+This helper combines two manual steps executed after HPC computations finish:
+
+1. Run :mod:`post_process_datas` to average inhomogeneous samples and stack
+   across coherence points (when applicable).
+2. Generate a ready-to-submit SLURM script that calls :mod:`plot_datas` on the
+   resulting artifact and optionally submit it via ``sbatch``.
+
+The script targets the new run-artifact workflow. It expects the same job
+structure created by ``hpc_dispatch_generalized.py`` and ``run_generalized_batch.py``.
 """
 
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
-import re
-from subprocess import run, CalledProcessError
+
+from post_process_datas import PostProcessResult, post_process_job
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
+PLOT_SCRIPT = (SCRIPTS_DIR / "plot_datas.py").resolve()
+DEFAULT_SCRIPT_NAME = "plotting.slurm"
+
+JOB_NAME = "plot_data"
+SLURM_PARTITION = "GPGPU"
+SLURM_CPUS = 1
+SLURM_MEM = "200G"
+SLURM_TIME = "0-00:30:00"
+CONDA_ENV = "m_env"
 
 
-def _derive_1d_dir(abs_path: str) -> Path:
-    """Return the 1D directory given a path that may be a file or a directory.
+def _next_logs_dir(job_dir: Path) -> Path:
+    """Create (and return) a fresh logs directory inside ``job_dir``."""
 
-    Also sanitizes accidental newlines/carriage-returns or stray quotes from copy/paste.
-    """
-    sanitized = abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
-    p = Path(sanitized).expanduser().resolve()
-    return p if p.is_dir() else p.parent
+    base = job_dir / "plotting_logs"
+    if not base.exists():
+        base.mkdir(parents=True)
+        return base
 
-
-def _derive_2d_dir(from_1d_dir: Path) -> Path:
-    """Map .../data/1d_spectroscopy/... -> .../data/2d_spectroscopy/..."""
-    parts = list(from_1d_dir.parts)
-    try:
-        idx = parts.index("1d_spectroscopy")
-    except ValueError as exc:
-        raise ValueError("The provided path must include '1d_spectroscopy'") from exc
-    parts[idx] = "2d_spectroscopy"
-    return Path(*parts)
+    suffix = 1
+    while True:
+        candidate = job_dir / f"plotting_logs_{suffix}"
+        if not candidate.exists():
+            candidate.mkdir(parents=True)
+            return candidate
+        suffix += 1
 
 
-def ensure_2d_dataset(abs_path: str) -> Path:
-    """Run stacking for the given 1D path and return the absolute 2D data file path.
-
-    Since stacking now saves using save_simulation_data (unique filenames), we parse
-    the stdout for a line like: "Saved 2D dataset: <abs_path>".
-    As a fallback, we search the derived 2D directory for the newest "*_data.npz".
-    """
-    # Accept both a single 1D data file or a directory containing them.
-    sanitized = abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
-    orig_path = Path(sanitized).expanduser().resolve()
-    one_d_dir = _derive_1d_dir(abs_path)
-
-    # Always run stacking (kept simple; idempotent and quick compared to compute)
-    # If a data file is provided, pass the file path to stack_times.py
-    # (it currently assumes in_dir is a file and uses parent()).
-    stack_arg = str(orig_path if orig_path.is_file() else one_d_dir)
-    cmd = ["python", "stack_times.py", "--abs_path", stack_arg]
-    proc = run(cmd, cwd=SCRIPTS_DIR, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"stack_times.py failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-        )
-
-    # Try to parse the saved path from stdout
-    m = re.search(r"Saved 2D dataset:\s*(.+)", proc.stdout)
-    if m:
-        saved_path = Path(m.group(1).strip()).expanduser().resolve()
-        if saved_path.exists():
-            return saved_path
-
-    # Fallback: discover newest *_data.npz in the derived 2D directory
-    base_for_2d = orig_path.parent if orig_path.is_file() else one_d_dir
-    two_d_dir = _derive_2d_dir(base_for_2d)
-    candidates = sorted(two_d_dir.glob("*_data.npz"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if candidates:
-        return candidates[0]
-    raise RuntimeError(
-        "2D dataset not found after stacking; no explicit path in output and no *_data.npz in 2D dir."
-    )
-
-
-def create_plotting_script(
-    abs_path: str,
+def _render_slurm_script(
+    *,
     job_dir: Path,
     logs_dir: Path,
-) -> Path:
-    """Create a SLURM script that runs plot_datas.py with the given abs_path."""
-    plot_py = (SCRIPTS_DIR / "plot_datas.py").resolve()
-    content = f"""#!/bin/bash
-#SBATCH --job-name=plot_data
-#SBATCH --chdir={job_dir}
-#SBATCH --output={logs_dir.name}/plotting.out
-#SBATCH --error={logs_dir.name}/plotting.err
-#SBATCH --partition=GPGPU
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=200G
-#SBATCH --time=0-01:00:00
-#SBATCH --mail-type=END,FAIL
-#SBATCH --mail-user=leopold.bodamer@student.uni-tuebingen.de  # NOTE: CHANGE TO YOUR MAIL HERE
+    final_artifact: Path,
+) -> str:
+    """Return the plotting SLURM script content."""
 
-# Load conda (adjust to your cluster if needed)
-if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
-    source "$HOME/miniconda3/etc/profile.d/conda.sh"
-elif [ -f "/home/$USER/miniconda3/etc/profile.d/conda.sh" ]; then
-    source "/home/$USER/miniconda3/etc/profile.d/conda.sh"
-fi
-conda activate master_env || true
+    job_dir_posix = job_dir.as_posix()
+    logs_rel = logs_dir.relative_to(job_dir).as_posix()
+    plot_path = final_artifact.as_posix()
+    plot_py = PLOT_SCRIPT.as_posix()
 
-# Execute plot_datas.py from scripts (absolute path)
-python {plot_py} --abs_path "{abs_path}"
-"""
-    path = job_dir / "plotting.slurm"
-    # Write with Unix line endings so SLURM doesn't complain on Linux clusters
+    lines = [
+        "#!/bin/bash",
+        "set -euo pipefail",
+        f"#SBATCH --job-name={JOB_NAME}",
+        f"#SBATCH --chdir={job_dir_posix}",
+        f"#SBATCH --output={logs_rel}/plotting.out",
+        f"#SBATCH --error={logs_rel}/plotting.err",
+        f"#SBATCH --partition={SLURM_PARTITION}",
+        f"#SBATCH --cpus-per-task={SLURM_CPUS}",
+        f"#SBATCH --mem={SLURM_MEM}",
+        f"#SBATCH --time={SLURM_TIME}",
+    ]
+
+    lines.extend(
+        [
+            "",
+            "echo 'Launching plot_datas.py'",
+            f'python {plot_py} --abs_path "{plot_path}"',
+        ]
+    )
+
+    return "\n".join(lines) + "\n"
+
+
+def _write_script(job_dir: Path, script_name: str, content: str) -> Path:
+    target = job_dir / script_name
+    target.write_text(content, encoding="utf-8", newline="\n")
+    target.chmod(0o755)
+    return target
+
+
+def _submit_script(script_path: Path) -> bool:
     try:
-        path.write_text(content, newline="\n")
-    except TypeError:
-        path.write_text(content.replace("\r\n", "\n").replace("\r", "\n"))
-    path.chmod(0o755)
-    return path
+        subprocess.run(["sbatch", str(script_path)], check=True)
+        print(f"Submitted {script_path}")
+        return True
+    except FileNotFoundError:
+        print("⚠️  sbatch command not found. Submit the script manually when available.")
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"⚠️  sbatch failed with exit code {exc.returncode}. Submit manually after inspection."
+        )
+    return False
 
 
-def execute_slurm_script(job_dir: Path) -> None:
-    """Submit the generated SLURM script."""
-    slurm_script = job_dir / "plotting.slurm"
-    try:
-        run(["sbatch", str(slurm_script)], check=True)
-        print(f"Submitted {slurm_script}")
-    except (FileNotFoundError, CalledProcessError) as exc:
-        print(f"Failed submitting {slurm_script}: {exc}")
+def _record_target(job_dir: Path, final_artifact: Path) -> None:
+    record = job_dir / "plotting_target.txt"
+    record.write_text(final_artifact.as_posix() + "\n", encoding="utf-8")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate and optionally submit a SLURM job to stack 1D data to 2D and plot it."
+        description=(
+            "Average/stack run artifacts and generate a plotting SLURM script (new pipeline)."
+        )
     )
     parser.add_argument(
-        "--abs_path",
+        "--job_dir",
         type=str,
         required=True,
-        help=(
-            "Absolute path to the 1D directory OR a single 1D data file (e.g., t_coh_50.0_data.npz)."
-        ),
+        help="Path to batch_jobs_generalized/<job_label> (contains metadata.json)",
+    )
+    parser.add_argument(
+        "--skip_inhom",
+        action="store_true",
+        help="Reuse existing averaged artifacts when present",
+    )
+    parser.add_argument(
+        "--skip_stack",
+        action="store_true",
+        help="Reuse existing stacked artifact when present",
     )
     parser.add_argument(
         "--no_submit",
         action="store_true",
-        help="Only generate the job script, do not submit.",
+        help="Only generate the SLURM script; do not call sbatch",
+    )
+    parser.add_argument(
+        "--script_name",
+        default=DEFAULT_SCRIPT_NAME,
+        help=f"Name of the generated SLURM script (default: {DEFAULT_SCRIPT_NAME})",
     )
     args = parser.parse_args()
 
-    print("🔄 Building 2D dataset (via stacking)...")
-    try:
-        two_d_file = ensure_2d_dataset(args.abs_path)
-        print(f"✅ Dataset ready: {two_d_file}")
-    except RuntimeError as e:
-        print(f"❌ Stacking failed: {e}")
+    job_dir = Path(args.job_dir).resolve()
+    result: PostProcessResult | None = post_process_job(
+        job_dir,
+        skip_inhom=args.skip_inhom,
+        skip_stack=args.skip_stack,
+    )
+
+    if result is None:
+        raise SystemExit("Post-processing failed; see messages above.")
+
+    final_artifact = result.final_path
+    print("📦 Final artifact for plotting:")
+    print(f"  {final_artifact}")
+
+    logs_dir = _next_logs_dir(job_dir)
+    script_content = _render_slurm_script(
+        job_dir=job_dir,
+        logs_dir=logs_dir,
+        final_artifact=final_artifact,
+    )
+    script_path = _write_script(job_dir, args.script_name, script_content)
+    _record_target(job_dir, final_artifact)
+
+    print(f"📝 Generated plotting script: {script_path}")
+    print(f"   Logs directory: {logs_dir}")
+
+    if args.no_submit:
+        print("Submission skipped (use without --no_submit to call sbatch).")
         return
 
-    # Create job directory (always the same) and unique logs directory inside
-    base_name = "plotting"
-    job_root = SCRIPTS_DIR / "batch_jobs"
-    job_dir = job_root / base_name
-    job_dir.mkdir(parents=True, exist_ok=True)
-
-    logs_subdir = "logs"
-    suffix = 0
-    while (job_dir / logs_subdir).exists():
-        suffix += 1
-        logs_subdir = f"logs_{suffix}"
-    logs_dir = job_dir / logs_subdir
-    logs_dir.mkdir(parents=True, exist_ok=False)
-
-    # Create the script
-    create_plotting_script(abs_path=str(two_d_file), job_dir=job_dir, logs_dir=logs_dir)
-
-    print(f"Generated plotting script in: {job_dir} (logs -> {logs_subdir})")
-
-    # Optionally submit
-    if not args.no_submit:
-        execute_slurm_script(job_dir)
-    else:
-        print("Submission skipped (use without --no_submit to sbatch).")
+    _submit_script(script_path)
 
 
 if __name__ == "__main__":

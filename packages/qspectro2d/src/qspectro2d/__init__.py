@@ -49,6 +49,8 @@ from .core import (
 )
 
 from .utils.data_io import (
+    save_run_artifact,
+    load_run_artifact,
     save_simulation_data,
     load_simulation_data,
 )
@@ -56,7 +58,6 @@ from .utils import generate_unique_plot_filename
 
 # Spectroscopy exports (imported after data I/O to avoid partial init race)
 from .spectroscopy import extend_time_domain_data, compute_spectra
-
 
 # PUBLIC API - MOST COMMONLY USED
 __all__ = [
@@ -78,6 +79,8 @@ __all__ = [
     "extend_time_domain_data",
     "compute_spectra",
     # Data management
+    "save_run_artifact",
+    "load_run_artifact",
     "save_simulation_data",
     "load_simulation_data",
     # Plotting helpers

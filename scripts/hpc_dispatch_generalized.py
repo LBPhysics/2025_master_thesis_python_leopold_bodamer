@@ -25,7 +25,7 @@ import numpy as np
 from calc_datas import _pick_config_yaml
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
-
+from qspectro2d.utils.data_io import generate_deterministic_data_base
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -50,7 +50,7 @@ class Combination:
         return {
             "index": int(self.index),
             "t_index": int(self.t_index),
-            "t_coh": float(self.t_coh),
+            "t_coh_value": float(self.t_coh),
             "inhom_index": int(self.inhom_index),
         }
 
@@ -66,10 +66,10 @@ def _coherence_axis(sim, sim_type: str) -> np.ndarray:
     return np.asarray(sim.t_det, dtype=float)
 
 
-def _build_combinations(t_values: Sequence[float], n_inhom: int) -> list[Combination]:
+def _build_combinations(t_coh_values: Sequence[float], n_inhom: int) -> list[Combination]:
     combos: list[Combination] = []
     index = 0
-    for t_idx, t_coh in enumerate(t_values):
+    for t_idx, t_coh in enumerate(t_coh_values):
         for inhom_idx in range(n_inhom):
             combos.append(
                 Combination(
@@ -104,18 +104,14 @@ def _render_slurm_script(
     batch_idx: int,
     n_batches: int,
     sim_type: str,
-    config_path: Path,
     combos_filename: str,
     samples_filename: str,
     time_cut: float,
-    output_root: Path,
     worker_path: Path,
     python_executable: Path,
 ) -> str:
     python_cmd = shlex.quote(str(python_executable))
     worker_arg = shlex.quote(str(worker_path))
-    config_arg = shlex.quote(str(config_path))
-    output_arg = shlex.quote(str(output_root))
     return f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/%x.out
@@ -127,14 +123,12 @@ def _render_slurm_script(
 set -euo pipefail
 
 {python_cmd} {worker_arg} \
-    --config_path {config_arg} \
     --combos_file "{combos_filename}" \
     --samples_file "{samples_filename}" \
     --time_cut {time_cut:.12g} \
     --sim_type {sim_type} \
     --batch_id {batch_idx} \
-    --n_batches {n_batches} \
-    --output_root {output_arg}
+    --n_batches {n_batches}
 """
 
 
@@ -165,12 +159,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Simulation dimensionality",
     )
     parser.add_argument(
-        "--n_inhom",
-        type=int,
-        default=None,
-        help="Number of inhomogeneous samples (defaults to config value)",
-    )
-    parser.add_argument(
         "--n_batches",
         type=int,
         default=1,
@@ -183,12 +171,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Optional NumPy random seed for reproducible sampling",
     )
     parser.add_argument(
-        "--config_path",
-        type=str,
-        default=None,
-        help="Override configuration YAML (otherwise auto-selected)",
-    )
-    parser.add_argument(
         "--job_name_prefix",
         type=str,
         default="spec",
@@ -199,23 +181,13 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Only generate local artifacts; skip sbatch submission",
     )
-    parser.add_argument(
-        "--output_root",
-        type=str,
-        default=str(PROJECT_ROOT / "data"),
-        help="Root directory for saved simulation data",
-    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    config_path = (
-        Path(args.config_path).resolve()
-        if args.config_path is not None
-        else _pick_config_yaml().resolve()
-    )
+    config_path = _pick_config_yaml().resolve()
 
     print("=" * 80)
     print("GENERALIZED HPC DISPATCHER")
@@ -227,7 +199,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     _, time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
-    n_inhom = args.n_inhom or int(sim.simulation_config.n_inhomogen or 1)
+    data_base_path = generate_deterministic_data_base(
+        sim.system, sim.simulation_config, data_root=PROJECT_ROOT / "data"
+    )
+
+    n_inhom = sim.simulation_config.n_inhomogen
     if n_inhom <= 0:
         raise ValueError("n_inhom must be positive")
 
@@ -240,16 +216,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         mu=base_freqs,
     )
 
-    t_values = _coherence_axis(sim, args.sim_type)
-    combinations = _build_combinations(t_values, n_inhom)
+    t_coh_values = _coherence_axis(sim, args.sim_type)
+    combinations = _build_combinations(t_coh_values, n_inhom)
 
     print(
         f"Prepared {len(combinations)} combination(s) → "
-        f"|t_coh|={t_values.size}, n_inhom={n_inhom}, n_batches={args.n_batches}"
+        f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}, n_batches={args.n_batches}"
     )
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_label = f"{args.sim_type}_{n_inhom}inh_{t_values.size}t_{timestamp}"
+    job_label = f"{args.sim_type}_{n_inhom}inh_{t_coh_values.size}t_{timestamp}"
     job_dir = JOB_ROOT / job_label
     job_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = job_dir / "logs"
@@ -259,18 +235,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     np.save(samples_file, samples.astype(float))
 
     metadata = {
-        "config_path": str(config_path),
         "sim_type": args.sim_type,
         "n_inhom": n_inhom,
-        "n_t_coh": int(t_values.size),
+        "n_t_coh": int(t_coh_values.size),
         "n_combinations": len(combinations),
         "n_batches": int(args.n_batches),
         "time_cut": float(time_cut),
         "job_label": job_label,
         "generated_at": timestamp,
-        "output_root": str(Path(args.output_root).resolve()),
+        "data_base_path": str(data_base_path),
         "rng_seed": args.rng_seed,
-        "inhom_group_id": str(sim.simulation_config.inhom_group_id),
+        "sample_size": int(n_inhom),
     }
     _write_json(job_dir / "metadata.json", metadata)
 
@@ -298,20 +273,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             batch_idx=batch_idx,
             n_batches=args.n_batches,
             sim_type=args.sim_type,
-            config_path=config_path,
             combos_filename=combos_file.name,
             samples_filename=samples_file.name,
             time_cut=time_cut,
-            output_root=Path(args.output_root).resolve(),
             worker_path=worker_path,
             python_executable=python_executable,
         )
         script_path = job_dir / f"{job_name}.slurm"
         script_path.write_text(slurm_text, encoding="utf-8")
         script_paths.append(script_path)
-        print(
-            f"  batch {batch_idx}: {len(combos_subset)} combo(s) → {script_path.name}"
-        )
+        print(f"  batch {batch_idx}: {len(combos_subset)} combo(s) → {script_path.name}")
 
     print(f"Artifacts written to {job_dir}")
 

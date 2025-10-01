@@ -1,35 +1,19 @@
-"""Stack many 1D per-t_coh results into a single 2D dataset.
-
-Usage:
-  python stack_times.py --abs_path \
-    "/home/<user>/Master_thesis/data/1d_spectroscopy/.../t_dm..._t_wait..._dt.../"
-
-Behavior:
-- Discovers all "*_data.npz" files in the given folder.
-- Loads each file, reads its "t_coh_value", "t_det", and arrays named by "signal_types".
-- Sorts by t_coh_value, stacks arrays into 2D: shape (n_tcoh, n_tdet).
-- Writes output into the corresponding 2D directory by replacing
-  "data/1d_spectroscopy" with "data/2d_spectroscopy" and saving "2d_data.npz".
-
-Keep it simple and readable.
-"""
+"""Stack per-coherence run artifacts into a 2D dataset."""
 
 from __future__ import annotations
 
 import argparse
-import copy
-import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Any, Iterable
 
 import numpy as np
 
 from qspectro2d.utils.data_io import (
-    load_data_file,
-    load_info_file,
-    save_simulation_data,
-    discover_1d_data_files,
-    extract_run_index_from_data_file,
+    load_run_artifact,
+    save_run_artifact,
+    resolve_run_prefix,
+    ensure_run_sidecar,
 )
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
@@ -37,282 +21,270 @@ for _parent in SCRIPTS_DIR.parents:
     if (_parent / ".git").is_dir():
         PROJECT_ROOT = _parent
         break
+else:  # pragma: no cover - defensive fallback
+    raise RuntimeError("Could not locate project root (missing .git directory)")
+
 DATA_DIR = (PROJECT_ROOT / "data").resolve()
 DATA_DIR.mkdir(exist_ok=True)
 
 
-def _load_entries(
-    files: List[Path],
-) -> Tuple[List[float], np.ndarray, List[str], Dict[str, List[np.ndarray]]]:
-    """Load all files and organize data by signal type.
+@dataclass(slots=True)
+class RunEntry:
+    path: Path
+    metadata: dict[str, Any]
+    signals: dict[str, np.ndarray]
+    t_det: np.ndarray
+    frequency_sample_cm: np.ndarray
+    simulation_config: dict[str, Any]
+    system: dict[str, Any]
+    laser: dict[str, Any] | None
+    bath: dict[str, Any] | None
+    job_metadata: dict[str, Any] | None
 
-    Returns:
-        tcoh_vals: list of t_coh_value (floats)
-        t_det: detection time axis (from first file; validated against others)
-        signal_types: list of signal keys
-        per_sig_data: mapping signal_name -> list of 1D arrays (ordered like files)
-    """
-    if not files:
-        raise FileNotFoundError("No *_data.npz files found in the given folder")
 
-    tcoh_vals: List[float] = []
-    t_det: np.ndarray | None = None
-    signal_types: List[str] | None = None
-    per_sig_data: Dict[str, List[np.ndarray]] = {}
+class _SystemStub:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._payload = dict(payload)
 
-    for fp in files:
-        d = load_data_file(fp)
-        if "t_coh_value" not in d:
-            raise KeyError(f"Missing 't_coh_value' in {fp}")
-        if "t_det" not in d:
-            raise KeyError(f"Missing 't_det' in {fp}")
-        if "signal_types" not in d:
-            raise KeyError(f"Missing 'signal_types' in {fp}")
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self._payload)
 
-        tcoh_vals.append(float(d["t_coh_value"]))
-        if t_det is None:
-            t_det = d["t_det"]
-        else:
-            if d["t_det"].shape != t_det.shape or not np.allclose(d["t_det"], t_det):
-                raise ValueError(f"Inconsistent t_det across files; first={files[0]}, bad={fp}")
 
-        stypes = list(map(str, d["signal_types"]))
-        if signal_types is None:
-            signal_types = stypes
-            for s in signal_types:
-                per_sig_data[s] = []
-        else:
-            if stypes != signal_types:
-                raise ValueError(
-                    f"Inconsistent signal_types across files; first={files[0]}, bad={fp}"
-                )
+class _SimulationConfigStub:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._payload = dict(payload)
+        for key, value in self._payload.items():
+            setattr(self, key, value)
 
-        for s in signal_types:
-            if s not in d:
-                raise KeyError(f"Missing data for signal '{s}' in {fp}")
-            arr = d[s]
-            if arr.ndim != 1:
-                raise ValueError(
-                    f"Expected 1D array for signal '{s}' in {fp}, got shape {arr.shape}"
-                )
-            per_sig_data[s].append(arr)
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self._payload)
 
-    assert t_det is not None and signal_types is not None
 
-    # Guard against duplicate coherence values when averaging was not used
-    unique_count = len(set(map(lambda x: float(x), tcoh_vals)))
-    if unique_count != len(tcoh_vals):
+class _LaserStub:
+    def __init__(self, payload: dict[str, Any] | None) -> None:
+        self._payload = dict(payload) if payload else {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self._payload)
+
+
+class _SimulationModuleStub:
+    def __init__(
+        self, system: dict[str, Any], sim_cfg: dict[str, Any], laser: dict[str, Any] | None
+    ) -> None:
+        self.system = _SystemStub(system)
+        self.simulation_config = _SimulationConfigStub(sim_cfg)
+        self.laser = _LaserStub(laser)
+
+
+def _load_entry(path: Path) -> RunEntry:
+    artifact = load_run_artifact(path)
+    metadata = artifact.get("metadata", {})
+    signals = artifact.get("signals", {})
+    if not metadata or not signals:
         raise ValueError(
-            "Found duplicate t_coh_value entries. If this directory contains raw inhomogeneous "
-            "per-config files, run avg_inhomogenity.py first or point this script to the folder "
-            "containing only averaged files (with inhom_avg prefix)."
+            f"Artifact {path} is missing metadata/signals. Ensure you're using new run artifacts."
         )
 
-    return tcoh_vals, t_det, signal_types, per_sig_data
+    metadata = dict(metadata)
+    metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
+
+    t_det = np.asarray(artifact.get("t_det"), dtype=float)
+    freq_sample = np.asarray(artifact.get("frequency_sample_cm"), dtype=float)
+    sim_cfg = dict(artifact.get("simulation_config", {}))
+    system = dict(artifact.get("system", {}))
+    laser = artifact.get("laser")
+    if laser is not None:
+        laser = dict(laser)
+
+    bath = artifact.get("bath")
+    if bath is not None:
+        bath = dict(bath)
+
+    job_metadata = artifact.get("job_metadata")
+    if job_metadata is not None:
+        job_metadata = dict(job_metadata)
+
+    return RunEntry(
+        path=path,
+        metadata=metadata,
+        signals={key: np.asarray(val, dtype=float) for key, val in signals.items()},
+        t_det=t_det,
+        frequency_sample_cm=freq_sample,
+        simulation_config=sim_cfg,
+        system=system,
+        laser=laser,
+        bath=bath,
+        job_metadata=job_metadata,
+    )
 
 
-def _stack_to_2d(
-    tcoh_vals: List[float],
-    signal_types: List[str],
-    per_sig_data: Dict[str, List[np.ndarray]],
-) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
-    """Sort by t_coh and stack into 2D arrays per signal.
-
-    Returns:
-        t_coh: sorted array of t_coh values
-        stacked: mapping signal -> 2D array with shape (n_tcoh, n_tdet)
-    """
-    order = np.argsort(np.asarray(tcoh_vals))
-    t_coh = np.asarray(tcoh_vals, dtype=float)[order]
-    stacked: Dict[str, np.ndarray] = {}
-    for s in signal_types:
-        mat = np.vstack([per_sig_data[s][i] for i in order])
-        stacked[s] = mat
-    return t_coh, stacked
+def _artifact_prefix(path: Path) -> str:
+    stem = path.stem
+    if "_run_" not in stem:
+        raise ValueError(f"Unexpected artifact filename (missing '_run_'): {path.name}")
+    return stem.split("_run_", 1)[0]
 
 
-def _derive_info_path(data_file: Path) -> Path:
-    """Return the matching info file path for a given 1D data file."""
+def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
+    directory = anchor.path.parent
+    prefix = _artifact_prefix(anchor.path)
+    target_sample_id = str(anchor.metadata.get("sample_id"))
+    averaged_flag = bool(anchor.metadata.get("inhom_averaged"))
 
-    run_idx = extract_run_index_from_data_file(data_file)
-    name = data_file.name
+    candidates = sorted(directory.glob(f"{prefix}_run_t*_c*_s*.npz"))
+    entries: list[RunEntry] = []
+    for candidate in candidates:
+        try:
+            entry = _load_entry(candidate)
+        except Exception as exc:
+            print(f"⚠️  Skipping unreadable artifact: {candidate}\n    {exc}")
+            continue
 
-    if run_idx is None:
-        if not name.endswith("_data.npz"):
-            raise ValueError(f"Unexpected 1D data filename format: {name}")
-        return data_file.with_name(name[:-9] + "_info.pkl")
+        if str(entry.metadata.get("sample_id")) != target_sample_id:
+            continue
+        if bool(entry.metadata.get("inhom_averaged")) != averaged_flag:
+            continue
+        entries.append(entry)
 
-    suffix = f"_data_{run_idx}.npz"
-    if not name.endswith(suffix):
-        raise ValueError(f"Unexpected enumerated 1D data filename format: {name}")
+    return entries
 
-    prefix = name[: -len(suffix)]
-    return data_file.with_name(f"{prefix}_info_{run_idx}.pkl")
+
+def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]:
+    if not entries:
+        raise ValueError("No artifacts available for stacking")
+
+    reference = entries[0]
+    t_det = reference.t_det
+    signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
+
+    for entry in entries[1:]:
+        if entry.t_det.shape != t_det.shape or not np.allclose(entry.t_det, t_det):
+            raise ValueError(f"Inconsistent t_det axis for artifact {entry.path}")
+        current_signals = list(entry.metadata.get("signal_types", entry.signals.keys()))
+        if current_signals != signal_types:
+            raise ValueError(
+                "Signal type mismatch across artifacts."
+                f" Reference={signal_types}, current={current_signals}, source={entry.path}"
+            )
+
+    return t_det, signal_types
+
+
+def _sort_entries(entries: Iterable[RunEntry]) -> list[RunEntry]:
+    def _sort_key(entry: RunEntry) -> tuple[int, float]:
+        t_index = int(entry.metadata.get("t_index", 0))
+        return t_index, float(entry.metadata["t_coh_value"])
+
+    return sorted(entries, key=_sort_key)
+
+
+def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
+    """Stack all artifacts that share the same sample_id as ``abs_path`` into a 2D dataset."""
+
+    abs_path = abs_path.expanduser().resolve()
+    anchor = _load_entry(abs_path)
+    entries = _discover_entries(anchor)
+
+    if len(entries) <= 1:
+        raise ValueError(
+            "Need at least two artifacts with distinct coherence indices to build a 2D dataset."
+        )
+
+    entries = _sort_entries(entries)
+    t_det, signal_types = _ensure_consistency(entries)
+
+    t_indices = [int(entry.metadata.get("t_index", idx)) for idx, entry in enumerate(entries)]
+    t_coh_values = [float(entry.metadata["t_coh_value"]) for entry in entries]
+    t_coh_axis = np.asarray(t_coh_values, dtype=float)
+
+    stacked_signals = {
+        sig: np.stack([entry.signals[sig] for entry in entries], axis=0) for sig in signal_types
+    }
+
+    sample_id = str(anchor.metadata.get("sample_id"))
+    combination_indices = [int(entry.metadata.get("combination_index", 0)) for entry in entries]
+    new_combination_index = max(combination_indices) + 1 if combination_indices else len(entries)
+    new_t_index = max(t_indices) + 1 if t_indices else len(entries)
+
+    metadata_out = {**anchor.metadata}
+    metadata_out.update(
+        {
+            "sim_type": "2d",
+            "signal_types": signal_types,
+            "t_index": int(new_t_index),
+            "combination_index": int(new_combination_index),
+            "stacked_points": len(entries),
+            "t_indices": t_indices,
+            "t_coh_axis": t_coh_values,
+            "source_artifacts": [entry.path.name for entry in entries],
+        }
+    )
+    metadata_out.pop("t_coh_value", None)
+
+    sim_cfg = dict(anchor.simulation_config)
+    sim_cfg.update(
+        {
+            "sim_type": "2d",
+            "t_coh": None,
+            "current_sample_id": sample_id,
+            "inhom_averaged": bool(anchor.metadata.get("inhom_averaged")),
+        }
+    )
+
+    sim_stub = _SimulationModuleStub(anchor.system, sim_cfg, anchor.laser)
+
+    extra_payload: dict[str, Any] = {}
+    if anchor.job_metadata:
+        extra_payload["job"] = anchor.job_metadata
+    if anchor.bath:
+        extra_payload["bath"] = anchor.bath
+
+    ensure_run_sidecar(
+        sim_stub,
+        data_root=DATA_DIR,
+        extra_payload=extra_payload or None,
+    )
+
+    out_dir, prefix = resolve_run_prefix(sim_stub.system, sim_stub.simulation_config, DATA_DIR)
+    expected_path = (
+        out_dir
+        / f"{prefix}_run_t{int(new_t_index):03d}_c{int(new_combination_index):04d}_s{sample_id[:8]}.npz"
+    )
+
+    if skip_if_exists and expected_path.exists():
+        print(f"⏭️  Using existing stacked artifact: {expected_path}")
+        return expected_path
+
+    out_path = save_run_artifact(
+        sim_stub,
+        signal_arrays=[stacked_signals[sig] for sig in signal_types],
+        t_det=t_det,
+        metadata=metadata_out,
+        frequency_sample_cm=anchor.frequency_sample_cm,
+        sample_id=sample_id,
+        data_root=DATA_DIR,
+        t_coh=t_coh_axis,
+    )
+
+    print(f"✅ Stacked {len(entries)} artifacts into 2D dataset: {out_path}")
+    return out_path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Stack 1D per-t_coh outputs into a 2D dataset.")
-    parser.add_argument(
-        "--abs_path",
-        type=str,
-        required=True,
-        help="Absolute path to the 1D results directory",
-    )
+    parser = argparse.ArgumentParser(description="Stack per-t_coh artifacts into a 2D dataset.")
+    parser.add_argument("--abs_path", type=str, required=True, help="Path to a run artifact (.npz)")
     parser.add_argument(
         "--skip_if_exists",
         action="store_true",
-        help="If the expected 2D output already exists, skip stacking and exit",
+        help="Reuse an existing 2D artifact if it already exists",
     )
     args = parser.parse_args()
 
-    sanitized = args.abs_path.strip().strip('"').strip("'").replace("\r", "").replace("\n", "")
-    in_dir = Path(sanitized).expanduser().resolve()
-    print("=" * 80)
-    print("STACK 1D -> 2D")
-    print(f"Input directory: {in_dir}")
-
-    run_index = extract_run_index_from_data_file(in_dir)
-    all_candidates = sorted(in_dir.parent.glob("*_data*.npz"))
-    files = discover_1d_data_files(
-        in_dir.parent, run_index=run_index
-    )  # since in_dir is a data file
-    ignored = len(all_candidates) - len(files)
-
-    run_label = "base run" if run_index is None else f"run index {run_index}"
-    print(f"Found {len(files)} files to stack for {run_label}")
-    if ignored > 0:
-        print(f"Ignoring {ignored} file(s) belonging to other runs.")
-
-    if not files:
-        print("No files found for the requested run; aborting.")
-        sys.exit(1)
-
-    # Load the 1D bundle info once and re-use it for saving via save_simulation_data
-    info: Dict[str, Any] | None = None
-    info_path: Path | None = None
-
-    for data_file in files:
-        try:
-            candidate_info = _derive_info_path(data_file)
-            info_candidate = load_info_file(candidate_info)
-            if info_candidate:
-                info = info_candidate
-                info_path = candidate_info
-                break
-        except FileNotFoundError:
-            continue
-
-    if not info or info_path is None:
-        print("❌ Could not locate a valid *_info.pkl companion file; cannot save 2D bundle.")
-        sys.exit(1)
-    else:
-        print(f"Loading info: {info_path}")
-
-    # Prepare a minimal sim module stub with adjusted sim_type for 2D naming
-    system = info["system"]
-    bath = info["bath"]
-    laser = info["laser"]
-    original_cfg = info["sim_config"]
-    cfg_coh_stacked = copy.deepcopy(original_cfg)
-    # Ensure the directory naming routes to 2D location
-    cfg_coh_stacked.sim_type = "2d"
-    cfg_coh_stacked.t_coh = None
-    # Canonicalize inhom index for stacked dataset (avoid arbitrary index from any source 1D file)
-    cfg_coh_stacked.inhom_index = 0
-
-    # Compute expected output path to support skip_if_exists
-    try:
-        from qspectro2d.utils import generate_deterministic_data_base
-
-        det_base = generate_deterministic_data_base(
-            system, cfg_coh_stacked, data_root=DATA_DIR
-        )  # pure stem
-        folder = det_base.parent
-        base_name = det_base.name
-        suffix = "" if run_index is None else f"_{run_index}"
-        candidate_path = folder / f"{base_name}_data{suffix}.npz"
-
-        if args.skip_if_exists:
-            if candidate_path.exists():
-                print(f"⏭️  Skipping: found existing 2D dataset for this run: {candidate_path.name}")
-                print("Done.")
-                return
-
-            siblings = sorted(folder.glob(f"{base_name}*_data.npz"))
-            if siblings:
-                print("ℹ️  Existing 2D dataset(s) in this folder:")
-                for sibling in siblings:
-                    print(f"  - {sibling.name}")
-    except Exception as e:
-        if args.skip_if_exists:
-            print(f"⚠️  Skip-if-exists heuristic failed: {e}")
-
-    # Proceed with loading/staking since we didn't early-return
-    tcoh_vals, t_det, signal_types, per_sig_data = _load_entries(files)
-    t_coh, stacked = _stack_to_2d(tcoh_vals, signal_types, per_sig_data)
-
-    # --- Contribution analysis & reporting ---
-    # Build per-row non-zero masks from stacked data:
-    # mask_any: row has any non-zero across any signal
-    # mask_all: row has non-zero in every signal (i.e., no all-zero signal at that t_coh)
-    # mask_all_zero: row is all-zero across all signals
-    n_rows = len(t_coh)
-    if n_rows > 0:
-        per_signal_row_any = []
-        for s in signal_types:
-            arr2d = stacked[s]
-            # Ensure correct shape
-            if arr2d.ndim != 2 or arr2d.shape[0] != n_rows:
-                raise ValueError(
-                    f"Stacked array for signal '{s}' has unexpected shape {arr2d.shape}"
-                )
-            per_signal_row_any.append(np.any(arr2d != 0, axis=1))
-
-        # Combine across signals
-        per_signal_row_any = np.stack(per_signal_row_any, axis=0)  # (n_signals, n_rows)
-        mask_any = np.any(per_signal_row_any, axis=0)
-        mask_all = np.all(per_signal_row_any, axis=0)
-        mask_all_zero = ~mask_any
-
-        # Pretty-print helpers
-        def fmt_vals(vals: np.ndarray) -> str:
-            return ", ".join(f"{v:.3f}" for v in vals)
-
-        idx_all = np.arange(n_rows)
-        print("-" * 80)
-        print(f"Processed coherence values (n={n_rows}):")
-
-        # Rows entirely zero across all signals
-        zero_idxs = idx_all[mask_all_zero]
-        zero_vals = t_coh[mask_all_zero]
-        print(f"Rows all-zero across signals (n={zero_idxs.size}):")
-        if zero_idxs.size:
-            print(f"  indices: [{', '.join(map(str, zero_idxs))}]")
-            print(f"  t_coh(fs): [{fmt_vals(zero_vals)}]")
-        else:
-            print("  (none)")
-
-    from qspectro2d.core import SimulationModuleOQS  # avoid circular import
-
-    sim_coh_stacked = SimulationModuleOQS(cfg_coh_stacked, system, laser, bath)
-    metadata: Dict[str, Any] = {
-        "signal_types": list(signal_types),
-    }
-    datas: List[np.ndarray] = [stacked[s] for s in signal_types]
-
-    out_path = save_simulation_data(
-        sim_module=sim_coh_stacked,
-        metadata=metadata,
-        datas=datas,
-        t_det=t_det,
-        t_coh=t_coh,
-        data_root=DATA_DIR,
-    )
-
-    print(f"Saved 2D dataset: {out_path}")
-    print("=" * 80)
-    print(f"\n🎯 To plot the 2D data, from SCRIPTS_DIR run:")
-    print(f"python plot_datas.py --abs_path {out_path}")
+    stacked_path = stack_artifacts(Path(args.abs_path), skip_if_exists=args.skip_if_exists)
+    print(f"Saved 2D dataset: {stacked_path}")
+    print("\n🎯 Next: plot with")
+    print(f"python plot_datas.py --abs_path {stacked_path}")
 
 
 if __name__ == "__main__":

@@ -17,34 +17,18 @@ if TYPE_CHECKING:
 
 
 def _generate_base_filename(sim_config: "SimulationConfig") -> str:
-    """Deterministic base filename including coherence time and inhom index.
+    """Deterministic base filename for simulation outputs.
 
-        1d_inhom_avg_t_coh_<value>_inhom_<idx>
-        2d_inhom_000
-        2d_inhom_avg
+    We keep the stem coarse so that all runs belonging to the same logical
+    configuration (system + simulation settings) share a common directory.
+    """
 
-        <value>: coherence time (fs), compact float (up to 6 significant digits)
-        <idx>  : zero-padded integer ("000" for homogeneous / averaged runs)
-
-    Uses the official ``SimulationConfig.inhom_index`` field introduced for
-    bookkeeping."""
-
-    parts: list[str] = []
-    parts.append(sim_config.sim_type)
-    # Collect inhom averaged markers
-    if sim_config.inhom_averaged is True:
+    parts: list[str] = [sim_config.sim_type]
+    if sim_config.inhom_averaged:
         parts.append("inhom_avg")
-
-    t_coh_val = sim_config.t_coh
-    if t_coh_val is not None:
-        t_coh_part = (
-            f"t_coh_{float(t_coh_val):.6g}"  # removes trailing zeros if possible
-        )
-        parts.append(t_coh_part)
-    
-    if sim_config.inhom_index is not None:
-        parts.append(f"inhom_{int(sim_config.inhom_index):03d}")
-    base = f"{'_'.join(parts)}"
+    parts.append(f"ninhom_{int(sim_config.n_inhomogen):03d}")
+    parts.append(f"samplesz_{int(sim_config.sample_size):03d}")
+    base = "_".join(parts)
     return base
 
 
@@ -148,7 +132,18 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
         f"t_dm{sim_f.get('t_det_max', 'na')}_t_wait_{sim_f.get('t_wait', 'na')}_dt_{sim_f.get('dt', 'na')}"
     )
 
-    return Path(*parts)
+    base_path = Path(*parts)
+    if base_path.exists():
+        i = 1
+        while True:
+            candidate_name = f"{parts[-1]}_{i}"
+            candidate_parts = parts[:-1] + [candidate_name]
+            candidate_full = Path(*candidate_parts)
+            if not candidate_full.exists():
+                return Path(*candidate_parts)
+            i += 1
+    else:
+        return base_path
 
 
 def generate_deterministic_data_base(
