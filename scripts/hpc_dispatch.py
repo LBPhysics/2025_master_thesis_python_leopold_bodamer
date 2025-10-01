@@ -115,7 +115,7 @@ def _render_slurm_script(
 #SBATCH --output=logs/%x.out
 #SBATCH --error=logs/%x.err
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=2G
+#SBATCH --mem=1G
 #SBATCH --time=0-04:00:00
 
 set -euo pipefail
