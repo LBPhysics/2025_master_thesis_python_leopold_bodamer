@@ -177,7 +177,7 @@ def save_run_artifact(
         payload[_T_COH_KEY] = np.asarray(t_coh, dtype=float)
 
     for sig, data in zip(signal_types, signal_arrays):
-        payload[f"{_SIGNAL_PREFIX}{sig}"] = np.asarray(data, dtype=float)
+        payload[f"{_SIGNAL_PREFIX}{sig}"] = np.asarray(data)
 
     np.savez_compressed(abs_path, **payload)
     return abs_path

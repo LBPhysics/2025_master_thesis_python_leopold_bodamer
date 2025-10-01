@@ -25,11 +25,11 @@ PLOT_SCRIPT = (SCRIPTS_DIR / "plot_datas.py").resolve()
 DEFAULT_SCRIPT_NAME = "plotting.slurm"
 
 JOB_NAME = "plot_data"
-SLURM_PARTITION = "GPGPU"
-SLURM_CPUS = 1
-SLURM_MEM = "200G"
-SLURM_TIME = "0-00:30:00"
-CONDA_ENV = "m_env"
+# Default SLURM settings (can be overridden via CLI). Use None to defer to cluster defaults.
+SLURM_PARTITION: str | None = None
+SLURM_CPUS: int | None = 1
+SLURM_MEM: str | None = None
+SLURM_TIME: str | None = None
 
 
 def _next_logs_dir(job_dir: Path) -> Path:
@@ -54,11 +54,16 @@ def _render_slurm_script(
     job_dir: Path,
     logs_dir: Path,
     final_artifact: Path,
+    partition: str | None,
+    cpus: int | None,
+    mem: str | None,
+    time_limit: str | None,
 ) -> str:
     """Return the plotting SLURM script content."""
 
     job_dir_posix = job_dir.as_posix()
-    logs_rel = logs_dir.relative_to(job_dir).as_posix()
+    # Use absolute log paths to avoid issues when --chdir is ignored by older SLURM versions
+    logs_abs = logs_dir.resolve().as_posix()
     plot_path = final_artifact.as_posix()
     plot_py = PLOT_SCRIPT.as_posix()
 
@@ -66,18 +71,27 @@ def _render_slurm_script(
         "#!/bin/bash",
         "set -euo pipefail",
         f"#SBATCH --job-name={JOB_NAME}",
-        f"#SBATCH --chdir={job_dir_posix}",
-        f"#SBATCH --output={logs_rel}/plotting.out",
-        f"#SBATCH --error={logs_rel}/plotting.err",
-        f"#SBATCH --partition={SLURM_PARTITION}",
-        f"#SBATCH --cpus-per-task={SLURM_CPUS}",
-        f"#SBATCH --mem={SLURM_MEM}",
-        f"#SBATCH --time={SLURM_TIME}",
+        # Use absolute paths for output/error and include job id for uniqueness
+        f"#SBATCH --output={logs_abs}/plotting.%j.out",
+        f"#SBATCH --error={logs_abs}/plotting.%j.err",
     ]
+
+    # Optional SLURM resources
+    if partition:
+        lines.append(f"#SBATCH --partition={partition}")
+    if cpus:
+        lines.append(f"#SBATCH --cpus-per-task={cpus}")
+    if mem:
+        lines.append(f"#SBATCH --mem={mem}")
+    if time_limit:
+        lines.append(f"#SBATCH --time={time_limit}")
 
     lines.extend(
         [
             "",
+            # Ensure working dir and logs dir exist at runtime regardless of --chdir support
+            f"mkdir -p {logs_abs}",
+            f"cd {job_dir_posix}",
             "echo 'Launching plot_datas.py'",
             f'python {plot_py} --abs_path "{plot_path}"',
         ]
@@ -144,6 +158,7 @@ def main() -> None:
         default=DEFAULT_SCRIPT_NAME,
         help=f"Name of the generated SLURM script (default: {DEFAULT_SCRIPT_NAME})",
     )
+    # SLURM resources are configured via module-level defaults above; no CLI needed.
     args = parser.parse_args()
 
     job_dir = Path(args.job_dir).resolve()
@@ -165,6 +180,10 @@ def main() -> None:
         job_dir=job_dir,
         logs_dir=logs_dir,
         final_artifact=final_artifact,
+        partition=SLURM_PARTITION,
+        cpus=SLURM_CPUS,
+        mem=SLURM_MEM,
+        time_limit=SLURM_TIME,
     )
     script_path = _write_script(job_dir, args.script_name, script_content)
     _record_target(job_dir, final_artifact)
