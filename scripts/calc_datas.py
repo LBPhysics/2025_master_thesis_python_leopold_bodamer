@@ -9,7 +9,7 @@ Two execution modes sharing the same underlying simulation object:
         and computes one 1D trace per point. Each processed ``t_coh`` produces an
         individual file which can later be stacked into a 2D dataset using ``stack_times.py``.
 
-The resulting files are stored via ``save_simulation_data`` and contain
+The resulting files are stored via ``save_run_artifact`` and contain
 metadata keys required by downstream stacking & plotting scripts:
     - signal_types
     - t_coh_value
@@ -32,7 +32,7 @@ import numpy as np
 
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d import save_simulation_data
+from qspectro2d.utils.data_io import save_run_artifact
 from qspectro2d.config.create_sim_obj import create_base_sim_oqs
 from qspectro2d.core.simulation import SimulationModuleOQS
 from qspectro2d.utils.data_io import compute_sample_id
@@ -139,6 +139,17 @@ def run_1d_mode(args) -> None:
             f"📦 Batching: {batch_note}; total configs={n_inhom}; this job covers no indices (empty chunk)"
         )
 
+    from qspectro2d.utils.data_io import generate_deterministic_data_base
+
+    data_base_path = generate_deterministic_data_base(
+        sim_oqs.system, sim_oqs.simulation_config, data_root=DATA_DIR
+    )
+    job_metadata = {
+        "sim_type": args.sim_type,
+        "time_cut": float(time_cut),
+        "data_base_path": str(data_base_path),
+    }
+
     saved_paths: list[str] = []
     start_time = time.time()
     for idx in indices.tolist():
@@ -156,7 +167,6 @@ def run_1d_mode(args) -> None:
         # Persist dataset for this configuration
         sample_id = compute_sample_id(cfg_freqs)
         sim_cfg.current_sample_id = sample_id
-        sim_cfg.sample_size = n_inhom
 
         metadata = {
             "signal_types": sim_cfg.signal_types,
@@ -165,14 +175,16 @@ def run_1d_mode(args) -> None:
             "combination_index": int(idx),
             "sample_index": int(idx),
             "sample_id": sample_id,
-            "sample_size": n_inhom,
         }
-        out_path = save_simulation_data(
+        out_path = save_run_artifact(
             sim_oqs,
-            metadata,
-            E_sigs,
+            signal_arrays=E_sigs,
             t_det=sim_oqs.t_det,
+            metadata=metadata,
+            frequency_sample_cm=np.asarray(cfg_freqs, dtype=float),
             data_root=DATA_DIR,
+            t_coh=None,
+            extra_payload={"job": job_metadata},
         )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
@@ -202,9 +214,9 @@ def run_2d_mode(args) -> None:
     print("🎯 Running 2D mode (iterate over t_det as t_coh)")
 
     # Reuse detection times as coherence-axis grid
-    t_coh_vals = (
-        sim_oqs.t_det
-    )  # NOTE [::10] could take every 10th value to check functionality on local pc
+    t_coh_vals = sim_oqs.t_det[
+        ::10
+    ]  # NOTE [::10] could take every 10th value to check functionality on local pc
     N_total = len(t_coh_vals)
 
     # Determine index subset for batching
@@ -216,7 +228,6 @@ def run_2d_mode(args) -> None:
         batch_note = "all"
     else:
         # Split into contiguous chunks as evenly as possible
-        # Use numpy to avoid off-by-one; ensures full coverage
         chunks = np.array_split(np.arange(N_total), n_batches)
         indices = chunks[batch_idx]
         batch_note = f"batch {batch_idx+1}/{n_batches} (size={indices.size})"
@@ -234,7 +245,17 @@ def run_2d_mode(args) -> None:
 
     freq_vector = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
     base_sample_id = compute_sample_id(freq_vector)
-    sim_cfg.sample_size = 1
+
+    from qspectro2d.utils.data_io import generate_deterministic_data_base
+
+    data_base_path = generate_deterministic_data_base(
+        sim_oqs.system, sim_oqs.simulation_config, data_root=DATA_DIR
+    )
+    job_metadata = {
+        "sim_type": args.sim_type,
+        "time_cut": float(time_cut),
+        "data_base_path": str(data_base_path),
+    }
 
     saved_paths: list[str] = []
     start_time = time.time()
@@ -251,15 +272,17 @@ def run_2d_mode(args) -> None:
             "combination_index": int(t_i),
             "sample_index": 0,
             "sample_id": base_sample_id,
-            "sample_size": 1,
         }
-        out_path = save_simulation_data(
+
+        out_path = save_run_artifact(
             sim_oqs,
-            metadata,
-            E_sigs,
+            signal_arrays=E_sigs,
             t_det=sim_oqs.t_det,
-            t_coh=None,
+            metadata=metadata,
+            frequency_sample_cm=freq_vector,
             data_root=DATA_DIR,
+            t_coh=None,
+            extra_payload={"job": job_metadata},
         )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")

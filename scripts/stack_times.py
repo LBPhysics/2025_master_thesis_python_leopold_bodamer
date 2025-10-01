@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
 
 from qspectro2d.utils.data_io import (
+    ensure_info_file,
     load_run_artifact,
-    save_run_artifact,
     resolve_run_prefix,
-    ensure_run_sidecar,
+    save_run_artifact,
 )
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
@@ -21,7 +21,7 @@ for _parent in SCRIPTS_DIR.parents:
     if (_parent / ".git").is_dir():
         PROJECT_ROOT = _parent
         break
-else:  # pragma: no cover - defensive fallback
+else:
     raise RuntimeError("Could not locate project root (missing .git directory)")
 
 DATA_DIR = (PROJECT_ROOT / "data").resolve()
@@ -35,80 +35,42 @@ class RunEntry:
     signals: dict[str, np.ndarray]
     t_det: np.ndarray
     frequency_sample_cm: np.ndarray
-    simulation_config: dict[str, Any]
-    system: dict[str, Any]
-    laser: dict[str, Any] | None
-    bath: dict[str, Any] | None
-    job_metadata: dict[str, Any] | None
+    simulation_config: Any
+    system: Any
+    laser: Any | None
+    bath: Any | None
+    job_metadata: Any | None
 
 
-class _SystemStub:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self._payload = dict(payload)
-
-    def to_dict(self) -> dict[str, Any]:
-        return dict(self._payload)
-
-
-class _SimulationConfigStub:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self._payload = dict(payload)
-        for key, value in self._payload.items():
-            setattr(self, key, value)
-
-    def to_dict(self) -> dict[str, Any]:
-        return dict(self._payload)
-
-
-class _LaserStub:
-    def __init__(self, payload: dict[str, Any] | None) -> None:
-        self._payload = dict(payload) if payload else {}
-
-    def to_dict(self) -> dict[str, Any]:
-        return dict(self._payload)
-
-
-class _SimulationModuleStub:
-    def __init__(
-        self, system: dict[str, Any], sim_cfg: dict[str, Any], laser: dict[str, Any] | None
-    ) -> None:
-        self.system = _SystemStub(system)
-        self.simulation_config = _SimulationConfigStub(sim_cfg)
-        self.laser = _LaserStub(laser)
+@dataclass(slots=True)
+class SimulationSnapshot:
+    system: Any
+    simulation_config: Any
+    laser: Any | None = None
+    bath: Any | None = None
 
 
 def _load_entry(path: Path) -> RunEntry:
     artifact = load_run_artifact(path)
-    metadata = artifact.get("metadata", {})
-    signals = artifact.get("signals", {})
-    if not metadata or not signals:
-        raise ValueError(
-            f"Artifact {path} is missing metadata/signals. Ensure you're using new run artifacts."
-        )
-
-    metadata = dict(metadata)
+    metadata = dict(artifact["metadata"])
     metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
 
-    t_det = np.asarray(artifact.get("t_det"), dtype=float)
-    freq_sample = np.asarray(artifact.get("frequency_sample_cm"), dtype=float)
-    sim_cfg = dict(artifact.get("simulation_config", {}))
-    system = dict(artifact.get("system", {}))
+    signals = {key: np.asarray(val) for key, val in artifact["signals"].items()}
+    t_det = np.asarray(artifact["t_det"], dtype=float)
+    freq_sample = np.asarray(artifact["frequency_sample_cm"], dtype=float)
+    sim_cfg = artifact["simulation_config"]
+    system = artifact["system"]
     laser = artifact.get("laser")
-    if laser is not None:
-        laser = dict(laser)
-
     bath = artifact.get("bath")
-    if bath is not None:
-        bath = dict(bath)
-
     job_metadata = artifact.get("job_metadata")
-    if job_metadata is not None:
-        job_metadata = dict(job_metadata)
+
+    if sim_cfg is None or system is None:
+        raise ValueError(f"Artifact {path} is missing simulation context")
 
     return RunEntry(
         path=path,
         metadata=metadata,
-        signals={key: np.asarray(val, dtype=float) for key, val in signals.items()},
+        signals=signals,
         t_det=t_det,
         frequency_sample_cm=freq_sample,
         simulation_config=sim_cfg,
@@ -132,15 +94,9 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     target_sample_id = str(anchor.metadata.get("sample_id"))
     averaged_flag = bool(anchor.metadata.get("inhom_averaged"))
 
-    candidates = sorted(directory.glob(f"{prefix}_run_t*_c*_s*.npz"))
     entries: list[RunEntry] = []
-    for candidate in candidates:
-        try:
-            entry = _load_entry(candidate)
-        except Exception as exc:
-            print(f"⚠️  Skipping unreadable artifact: {candidate}\n    {exc}")
-            continue
-
+    for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
+        entry = _load_entry(candidate)
         if str(entry.metadata.get("sample_id")) != target_sample_id:
             continue
         if bool(entry.metadata.get("inhom_averaged")) != averaged_flag:
@@ -222,52 +178,48 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     )
     metadata_out.pop("t_coh_value", None)
 
-    sim_cfg = dict(anchor.simulation_config)
-    sim_cfg.update(
-        {
-            "sim_type": "2d",
-            "t_coh": None,
-            "current_sample_id": sample_id,
-            "inhom_averaged": bool(anchor.metadata.get("inhom_averaged")),
-        }
+    sim_cfg = replace(
+        anchor.simulation_config,
+        sim_type="2d",
+        t_coh=None,
+        current_sample_id=sample_id,
+        inhom_averaged=bool(anchor.metadata.get("inhom_averaged")),
     )
 
-    sim_stub = _SimulationModuleStub(anchor.system, sim_cfg, anchor.laser)
-
-    extra_payload: dict[str, Any] = {}
-    if anchor.job_metadata:
-        extra_payload["job"] = anchor.job_metadata
-    if anchor.bath:
-        extra_payload["bath"] = anchor.bath
-
-    ensure_run_sidecar(
-        sim_stub,
-        data_root=DATA_DIR,
-        extra_payload=extra_payload or None,
+    snapshot = SimulationSnapshot(
+        system=anchor.system,
+        simulation_config=sim_cfg,
+        laser=anchor.laser,
+        bath=anchor.bath,
     )
 
-    out_dir, prefix = resolve_run_prefix(sim_stub.system, sim_stub.simulation_config, DATA_DIR)
+    extra_payload: dict[str, Any] | None = None
+    if anchor.job_metadata or anchor.bath:
+        extra_payload = {}
+        if anchor.job_metadata:
+            extra_payload["job_metadata"] = anchor.job_metadata
+        if anchor.bath:
+            extra_payload["bath"] = anchor.bath
+
+    ensure_info_file(snapshot, data_root=DATA_DIR, extra_payload=extra_payload)
+
+    out_dir, prefix = resolve_run_prefix(snapshot.system, snapshot.simulation_config, DATA_DIR)
     expected_path = (
-        out_dir
-        / f"{prefix}_run_t{int(new_t_index):03d}_c{int(new_combination_index):04d}_s{sample_id[:8]}.npz"
+        out_dir / f"{prefix}_run_t{int(new_t_index):03d}_c{int(new_combination_index):04d}.npz"
     )
 
     if skip_if_exists and expected_path.exists():
-        print(f"⏭️  Using existing stacked artifact: {expected_path}")
         return expected_path
 
     out_path = save_run_artifact(
-        sim_stub,
+        snapshot,
         signal_arrays=[stacked_signals[sig] for sig in signal_types],
         t_det=t_det,
         metadata=metadata_out,
         frequency_sample_cm=anchor.frequency_sample_cm,
-        sample_id=sample_id,
         data_root=DATA_DIR,
         t_coh=t_coh_axis,
     )
-
-    print(f"✅ Stacked {len(entries)} artifacts into 2D dataset: {out_path}")
     return out_path
 
 

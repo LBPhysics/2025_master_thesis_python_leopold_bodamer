@@ -606,7 +606,7 @@ def main():
         # Final summary
         print(f"✅ Done. Saved {len(all_saved)} file(s).")
         print(
-            f" To see them go to the directory:\n   {Path(all_saved[0]).parent if all_saved else '—'}"
+            f"To see them go to the directory:\n{Path(all_saved[0]).parent if all_saved else '—'}"
         )
     except Exception as e:
         print(f"❌ Error: {e}")

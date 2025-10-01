@@ -26,10 +26,6 @@ COMPONENT_MAP: dict[str, tuple[int, int, int]] = {
 RELATIVE_E0S = [1.0, 1.0, 0.1]
 
 
-# solver defaults  # very rough estimate, not optimized
-
-SOLVER_OPTIONS = {"nsteps": 200000, "atol": 1e-6, "rtol": 1e-4}
-
 # Validation thresholds for physics checks
 NEGATIVE_EIGVAL_THRESHOLD = -1e-3
 TRACE_TOLERANCE = 1e-6
@@ -69,8 +65,8 @@ SOLVER_OPTIONS = {
     #    "nsteps": 200000,
     #    "atol": 1e-6,
     #    "rtol": 1e-4,
-}  # TODO can i also include redfield options here?
-
+    # "secular_cutoff", TODO can i also include redfield options here?
+}
 # === BATH SYSTEM DEFAULTS ===
 # frequencies = [convert_cm_to_fs(freq_cm) for freq_cm in FREQUENCIES_CM]
 BATH_TYPE = "ohmic"  # TODO at the moment only ohmic baths are supported

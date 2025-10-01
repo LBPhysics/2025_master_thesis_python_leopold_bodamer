@@ -8,6 +8,7 @@ and directory paths for simulation data and plots.
 from __future__ import annotations
 
 # IMPORTS
+from email.mime import base
 from pathlib import Path
 from typing import Union, TYPE_CHECKING
 
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
     from qspectro2d.core.simulation.sim_config import SimulationConfig
 
 
-def _generate_base_filename(sim_config: "SimulationConfig") -> str:
+def _generate_base_stem(sim_config: "SimulationConfig") -> str:
     """Deterministic base filename for simulation outputs.
 
     We keep the stem coarse so that all runs belonging to the same logical
@@ -25,9 +26,9 @@ def _generate_base_filename(sim_config: "SimulationConfig") -> str:
 
     parts: list[str] = [sim_config.sim_type]
     if sim_config.inhom_averaged:
-        parts.append("inhom_avg")
-    parts.append(f"ninhom_{int(sim_config.n_inhomogen):03d}")
-    parts.append(f"samplesz_{int(sim_config.sample_size):03d}")
+        parts.append("avg")
+    if sim_config.sim_type == "2d":
+        parts.append("stacked")
     base = "_".join(parts)
     return base
 
@@ -110,16 +111,16 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
         parts.append(f"{n_atoms}_atoms")
 
     # Add solver if available
-    parts.append(sim_f.get("ode_solver") or "solver?")
+    parts.append(sim_f.get("ode_solver"))
 
     # Add RWA if available
     parts.append("RWA" if sim_f.get("rwa_sl") else "noRWA")
 
     # For inhomogeneous batches, avoid embedding per-run numeric parameters to keep a stable folder
-    n_inhomogen = int(sim_f.get("n_inhomogen", 1) or 1)
+    n_inhomogen = int(sim_f.get("n_inhomogen", 1))
     if n_inhomogen > 1:
         # Generic markers so all inhom configs land in the same directory
-        parts.append("inhom")
+        parts.append(f"inhom_{sys_f.get('delta_inhomogen', '0')}")
 
     if n_atoms > 1:
         # Add coupling strength if applicable. For inhom runs, avoid numeric per-run values.
@@ -129,21 +130,11 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
 
     # Add time parameters
     parts.append(
-        f"t_dm{sim_f.get('t_det_max', 'na')}_t_wait_{sim_f.get('t_wait', 'na')}_dt_{sim_f.get('dt', 'na')}"
+        f"t_dm{sim_f.get('t_det_max', 'na')}_t_wait{sim_f.get('t_wait', 'na')}_dt_{sim_f.get('dt', 'na')}"
     )
 
     base_path = Path(*parts)
-    if base_path.exists():
-        i = 1
-        while True:
-            candidate_name = f"{parts[-1]}_{i}"
-            candidate_parts = parts[:-1] + [candidate_name]
-            candidate_full = Path(*candidate_parts)
-            if not candidate_full.exists():
-                return Path(*candidate_parts)
-            i += 1
-    else:
-        return base_path
+    return base_path
 
 
 def generate_deterministic_data_base(
@@ -164,28 +155,8 @@ def generate_deterministic_data_base(
     abs_path = Path(data_root) / relative_path
     if ensure:
         abs_path.mkdir(parents=True, exist_ok=True)
-    base_name = _generate_base_filename(sim_config)
+    base_name = _generate_base_stem(sim_config)
     return abs_path / base_name
-
-
-def generate_unique_data_filename(
-    system: "AtomicSystem",
-    sim_config: "SimulationConfig",
-    *,
-    data_root: Union[str, Path],
-    ensure: bool = True,
-) -> str:
-    """Return unique (possibly enumerated) base filename path (no extension).
-
-    If the deterministic stem exists already (any file with that stem), an
-    incrementing _<n> suffix is appended to the stem itself. The caller can
-    then append domain-specific suffixes like ``_data`` / ``_info``.
-    """
-    deterministic = generate_deterministic_data_base(
-        system, sim_config, data_root=data_root, ensure=ensure
-    )
-    unique = _generate_unique_filename(deterministic.parent, deterministic.name)
-    return unique
 
 
 def generate_unique_plot_filename(
@@ -221,14 +192,24 @@ def generate_unique_plot_filename(
 
     # Start with basic structure
     relative_path = generate_base_sub_dir(sim_config, system)
-    path = Path(figures_root) / relative_path
+    abs_path = Path(figures_root) / relative_path
     if ensure:
-        path.mkdir(parents=True, exist_ok=True)
+        abs_path.mkdir(parents=True, exist_ok=True)
+
+    if abs_path.exists():
+        i = 1
+        while True:
+            candidate_name = f"{str(abs_path)}_{i}"
+            candidate_full = Path(candidate_name)
+            if not candidate_full.exists():
+                break
+            i += 1
+        abs_path = candidate_full
 
     # Mirror flipped ordering for averaged markers so plots group nicely
-    base_core = _generate_base_filename(sim_config)
+    base_core = _generate_base_stem(sim_config)
     base_name = f"{base_core}_{domain}_domain"
     if component:
         base_name += f"_{component}"
-    filename = _generate_unique_filename(path, base_name)
+    filename = _generate_unique_filename(abs_path, base_name)
     return filename

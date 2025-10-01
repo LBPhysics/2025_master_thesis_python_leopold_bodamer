@@ -200,7 +200,6 @@ def load_simulation(
             "envelope_type": envelope,
             "coupling_cm": coupling_cm,
             "delta_inhomogen_cm": delta_inhomogen_cm,
-            "solver_options": dflt.SOLVER_OPTIONS,  # TODO add those to the sim_config class
             "sim_type": sim_type,  # factory defaults (could expose later)
             "max_workers": max_workers,
         }
@@ -218,7 +217,6 @@ def load_simulation(
         signal_types=signal_types,
         sim_type=sim_type,
         max_workers=max_workers,
-        sample_size=n_inhomogen,
     )
 
     # -----------------

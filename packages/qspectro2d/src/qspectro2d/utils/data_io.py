@@ -11,8 +11,9 @@ from __future__ import annotations
 import glob
 import hashlib
 import json
+import pickle
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence, List, TYPE_CHECKING
+from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
 import numpy as np
 
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
     from qspectro2d.core.atomic_system.system_class import AtomicSystem
     from qspectro2d.core.simulation import SimulationConfig, SimulationModuleOQS
+    from qutip import BosonicEnvironment
 from qspectro2d.utils.file_naming import (
     generate_deterministic_data_base,
 )
@@ -30,13 +32,6 @@ _META_KEY = "metadata_json"
 _T_DET_KEY = "t_det"
 _T_COH_KEY = "t_coh"
 _SAMPLE_KEY = "frequency_sample_cm"
-_SIM_CFG_KEY = "simulation_config_json"
-_SYSTEM_KEY = "system_json"
-_LASER_KEY = "laser_json"
-_JOB_META_KEY = "job_metadata_json"
-_SIDECAR_NAME = "job_metadata"
-
-
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -65,69 +60,37 @@ def _split_prefix(path: Path) -> tuple[Path, str]:
     return path.parent, prefix
 
 
-def _sidecar_path(directory: Path, prefix: str) -> Path:
-    return directory / f"{prefix}_{_SIDECAR_NAME}.json"
+def _info_path(directory: Path, prefix: str) -> Path:
+    return directory / f"{prefix}_.pkl"
 
 
-def _load_sidecar(directory: Path, prefix: str) -> dict[str, Any]:
-    sidecar = _sidecar_path(directory, prefix)
-    if not sidecar.exists():
-        return {}
-    with sidecar.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def ensure_run_sidecar(
+def ensure_info_file(
     sim_module: "SimulationModuleOQS",
     *,
     data_root: Path | str,
     extra_payload: Mapping[str, Any] | None = None,
 ) -> Path:
-    """Ensure a JSON sidecar with simulation-wide metadata exists for the run prefix."""
+    """Write the info file corresponding to ``sim_module`` and return its path."""
 
     directory, prefix = resolve_run_prefix(
         sim_module.system, sim_module.simulation_config, data_root
     )
-    sidecar = _sidecar_path(directory, prefix)
-
-    payload: dict[str, Any] = {}
-    if sidecar.exists():
-        try:
-            with sidecar.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except json.JSONDecodeError:
-            payload = {}
-
-    def _setdefault(key: str, value: Any) -> None:
-        if key not in payload and value is not None:
-            payload[key] = value
-
-    _setdefault("simulation_config", sim_module.simulation_config.to_dict())
-    _setdefault("system", sim_module.system.to_dict())
-
-    laser = getattr(sim_module, "laser", None)
-    laser_to_dict = getattr(laser, "to_dict", None)
-    if callable(laser_to_dict):
-        _setdefault("laser", laser_to_dict())
+    info_path = _info_path(directory, prefix)
+    info_path.parent.mkdir(parents=True, exist_ok=True)
 
     bath = getattr(sim_module, "bath", None) or getattr(sim_module, "bath_system", None)
-    bath_to_dict = getattr(bath, "to_dict", None)
-    if callable(bath_to_dict):
-        _setdefault("bath", bath_to_dict())
+    laser = getattr(sim_module, "laser", None)
 
-    if extra_payload:
-        for key, value in extra_payload.items():
-            if value is not None:
-                if isinstance(value, Mapping) and key in payload and isinstance(payload[key], dict):
-                    merged = dict(payload[key])
-                    merged.update(value)
-                    payload[key] = merged
-                else:
-                    payload[key] = value
+    save_info_file(
+        info_path,
+        sim_module.system,
+        sim_module.simulation_config,
+        bath=bath,
+        laser=laser,
+        extra_payload=extra_payload,
+    )
 
-    sidecar.parent.mkdir(parents=True, exist_ok=True)
-    sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-    return sidecar
+    return info_path
 
 
 def resolve_run_prefix(
@@ -148,9 +111,9 @@ def save_run_artifact(
     t_det: np.ndarray,
     metadata: Mapping[str, Any],
     frequency_sample_cm: Sequence[float],
-    sample_id: str,
     data_root: Path | str,
     t_coh: np.ndarray | None = None,
+    extra_payload: Mapping[str, Any] | None = None,
 ) -> Path:
     """Persist a single run (t_coh × sample) as a compressed ``.npz`` artifact."""
 
@@ -160,7 +123,7 @@ def save_run_artifact(
 
     t_index = int(metadata.get("t_index", 0))
     combination_index = int(metadata.get("combination_index", 0))
-    filename = f"{prefix}_run_t{t_index:03d}_c{combination_index:04d}_s{sample_id[:8]}.npz"
+    filename = f"{prefix}_run_t{t_index:03d}_c{combination_index:04d}.npz"
     abs_path = directory / filename
 
     signal_types = list(metadata.get("signal_types", []))
@@ -170,7 +133,7 @@ def save_run_artifact(
     payload: dict[str, Any] = {
         _T_DET_KEY: np.asarray(t_det, dtype=float),
         _SAMPLE_KEY: np.asarray(frequency_sample_cm, dtype=float),
-        _META_KEY: np.array(_json_dumps({**metadata, "sample_id": sample_id}), dtype=np.str_),
+        _META_KEY: np.array(_json_dumps({**metadata}), dtype=np.str_),
     }
 
     if t_coh is not None:
@@ -180,7 +143,89 @@ def save_run_artifact(
         payload[f"{_SIGNAL_PREFIX}{sig}"] = np.asarray(data)
 
     np.savez_compressed(abs_path, **payload)
+
+    ensure_info_file(
+        sim_module,
+        data_root=data_root,
+        extra_payload=extra_payload,
+    )
+
     return abs_path
+
+
+def save_info_file(
+    abs_info_path: Path,
+    system: "AtomicSystem",
+    sim_config: "SimulationConfig",
+    bath: "BosonicEnvironment" | None = None,
+    laser: "LaserPulseSequence" | None = None,
+    *,
+    extra_payload: Mapping[str, Any] | None = None,
+) -> None:
+    """
+    Save system parameters and data configuration to pickle file.
+
+    Args:
+        abs_info_path: Absolute path for the info file (.pkl)
+        system: System parameters object
+        bath: QuTip Environment instance
+        laser: Laser pulse sequence object
+        sim_config: SimulationConfig instance used for the run (stored as object, not dict)
+    """
+    try:
+        payload = {
+            "system": system,
+            # Store the SimulationConfig instance directly for full fidelity
+            "sim_config": sim_config,
+        }
+        if bath is not None:
+            payload["bath"] = bath
+        if laser is not None:
+            payload["laser"] = laser
+        if extra_payload:
+            for key, value in extra_payload.items():
+                if value is None:
+                    continue
+                existing = payload.get(key)
+                if isinstance(existing, Mapping) and isinstance(value, Mapping):
+                    merged = dict(existing)
+                    merged.update(value)
+                    payload[key] = merged
+                else:
+                    payload[key] = value
+
+        with open(abs_info_path, "wb") as info_file:
+            pickle.dump(payload, info_file)
+        print(f"Info saved: {abs_info_path}")
+    except Exception as e:
+        print(f"Failed to save info: {e}")
+        raise
+
+
+def load_info_file(abs_info_path: Path) -> dict:
+    """
+    Load pickle info file (.pkl) from absolute path.
+
+    Args:
+        abs_info_path: Absolute path to the info file (.pkl)
+
+    Returns:
+        dict: Dictionary containing system parameters and data configuration
+    """
+    try:
+        print(f"Loading info: {abs_info_path}")
+
+        if not abs_info_path.exists():
+            raise FileNotFoundError(f"Info file not found: {abs_info_path}")
+
+        with open(abs_info_path, "rb") as info_file:
+            info = pickle.load(info_file)
+
+        print(f"Loaded info: {abs_info_path}")
+        return info
+    except Exception as e:
+        print(f"Failed to load info: {abs_info_path}; error: {e}")
+        raise
 
 
 def load_run_artifact(path: Path | str) -> dict[str, Any]:
@@ -191,39 +236,17 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
         contents = {key: bundle[key] for key in bundle.files}
 
     metadata = json.loads(str(contents.pop(_META_KEY).item())) if _META_KEY in contents else {}
-    sim_cfg = json.loads(str(contents.pop(_SIM_CFG_KEY).item())) if _SIM_CFG_KEY in contents else {}
-    system = json.loads(str(contents.pop(_SYSTEM_KEY).item())) if _SYSTEM_KEY in contents else {}
-    laser = json.loads(str(contents.pop(_LASER_KEY).item())) if _LASER_KEY in contents else None
-    job_meta = (
-        json.loads(str(contents.pop(_JOB_META_KEY).item())) if _JOB_META_KEY in contents else None
-    )
 
+    # Load from info file
     directory, prefix = _split_prefix(path)
-    sidecar_payload = _load_sidecar(directory, prefix)
+    info_path = _info_path(directory, prefix)
+    info = load_info_file(info_path)
 
-    sidecar_sim_cfg = sidecar_payload.get("simulation_config")
-    if sidecar_sim_cfg:
-        sim_cfg = sidecar_sim_cfg
-
-    sidecar_system = sidecar_payload.get("system")
-    if sidecar_system:
-        system = sidecar_system
-
-    sidecar_laser = sidecar_payload.get("laser")
-    if sidecar_laser is not None:
-        laser = sidecar_laser
-
-    bath = sidecar_payload.get("bath")
-    if bath is None:
-        bath = sidecar_payload.get("bath_system")
-
-    sidecar_job = sidecar_payload.get("job")
-    if sidecar_job is not None:
-        job_meta = sidecar_job
-    elif "job_metadata" in sidecar_payload:
-        job_meta = sidecar_payload.get("job_metadata")
-    elif "metadata" in sidecar_payload and isinstance(sidecar_payload["metadata"], Mapping):
-        job_meta = sidecar_payload["metadata"]
+    sim_cfg = info.get("sim_config", {})
+    system = info.get("system", {})
+    laser = info.get("laser")
+    bath = info.get("bath")
+    job_meta = info.get("job_metadata")
 
     signals: dict[str, np.ndarray] = {}
     for key in list(contents.keys()):
@@ -246,60 +269,6 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     }
 
 
-def write_sidecar_json(
-    system: "AtomicSystem",
-    sim_config: "SimulationConfig",
-    data_root: Path | str,
-    *,
-    name: str,
-    payload: Mapping[str, Any],
-) -> Path:
-    """Write a JSON sidecar file next to the generated run artifacts."""
-
-    directory, prefix = resolve_run_prefix(system, sim_config, data_root)
-    path = directory / f"{prefix}_{name}.json"
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-    return path
-
-
-def save_simulation_data(
-    sim_module: SimulationModuleOQS,
-    metadata: dict,
-    datas: List[np.ndarray],
-    t_det: np.ndarray,
-    t_coh: Optional[np.ndarray] = None,
-    *,
-    data_root: Path | str,
-) -> Path:
-    """Compatibility wrapper that forwards to :func:`save_run_artifact`."""
-
-    freq_vector = np.asarray(sim_module.system.frequencies_cm, dtype=float)
-    sample_id = metadata.get("sample_id") or compute_sample_id(freq_vector)
-
-    extended_meta: dict[str, Any] = {
-        "signal_types": sim_module.simulation_config.signal_types,
-        "t_index": 0,
-        "combination_index": 0,
-        "sample_index": 0,
-        "sample_size": sim_module.simulation_config.sample_size,
-        **metadata,
-        "sample_id": sample_id,
-    }
-
-    ensure_run_sidecar(sim_module, data_root=data_root, extra_payload=None)
-
-    return save_run_artifact(
-        sim_module,
-        signal_arrays=datas,
-        t_det=t_det,
-        metadata=extended_meta,
-        frequency_sample_cm=freq_vector,
-        sample_id=sample_id,
-        data_root=data_root,
-        t_coh=t_coh,
-    )
-
-
 def load_simulation_data(abs_path: Path | str) -> dict:
     """Load and unpack a run artifact produced by :func:`save_run_artifact`."""
 
@@ -319,26 +288,3 @@ def load_simulation_data(abs_path: Path | str) -> dict:
         raise KeyError("Run artifact is missing the frequency sample axis")
 
     return bundle
-
-
-def list_available_files(abs_base_dir: Path) -> List[str]:
-    """Return a sorted list of run artifacts stored beneath ``abs_base_dir``."""
-
-    base = Path(abs_base_dir).expanduser().resolve()
-    if not base.exists():
-        raise FileNotFoundError(f"Base directory does not exist: {base}")
-    if not base.is_dir():
-        raise NotADirectoryError(f"Expected a directory path, got: {base}")
-
-    pattern = str(base / "**" / "*_run_*.npz")
-    artifacts = sorted(glob.glob(pattern, recursive=True))
-
-    if not artifacts:
-        print(f"No run artifacts found under {base}")
-        return []
-
-    print(f"Found {len(artifacts)} run artifact(s) under {base}")
-    for file_path in artifacts:
-        print(f"file: {file_path}")
-
-    return artifacts

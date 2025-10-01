@@ -10,7 +10,6 @@ from .constants import (
     convert_fs_to_cm,
 )
 from .file_naming import (
-    generate_unique_data_filename,
     generate_unique_plot_filename,
     generate_base_sub_dir,
     generate_deterministic_data_base,
@@ -20,9 +19,7 @@ from .data_io import (
     load_run_artifact,
     resolve_run_prefix,
     save_run_artifact,
-    write_sidecar_json,
-    ensure_run_sidecar,
-    save_simulation_data,
+    ensure_info_file,
     load_simulation_data,
 )
 from .rwa_utils import (
@@ -41,7 +38,6 @@ __all__ = [
     "convert_cm_to_fs",
     "convert_fs_to_cm",
     # file naming
-    "generate_unique_data_filename",
     "generate_unique_plot_filename",
     "generate_base_sub_dir",
     "generate_deterministic_data_base",
@@ -50,9 +46,7 @@ __all__ = [
     "load_run_artifact",
     "resolve_run_prefix",
     "save_run_artifact",
-    "write_sidecar_json",
-    "ensure_run_sidecar",
-    "save_simulation_data",
+    "ensure_info_file",
     "load_simulation_data",
     # RWA helpers
     "rotating_frame_unitary",

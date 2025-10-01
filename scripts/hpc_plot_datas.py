@@ -1,36 +1,33 @@
-#!/usr/bin/env python3
 """Post-process generalized spectroscopy runs and queue plotting jobs.
 
 This helper combines two manual steps executed after HPC computations finish:
 
-1. Run :mod:`post_process_datas` to average inhomogeneous samples and stack
+1. Run :mod:`process_datas` to average inhomogeneous samples and stack
    across coherence points (when applicable).
 2. Generate a ready-to-submit SLURM script that calls :mod:`plot_datas` on the
    resulting artifact and optionally submit it via ``sbatch``.
 
-The script targets the new run-artifact workflow. It expects the same job
+The script targets the run-artifact workflow. It expects the same job
 structure created by ``hpc_dispatch.py`` and ``run_batch.py``.
 """
 
 from __future__ import annotations
 
 import argparse
-import subprocess
 from pathlib import Path
 
-from post_process_datas import PostProcessResult, post_process_job
+from .process_datas import PostProcessResult, post_process_job
+from .hpc_dispatch import submit_sbatch
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 PLOT_SCRIPT = (SCRIPTS_DIR / "plot_datas.py").resolve()
-DEFAULT_SCRIPT_NAME = "plotting.slurm"
 
-JOB_NAME = "plot_data"
 # Default SLURM settings used in the generated plotting script.
-# Adjust these to match your cluster and workload.
-SLURM_PARTITION: str | None = "GPGPU"
-SLURM_CPUS: int | None = 2
-SLURM_MEM: str | None = "200G"
-SLURM_TIME: str | None = "30:00"
+JOB_NAME = "plot_data"
+SLURM_PARTITION: str = "GPGPU"
+SLURM_CPUS: int = 2
+SLURM_MEM: str = "200G"
+SLURM_TIME: str = "30:00"
 
 
 def _next_logs_dir(job_dir: Path) -> Path:
@@ -55,10 +52,10 @@ def _render_slurm_script(
     job_dir: Path,
     logs_dir: Path,
     final_artifact: Path,
-    partition: str | None,
-    cpus: int | None,
-    mem: str | None,
-    time_limit: str | None,
+    partition: str,
+    cpus: int,
+    mem: str,
+    time_limit: str,
 ) -> str:
     """Return the plotting SLURM script content."""
 
@@ -102,20 +99,6 @@ def _render_slurm_script(
     return "\n".join(lines) + "\n"
 
 
-def _submit_script(script_path: Path) -> bool:
-    try:
-        subprocess.run(["sbatch", str(script_path)], check=True)
-        print(f"Submitted {script_path}")
-        return True
-    except FileNotFoundError:
-        print("⚠️  sbatch command not found. Submit the script manually when available.")
-    except subprocess.CalledProcessError as exc:
-        print(
-            f"⚠️  sbatch failed with exit code {exc.returncode}. Submit manually after inspection."
-        )
-    return False
-
-
 def _record_target(job_dir: Path, final_artifact: Path) -> None:
     record = job_dir / "plotting_target.txt"
     record.write_text(final_artifact.as_posix() + "\n", encoding="utf-8")
@@ -148,12 +131,6 @@ def main() -> None:
         action="store_true",
         help="Only generate the SLURM script; do not call sbatch",
     )
-    parser.add_argument(
-        "--script_name",
-        default=DEFAULT_SCRIPT_NAME,
-        help=f"Name of the generated SLURM script (default: {DEFAULT_SCRIPT_NAME})",
-    )
-    # SLURM resources are configured via module-level defaults above; no CLI needed.
     args = parser.parse_args()
 
     job_dir = Path(args.job_dir).resolve()
@@ -191,7 +168,8 @@ def main() -> None:
         print("Submission skipped (use without --no_submit to call sbatch).")
         return
 
-    _submit_script(script_path)
+    print("Submitting SLURM job...")
+    submit_sbatch(script_path)
 
 
 if __name__ == "__main__":

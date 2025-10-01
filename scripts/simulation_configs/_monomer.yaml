@@ -2,8 +2,8 @@
 atomic:
   n_atoms: 1
   frequencies_cm: [16000.0]
-  n_inhomogen: 1
-  delta_inhomogen_cm: 0.0
+  n_inhomogen: 5
+  delta_inhomogen_cm: 200.0
 
 laser:
   base_amplitude: 0.05
