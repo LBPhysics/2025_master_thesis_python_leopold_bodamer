@@ -165,7 +165,6 @@ def main() -> None:
     n_inhom, n_sites = samples.shape
 
     sim = load_simulation(config_path, validate=False)
-    sim.simulation_config.sim_type = args.sim_type
     sim.simulation_config.n_inhomogen = n_inhom
     sim.simulation_config.sample_size = n_inhom
     sim.simulation_config.current_sample_id = None
