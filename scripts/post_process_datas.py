@@ -19,12 +19,19 @@ from qspectro2d.utils.data_io import load_run_artifact
 
 # Keys we want to remove from artifact metadata after post-processing
 _POSTPROC_META_KEYS_TO_DROP = {
+    # run/batch bookkeeping
     "sample_size",
     "sample_id",
     "sample_index",
     "batch_id",
     "combination_index",
     "t_index",
+    # verbose provenance lists that clutter plots
+    "source_artifacts",
+    "source_sample_ids",
+    # stacking/averaging helpers
+    "stacked_points",
+    "averaged_count",
 }
 
 
@@ -151,13 +158,9 @@ def post_process_job(
 ) -> Optional[PostProcessResult]:
     job_path = Path(job_dir).resolve()
 
-    def _log(message: str) -> None:
-        if log is not None:
-            log(message)
-
-    _log("=" * 80)
-    _log("POST-PROCESS GENERALIZED BATCHES")
-    _log(f"Job directory: {job_path}")
+    print("=" * 80)
+    print("POST-PROCESS GENERALIZED BATCHES")
+    print(f"Job directory: {job_path}")
 
     metadata = _load_metadata(job_path)
     sim_type = metadata.get("sim_type", "1d")
@@ -166,18 +169,18 @@ def post_process_job(
     data_dir = base_path.parent
     prefix = base_path.name
 
-    _log(f"Sim type: {sim_type}")
-    _log(f"Sample size: {sample_size}")
-    _log(f"Artifact directory: {data_dir}")
-    _log(f"Artifact prefix: {prefix}")
+    print(f"Sim type: {sim_type}")
+    print(f"Sample size: {sample_size}")
+    print(f"Artifact directory: {data_dir}")
+    print(f"Artifact prefix: {prefix}")
 
     records = _discover_artifacts(data_dir, prefix)
     if not records:
-        _log("No run artifacts found. Ensure the batches finished and data_root is correct.")
+        print("No run artifacts found. Ensure the batches finished and data_root is correct.")
         return None
 
     grouped = _group_by_t_index(records)
-    _log(f"Discovered {len(grouped)} coherence index group(s).")
+    print(f"Discovered {len(grouped)} coherence index group(s).")
 
     averaged_paths: List[Path] = []
     for t_index in sorted(grouped):
@@ -185,10 +188,10 @@ def post_process_job(
         if not candidates:
             continue
         anchor_path = candidates[0].path
-        _log("-" * 80)
-        _log(f"Processing t_index={t_index} using anchor {anchor_path.name}")
+        print("-" * 80)
+        print(f"Processing t_index={t_index} using anchor {anchor_path.name}")
         averaged_path = average_inhom_1d(anchor_path, skip_if_exists=skip_inhom)
-        _log(f"  → Averaged artifact: {averaged_path}")
+        print(f"  → Averaged artifact: {averaged_path}")
         # Sanitize metadata of the produced averaged artifact
         sanitized_path = _sanitize_artifact_metadata(
             Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
@@ -204,23 +207,23 @@ def post_process_job(
             unique_averaged.append(resolved)
             seen.add(resolved_key)
 
-    _log("=" * 80)
+    print("=" * 80)
     _summarize_paths("Averaged artifacts", unique_averaged, log)
 
     if not unique_averaged:
-        _log("No averaged artifacts produced; aborting.")
+        print("No averaged artifacts produced; aborting.")
         return None
 
     # Determine whether stacking is required
     if sim_type == "1d" and len(grouped) == 1:
-        _log("Single coherence point detected; stacking is not required.")
+        print("Single coherence point detected; stacking is not required.")
         # Ensure the single averaged artifact is sanitized
         final_path = _sanitize_artifact_metadata(
             unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
         ).resolve()
-        _log("=" * 80)
-        _log("🎯 To plot the averaged 1D data run:")
-        _log(f"python plot_datas.py --abs_path {final_path}")
+        print("=" * 80)
+        print("🎯 To plot the averaged 1D data run:")
+        print(f"python plot_datas.py --abs_path {final_path}")
         return PostProcessResult(
             job_dir=job_path,
             data_dir=data_dir,
@@ -237,8 +240,8 @@ def post_process_job(
     stack_anchor_records.sort(key=lambda rec: int(rec.metadata.get("t_index", 0)))
     stack_anchor_path = stack_anchor_records[0].path
 
-    _log("Preparing to stack into 2D using anchor:")
-    _log(f"  {stack_anchor_path}")
+    print("Preparing to stack into 2D using anchor:")
+    print(f"  {stack_anchor_path}")
 
     stacked_path = stack_artifacts(stack_anchor_path, skip_if_exists=skip_stack).resolve()
     # Sanitize metadata of the final stacked artifact
@@ -246,9 +249,9 @@ def post_process_job(
         stacked_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
     ).resolve()
 
-    _log("=" * 80)
-    _log("🎯 To plot the 2D data run:")
-    _log(f"python plot_datas.py --abs_path {stacked_path}")
+    print("=" * 80)
+    print("🎯 To plot the 2D data run:")
+    print(f"python plot_datas.py --abs_path {stacked_path}")
 
     return PostProcessResult(
         job_dir=job_path,
