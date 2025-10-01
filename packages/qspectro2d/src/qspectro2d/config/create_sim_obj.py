@@ -18,7 +18,6 @@ YAML Schema (example of all options):
 from __future__ import annotations
 
 import os
-import hashlib
 from re import T
 import numpy as np
 import psutil
@@ -207,23 +206,6 @@ def load_simulation(
         }
         dflt.validate(params)
 
-    # --------------------------------------------------
-    # Inhomogeneity bookkeeping flags
-    # --------------------------------------------------
-    inhom_enabled = n_inhomogen > 1 and delta_inhomogen_cm > 0.0
-
-    # Stable group id so that all individual inhomogeneous configuration runs can be matched and averaged.
-    # Hash only the physically relevant parameters that define the distribution so the same set up maps to same group id.
-    inhom_hash_inputs = (
-        str(n_atoms),
-        str(freqs_cm),
-        f"{delta_inhomogen_cm:.6g}",
-        f"{n_inhomogen}",
-        f"{coupling_cm:.6g}",
-    )
-    hash_basis = "|".join(inhom_hash_inputs).encode("utf-8")
-    inhom_group_id = f"inhom_{hashlib.sha1(hash_basis).hexdigest()[:10]}"
-
     sim_config = SimulationConfig(
         ode_solver=ode_solver,
         rwa_sl=rwa_sl,
@@ -236,9 +218,7 @@ def load_simulation(
         signal_types=signal_types,
         sim_type=sim_type,
         max_workers=max_workers,
-        inhom_enabled=inhom_enabled,
-        inhom_index=0,
-        inhom_group_id=inhom_group_id,
+        sample_size=n_inhomogen,
     )
 
     # -----------------

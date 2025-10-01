@@ -29,17 +29,18 @@ class SimulationConfig:
     t_wait: float = 0.0
     t_det_max: float = 100.0
 
-    n_phases: int = 4
+    # potentially do 2d inhomogeneous broadened
+    sim_type: str = "1d"
     n_inhomogen: int = 1
 
-    # Inhomogeneous handling / bookkeeping
-    inhom_enabled: bool = False  # True if current run loops over inhom configs
+    n_phases: int = 4
+
+    # Sampling / batching metadata
     inhom_averaged: bool = False  # True if data represent an average over inhom configs
-    inhom_index: int = 0  # Current inhom configuration index (0 for homogeneous)
-    inhom_group_id: str | None = None  # Stable group id for batching/averaging
+    sample_size: int = 1  # Total number of inhomogeneous samples considered for this job
+    current_sample_id: str | None = None  # Stable identifier (hash) for the active frequency sample
 
     max_workers: int = 1
-    sim_type: str = "1d"
     signal_types: List[str] = field(default_factory=lambda: ["rephasing"])
 
     def __post_init__(self) -> None:
@@ -68,10 +69,11 @@ class SimulationConfig:
             f"Use rwa_sl         : {self.rwa_sl}\n\n"
             "-------------------------------\n"
             f"Phase Cycles       : {self.n_phases}\n"
-            f"Inhom. Points      : {self.n_inhomogen}\n"
-            f"Inhom Enabled      : {self.inhom_enabled}\n"
+            f"Inhom Points      : {self.n_inhomogen}\n"
+            f"Inhom Active       : {self.n_inhomogen > 1}\n"
             f"Inhom Averaged     : {self.inhom_averaged}\n"
-            f"Inhom Index        : {self.inhom_index}\n"
+            f"Sample Size        : {self.sample_size}\n"
+            f"Sample ID          : {self.current_sample_id}\n"
             f"Max Workers        : {self.max_workers}\n"
             "-------------------------------\n"
         )

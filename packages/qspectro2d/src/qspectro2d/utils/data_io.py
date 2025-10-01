@@ -8,12 +8,13 @@ including standardized file formats and directory management.
 from __future__ import annotations
 
 # IMPORTS
-import numpy as np
-import pickle
 import glob
+import hashlib
+import json
 from pathlib import Path
-from typing import Optional, List, TYPE_CHECKING
-from qutip import BosonicEnvironment
+from typing import Any, Mapping, Optional, Sequence, List, TYPE_CHECKING
+
+import numpy as np
 
 # Type checking imports to avoid circular imports
 if TYPE_CHECKING:
@@ -21,110 +22,244 @@ if TYPE_CHECKING:
     from qspectro2d.core.atomic_system.system_class import AtomicSystem
     from qspectro2d.core.simulation import SimulationConfig, SimulationModuleOQS
 from qspectro2d.utils.file_naming import (
-    generate_unique_data_filename,
-    _generate_unique_filename,
+    generate_deterministic_data_base,
 )
 
+_SIGNAL_PREFIX = "signal::"
+_META_KEY = "metadata_json"
+_T_DET_KEY = "t_det"
+_T_COH_KEY = "t_coh"
+_SAMPLE_KEY = "frequency_sample_cm"
+_SIM_CFG_KEY = "simulation_config_json"
+_SYSTEM_KEY = "system_json"
+_LASER_KEY = "laser_json"
+_JOB_META_KEY = "job_metadata_json"
+_SIDECAR_NAME = "job_metadata"
 
-# data saving functions
-def save_data_file(
-    abs_data_path: Path,
-    metadata: dict,
-    datas: List[np.ndarray],
+
+def _json_default(obj: Any) -> Any:
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    raise TypeError(f"Cannot serialize object of type {type(obj)!r}")
+
+
+def _json_dumps(payload: Any) -> str:
+    return json.dumps(payload, default=_json_default, sort_keys=True)
+
+
+def compute_sample_id(frequency_sample_cm: Sequence[float]) -> str:
+    """Return a SHA1 hash representing the provided frequency vector."""
+
+    arr = np.asarray(frequency_sample_cm, dtype=np.float64)
+    return hashlib.sha1(arr.tobytes()).hexdigest()
+
+
+def _split_prefix(path: Path) -> tuple[Path, str]:
+    path = Path(path)
+    stem = path.stem
+    if "_run_" not in stem:
+        raise ValueError(f"Artifact filename missing '_run_' segment: {path}")
+    prefix = stem.split("_run_", 1)[0]
+    return path.parent, prefix
+
+
+def _sidecar_path(directory: Path, prefix: str) -> Path:
+    return directory / f"{prefix}_{_SIDECAR_NAME}.json"
+
+
+def _load_sidecar(directory: Path, prefix: str) -> dict[str, Any]:
+    sidecar = _sidecar_path(directory, prefix)
+    if not sidecar.exists():
+        return {}
+    with sidecar.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def ensure_run_sidecar(
+    sim_module: "SimulationModuleOQS",
+    *,
+    data_root: Path | str,
+    extra_payload: Mapping[str, Any] | None = None,
+) -> Path:
+    """Ensure a JSON sidecar with simulation-wide metadata exists for the run prefix."""
+
+    directory, prefix = resolve_run_prefix(
+        sim_module.system, sim_module.simulation_config, data_root
+    )
+    sidecar = _sidecar_path(directory, prefix)
+
+    payload: dict[str, Any] = {}
+    if sidecar.exists():
+        try:
+            with sidecar.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except json.JSONDecodeError:
+            payload = {}
+
+    def _setdefault(key: str, value: Any) -> None:
+        if key not in payload and value is not None:
+            payload[key] = value
+
+    _setdefault("simulation_config", sim_module.simulation_config.to_dict())
+    _setdefault("system", sim_module.system.to_dict())
+
+    laser = getattr(sim_module, "laser", None)
+    laser_to_dict = getattr(laser, "to_dict", None)
+    if callable(laser_to_dict):
+        _setdefault("laser", laser_to_dict())
+
+    bath = getattr(sim_module, "bath", None) or getattr(sim_module, "bath_system", None)
+    bath_to_dict = getattr(bath, "to_dict", None)
+    if callable(bath_to_dict):
+        _setdefault("bath", bath_to_dict())
+
+    if extra_payload:
+        for key, value in extra_payload.items():
+            if value is not None:
+                if isinstance(value, Mapping) and key in payload and isinstance(payload[key], dict):
+                    merged = dict(payload[key])
+                    merged.update(value)
+                    payload[key] = merged
+                else:
+                    payload[key] = value
+
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return sidecar
+
+
+def resolve_run_prefix(
+    system: "AtomicSystem", sim_config: "SimulationConfig", data_root: Path | str
+) -> tuple[Path, str]:
+    """Return ``(directory, prefix)`` for outputs of ``system`` and ``sim_config``."""
+
+    base = Path(
+        generate_deterministic_data_base(system, sim_config, data_root=data_root, ensure=True)
+    )
+    return base.parent, base.name
+
+
+def save_run_artifact(
+    sim_module: "SimulationModuleOQS",
+    *,
+    signal_arrays: Sequence[np.ndarray],
     t_det: np.ndarray,
-    t_coh: Optional[np.ndarray] = None,
-) -> None:
-    """Save spectroscopy data(s) with a single np.savez_compressed call.
+    metadata: Mapping[str, Any],
+    frequency_sample_cm: Sequence[float],
+    sample_id: str,
+    data_root: Path | str,
+    t_coh: np.ndarray | None = None,
+) -> Path:
+    """Persist a single run (t_coh × sample) as a compressed ``.npz`` artifact."""
 
-    Distinctions:
-      - Dimensionality (1D vs 2D) inferred from t_coh is None or not.
-      - Single vs multi-component data inferred from provided `datas`.
+    directory, prefix = resolve_run_prefix(
+        sim_module.system, sim_module.simulation_config, data_root
+    )
 
-        Stored keys:
-            - Axes: 't_det' and optionally 't_coh'
-            - One array per signal type stored under its signal name (metadata['signal_types'])
-            - all other metadata key-value pairs are stored at the top level
-    """
-    try:
-        abs_data_path.parent.mkdir(parents=True, exist_ok=True)
+    t_index = int(metadata.get("t_index", 0))
+    combination_index = int(metadata.get("combination_index", 0))
+    filename = f"{prefix}_run_t{t_index:03d}_c{combination_index:04d}_s{sample_id[:8]}.npz"
+    abs_path = directory / filename
 
-        # Infer dimensionality
-        is_2d = t_coh is not None
+    signal_types = list(metadata.get("signal_types", []))
+    if len(signal_types) != len(signal_arrays):
+        raise ValueError("signal_types metadata must match number of signal arrays")
 
-        # Base payload
-        payload: dict = {
-            "t_det": t_det,
-        }
-        if is_2d:
-            payload["t_coh"] = t_coh
+    payload: dict[str, Any] = {
+        _T_DET_KEY: np.asarray(t_det, dtype=float),
+        _SAMPLE_KEY: np.asarray(frequency_sample_cm, dtype=float),
+        _META_KEY: np.array(_json_dumps({**metadata, "sample_id": sample_id}), dtype=np.str_),
+    }
 
-        # Optional metadata (e.g., inhom batching info)
-        for k, v in metadata.items():
-            payload[k] = v
+    if t_coh is not None:
+        payload[_T_COH_KEY] = np.asarray(t_coh, dtype=float)
 
-        # Validate and populate component keys
-        signal_types = metadata["signal_types"]
-        if len(signal_types) != len(datas):
-            raise ValueError(
-                f"Length of signal_types ({len(signal_types)}) must match number of datas ({len(datas)})"
-            )
+    for sig, data in zip(signal_types, signal_arrays):
+        payload[f"{_SIGNAL_PREFIX}{sig}"] = np.asarray(data, dtype=float)
 
-        for i, data in enumerate(datas):
-            sig_key = signal_types[i]
-            if is_2d:
-                if not isinstance(data, np.ndarray) or data.shape != (
-                    len(t_coh),
-                    len(t_det),
-                ):
-                    raise ValueError(
-                        f"2D data must have shape (len(t_coh), len(t_det)) = ({len(t_coh)}, {len(t_det)})"
-                    )
-            else:
-                if not isinstance(data, np.ndarray) or data.shape != (len(t_det),):
-                    raise ValueError(f"1D data must have shape (len(t_det),) = ({len(t_det)},)")
-            payload[sig_key] = data
-
-        # Single write
-        np.savez_compressed(abs_data_path, **payload)
-
-    except Exception as e:
-        print(f"Failed to save data: {e}")
-        raise
+    np.savez_compressed(abs_path, **payload)
+    return abs_path
 
 
-def save_info_file(
-    abs_info_path: Path,
+def load_run_artifact(path: Path | str) -> dict[str, Any]:
+    """Load a run artifact produced by :func:`save_run_artifact`."""
+
+    path = Path(path)
+    with np.load(path, allow_pickle=False) as bundle:
+        contents = {key: bundle[key] for key in bundle.files}
+
+    metadata = json.loads(str(contents.pop(_META_KEY).item())) if _META_KEY in contents else {}
+    sim_cfg = json.loads(str(contents.pop(_SIM_CFG_KEY).item())) if _SIM_CFG_KEY in contents else {}
+    system = json.loads(str(contents.pop(_SYSTEM_KEY).item())) if _SYSTEM_KEY in contents else {}
+    laser = json.loads(str(contents.pop(_LASER_KEY).item())) if _LASER_KEY in contents else None
+    job_meta = (
+        json.loads(str(contents.pop(_JOB_META_KEY).item())) if _JOB_META_KEY in contents else None
+    )
+
+    directory, prefix = _split_prefix(path)
+    sidecar_payload = _load_sidecar(directory, prefix)
+
+    sidecar_sim_cfg = sidecar_payload.get("simulation_config")
+    if sidecar_sim_cfg:
+        sim_cfg = sidecar_sim_cfg
+
+    sidecar_system = sidecar_payload.get("system")
+    if sidecar_system:
+        system = sidecar_system
+
+    sidecar_laser = sidecar_payload.get("laser")
+    if sidecar_laser is not None:
+        laser = sidecar_laser
+
+    bath = sidecar_payload.get("bath")
+    if bath is None:
+        bath = sidecar_payload.get("bath_system")
+
+    sidecar_job = sidecar_payload.get("job")
+    if sidecar_job is not None:
+        job_meta = sidecar_job
+    elif "job_metadata" in sidecar_payload:
+        job_meta = sidecar_payload.get("job_metadata")
+    elif "metadata" in sidecar_payload and isinstance(sidecar_payload["metadata"], Mapping):
+        job_meta = sidecar_payload["metadata"]
+
+    signals: dict[str, np.ndarray] = {}
+    for key in list(contents.keys()):
+        if key.startswith(_SIGNAL_PREFIX):
+            sig = key[len(_SIGNAL_PREFIX) :]
+            signals[sig] = contents.pop(key)
+
+    return {
+        "path": path,
+        "signals": signals,
+        "t_det": contents.get(_T_DET_KEY),
+        "t_coh": contents.get(_T_COH_KEY),
+        "frequency_sample_cm": contents.get(_SAMPLE_KEY),
+        "metadata": metadata,
+        "simulation_config": sim_cfg,
+        "system": system,
+        "laser": laser,
+        "bath": bath,
+        "job_metadata": job_meta,
+    }
+
+
+def write_sidecar_json(
     system: "AtomicSystem",
-    bath: BosonicEnvironment,
-    laser: "LaserPulseSequence",
     sim_config: "SimulationConfig",
-) -> None:
-    """
-    Save system parameters and data configuration to pickle file.
+    data_root: Path | str,
+    *,
+    name: str,
+    payload: Mapping[str, Any],
+) -> Path:
+    """Write a JSON sidecar file next to the generated run artifacts."""
 
-    Args:
-        abs_info_path: Absolute path for the info file (.pkl)
-        system: System parameters object
-        bath: QuTip Environment instance
-        laser: Laser pulse sequence object
-        sim_config: SimulationConfig instance used for the run (stored as object, not dict)
-    """
-    try:
-        with open(abs_info_path, "wb") as info_file:
-            pickle.dump(
-                {
-                    "system": system,
-                    "bath": bath,
-                    "laser": laser,
-                    # Store the SimulationConfig instance directly for full fidelity
-                    "sim_config": sim_config,
-                },
-                info_file,
-            )
-        print(f"Info saved: {abs_info_path}")
-    except Exception as e:
-        print(f"Failed to save info: {e}")
-        raise
+    directory, prefix = resolve_run_prefix(system, sim_config, data_root)
+    path = directory / f"{prefix}_{name}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return path
 
 
 def save_simulation_data(
@@ -136,410 +271,74 @@ def save_simulation_data(
     *,
     data_root: Path | str,
 ) -> Path:
-    """
-    Save spectroscopy simulation data (numpy arrays) along with known axes in one file,
-    and system parameters and configuration in another file.
+    """Compatibility wrapper that forwards to :func:`save_run_artifact`."""
 
-    Parameters:
-        datas (List[np.ndarray]): Simulation results (1D/2D or absorptive tuple).
-        t_det (np.ndarray): Detection time axis.
-        t_coh (Optional[np.ndarray]): Coherence time axis for 2D data.
+    freq_vector = np.asarray(sim_module.system.frequencies_cm, dtype=float)
+    sample_id = metadata.get("sample_id") or compute_sample_id(freq_vector)
 
-    Returns:
-        Path]: absolute path to data dir for the saved numpy data file and info file.
-    """
+    extended_meta: dict[str, Any] = {
+        "signal_types": sim_module.simulation_config.signal_types,
+        "t_index": 0,
+        "combination_index": 0,
+        "sample_index": 0,
+        "sample_size": sim_module.simulation_config.sample_size,
+        **metadata,
+        "sample_id": sample_id,
+    }
 
-    system: "AtomicSystem" = sim_module.system
-    sim_config: "SimulationConfig" = sim_module.simulation_config
-    bath: "BosonicEnvironment" = sim_module.bath
-    laser: "LaserPulseSequence" = sim_module.laser
+    ensure_run_sidecar(sim_module, data_root=data_root, extra_payload=None)
 
-    # Deterministic non-enumerated base (no suffix yet)
-    abs_base_path = Path(generate_unique_data_filename(system, sim_config, data_root=data_root))
-    base_dir = abs_base_path.parent
-    base_stem = abs_base_path.name  # e.g. 1d_t_coh_33.3_inhom_000 (no _data suffix yet)
-
-    # Enumerate on the full data stem so collisions create pattern base_data_1, base_data_2, ...
-    data_stem = f"{base_stem}_data"
-    unique_data_stem = Path(_generate_unique_filename(base_dir, data_stem)).name
-    abs_data_path = base_dir / f"{unique_data_stem}.npz"
-    # Derive matching info stem by swapping first occurrence of '_data' with '_info'
-    info_stem = unique_data_stem.replace("_data", "_info", 1)
-    abs_info_path = base_dir / f"{info_stem}.pkl"
-
-    save_data_file(abs_data_path, metadata, datas, t_det, t_coh=t_coh)
-    save_info_file(abs_info_path, system, bath, laser, sim_config)
-    return abs_data_path
-
-
-def save_data_only(
-    sim_module: SimulationModuleOQS,
-    metadata: dict,
-    datas: List[np.ndarray],
-    t_det: np.ndarray,
-    t_coh: Optional[np.ndarray] = None,
-    *,
-    data_root: Path | str,
-) -> Path:
-    """Persist spectroscopy data arrays without writing a companion info file.
-
-    Parameters mirror :func:`save_simulation_data`, but this helper only produces the
-    compressed ``*_data.npz`` artifact. It reuses the deterministic naming scheme and
-    collision handling so enumerated files stay consistent with the full saver.
-    """
-
-    sim_config: "SimulationConfig" = sim_module.simulation_config
-    system: "AtomicSystem" = sim_module.system
-
-    abs_base_path = Path(generate_unique_data_filename(system, sim_config, data_root=data_root))
-    base_dir = abs_base_path.parent
-    base_stem = abs_base_path.name
-
-    data_stem = f"{base_stem}_data"
-    unique_data_stem = Path(_generate_unique_filename(base_dir, data_stem)).name
-    abs_data_path = base_dir / f"{unique_data_stem}.npz"
-
-    save_data_file(abs_data_path, metadata, datas, t_det, t_coh=t_coh)
-    return abs_data_path
-
-
-# data loading functions
-def load_data_file(abs_data_path: Path) -> dict:
-    """
-    Load numpy data file (.npz) from absolute path.
-
-    Args:
-        abs_data_path: Absolute path to the numpy data file (.npz)
-
-    Returns:
-        dict: Dictionary containing loaded numpy data arrays
-    """
-    try:
-        # NOTE for debugging print(f"Loading data: {abs_data_path}")
-
-        with np.load(abs_data_path, allow_pickle=True) as data_file:
-            data_dict = {key: data_file[key] for key in data_file.files}
-        # Enforce required key
-        if "t_det" not in data_dict:
-            raise KeyError("Missing 't_det' axis in data file (new format requirement)")
-        # NOTE for debugging print(f"Loaded data: {abs_data_path}")
-        return data_dict
-    except Exception as e:
-        print(f"Failed to load data: {abs_data_path}; error: {e}")
-        raise
-
-
-def load_info_file(abs_info_path: Path) -> dict:
-    """
-    Load pickle info file (.pkl) from absolute path.
-
-    Args:
-        abs_info_path: Absolute path to the info file (.pkl)
-
-    Returns:
-        dict: Dictionary containing system parameters and data configuration
-    """
-    try:
-        # NOTE for debugging print(f"Loading info: {abs_info_path}")
-
-        # Try to load the file directly if it exists
-        if abs_info_path.exists():
-            with open(abs_info_path, "rb") as info_file:
-                info = pickle.load(info_file)
-            # NOTE for debugging  print(f"Loaded info: {abs_info_path}")
-            return info
-
-        # Gracefully handle absent info files (e.g., post-processed averaged data)
-        print(f"Info file not found; continuing without it: {abs_info_path}")
-        return {}
-    except Exception as e:
-        print(f"Failed to load info: {abs_info_path}; error: {e}")
-        raise
+    return save_run_artifact(
+        sim_module,
+        signal_arrays=datas,
+        t_det=t_det,
+        metadata=extended_meta,
+        frequency_sample_cm=freq_vector,
+        sample_id=sample_id,
+        data_root=data_root,
+        t_coh=t_coh,
+    )
 
 
 def load_simulation_data(abs_path: Path | str) -> dict:
-    """Load simulation data bundle from either a data or info file path.
+    """Load and unpack a run artifact produced by :func:`save_run_artifact`."""
 
-    Supports both base and enumerated variants introduced by the auto-enumeration
-    logic in `save_simulation_data`.
+    artifact = load_run_artifact(abs_path)
+    signals = artifact.get("signals", {})
+    bundle = dict(artifact)
+    bundle["signal_types"] = list(signals.keys())
 
-    Accepted patterns:
-      - ``..._data.npz``  <-> ``..._info.pkl``
-      - ``..._data_<n>.npz``  <-> ``..._info_<n>.pkl`` (enumerated pair)
-      - ``..._info.pkl`` or ``..._info_<n>.pkl`` (will infer the corresponding data file)
+    for name, array in signals.items():
+        bundle[name] = array
 
-    Args:
-        abs_path: Path to either the data (.npz) OR info (.pkl) file. Enumerated
-                  suffix (``_<n>``) is optional.
-    Returns:
-        dict with merged data + metadata (info) contents.
-    Raises:
-        FileNotFoundError / ValueError on malformed inputs.
-    """
-    import re
+    t_det = bundle.get("t_det")
+    if t_det is None:
+        raise KeyError("Run artifact is missing the 't_det' axis")
 
-    p = Path(abs_path)
-    s = str(p)
+    if bundle.get("frequency_sample_cm") is None:
+        raise KeyError("Run artifact is missing the frequency sample axis")
 
-    # Backward compatibility patterns:
-    # Old style enumeration: base_data_1.npz / base_info_1.pkl
-    old_data_enum = re.compile(r"(.*)_data_(\d+)\.npz$")
-    old_info_enum = re.compile(r"(.*)_info_(\d+)\.pkl$")
-    # New style enumeration (enumerate base before suffix): base_1_data.npz / base_1_info.pkl
-    new_data_enum = re.compile(r"(.*)_data\.npz$")  # handled by endswith first
-    # Generic enumerated base followed by _data: (base with optional _<n>)_data.npz
-    base_enum_data = re.compile(r"(.*)_data\.npz$")
-
-    if s.endswith("_data.npz"):
-        # Non-enumerated base pair
-        abs_data_path = p
-        abs_info_path = Path(s[:-9] + "_info.pkl")
-    elif s.endswith("_info.pkl"):
-        abs_info_path = p
-        abs_data_path = Path(s[:-9] + "_data.npz")
-    else:
-        # Try old style enumeration first
-        m_data_old = old_data_enum.match(s)
-        m_info_old = old_info_enum.match(s)
-        if m_data_old:
-            base, idx = m_data_old.groups()
-            abs_data_path = p
-            abs_info_path = Path(f"{base}_info_{idx}.pkl")
-        elif m_info_old:
-            base, idx = m_info_old.groups()
-            abs_info_path = p
-            abs_data_path = Path(f"{base}_data_{idx}.npz")
-        else:
-            # New style: unique base already enumerated -> <base>_data / <base>_info
-            if s.endswith("_data.npz"):
-                abs_data_path = p
-                abs_info_path = Path(s[:-9] + "_info.pkl")
-            elif s.endswith("_info.pkl"):
-                abs_info_path = p
-                abs_data_path = Path(s[:-9] + "_data.npz")
-            else:
-                raise ValueError(
-                    "Unrecognized filename pattern. Expected '*_data.npz' or '*_info.pkl' (including enumerated base variants)."
-                )
-
-    # NOTE for debugging print(f"Loading data bundle: {abs_data_path}")
-    data_dict = load_data_file(abs_data_path)
-    info_dict = load_info_file(abs_info_path)
-
-    # Combine data and info into a single dictionary (info may be empty if missing)
-    info_dict = info_dict or {}
-    return {**data_dict, **info_dict}
+    return bundle
 
 
 def list_available_files(abs_base_dir: Path) -> List[str]:
-    """
-    List all available data files in a directory with their metadata without loading the full data.
+    """Return a sorted list of run artifacts stored beneath ``abs_base_dir``."""
 
-    Args:
-        abs_base_dir: Base directory path absolute to data dir
+    base = Path(abs_base_dir).expanduser().resolve()
+    if not base.exists():
+        raise FileNotFoundError(f"Base directory does not exist: {base}")
+    if not base.is_dir():
+        raise NotADirectoryError(f"Expected a directory path, got: {base}")
 
-    Returns:
-        List[str]: Sorted list of data/info file paths (strings)
-    """
-    if not abs_base_dir.is_dir():
-        print(f"Not a directory, using parent: {abs_base_dir}")
-        abs_base_dir = abs_base_dir.parent
-    if not abs_base_dir.exists():
-        raise FileNotFoundError(f"Base directory does not exist: {abs_base_dir}")
+    pattern = str(base / "**" / "*_run_*.npz")
+    artifacts = sorted(glob.glob(pattern, recursive=True))
 
-    print(f"Listing data files in: {abs_base_dir}")
-
-    # Find all data files recursively
-    print(f"Listing data files in: {abs_base_dir}")
-
-    # Find all data and info files recursively
-    data_pattern = str(abs_base_dir / "**" / "*_data.npz")
-    info_pattern = str(abs_base_dir / "**" / "*_info.pkl")
-
-    data_files = glob.glob(data_pattern, recursive=True)
-    info_files = glob.glob(info_pattern, recursive=True)
-
-    ### Combine and sort all file paths
-    all_files = data_files + info_files
-    all_files.sort()
-
-    if not all_files:
-        print(f"No data or info files found: {abs_base_dir}")
+    if not artifacts:
+        print(f"No run artifacts found under {base}")
         return []
 
-    # Print summary
-    print(f"Found {len(all_files)} files in {abs_base_dir}")
-    for file_path in all_files:
+    print(f"Found {len(artifacts)} run artifact(s) under {base}")
+    for file_path in artifacts:
         print(f"file: {file_path}")
 
-    return all_files
-
-
-# ---------------------------------------------------------------------------
-# Discovery and grouping helpers (shared by stacking scripts)
-# ---------------------------------------------------------------------------
-
-
-def extract_run_index_from_data_file(data_file: Path) -> int | None:
-    """Return enumerated run index encoded in a *_data*.npz file name."""
-
-    stem = data_file.stem
-    if stem.endswith("_data"):
-        return None
-
-    if "_data_" not in stem:
-        return None
-
-    prefix, suffix = stem.rsplit("_data_", 1)
-    if not prefix:
-        return None
-
-    return int(suffix) if suffix.isdigit() else None
-
-
-def discover_1d_data_files(folder: Path, run_index: int | None = None) -> List[Path]:
-    """Return sorted list of *_data*.npz files limited to a specific run, if given.
-
-    New naming scheme: averaged outputs carry an in-filename prefix segment
-    'inhom_avg' (e.g. '1d_inhom_avg_t_coh_50_inhom_000_data.npz').
-
-    If any averaged files are present we return only those, to avoid stacking
-    raw per-config files with duplicate t_coh values.
-    """
-
-    if not folder.is_dir():
-        raise NotADirectoryError(f"Not a directory: {folder}")
-
-    candidates = sorted(folder.glob("*_data*.npz"))
-
-    if run_index is None:
-        base_only = [p for p in candidates if extract_run_index_from_data_file(p) is None]
-        if base_only:
-            candidates = base_only
-    else:
-        run_specific = [p for p in candidates if extract_run_index_from_data_file(p) == run_index]
-        candidates = run_specific
-
-    avgs = [p for p in candidates if "/inhom_avg_" in str(p).replace("\\", "/")]
-    return avgs if avgs else candidates
-
-
-def derive_2d_folder(from_1d_folder: Path) -> Path:
-    """Map 1D folder .../data/1d_spectroscopy/... -> .../data/2d_spectroscopy/..."""
-    parts = list(from_1d_folder.parts)
-    try:
-        idx = parts.index("1d_spectroscopy")
-    except ValueError as exc:
-        raise ValueError("The provided path must include '1d_spectroscopy'") from exc
-    parts[idx] = "2d_spectroscopy"
-    return Path(*parts)
-
-
-def _extract_inhom_enabled(bundle: dict) -> bool:
-    """Infer whether a loaded bundle corresponds to an inhomogeneous run."""
-
-    raw_flag = bundle.get("inhom_enabled", None)
-    if raw_flag is not None:
-        return bool(raw_flag)
-
-    sim_cfg = bundle.get("sim_config")
-    if sim_cfg is not None and hasattr(sim_cfg, "inhom_enabled"):
-        return bool(sim_cfg.inhom_enabled)
-
-    # Fall back to presence of a group identifier
-    return bundle.get("inhom_group_id") is not None
-
-
-def _normalize_group_id(value) -> str | None:
-    """Convert stored group identifiers to plain Python strings."""
-
-    if value is None:
-        return None
-    if isinstance(value, np.ndarray):
-        # Scalar arrays store values such as array('inhom_xxx', dtype='<U16')
-        try:
-            return str(value.item())
-        except ValueError:
-            return str(value.tolist())
-    return str(value)
-
-
-def collect_group_files(anchor: Path) -> List[Path]:
-    """Find all files with the same inhom_group_id as `anchor` in its directory.
-
-    The anchor must be a path to a single `_data.npz` file from an inhomogeneous 1D run.
-    """
-    anchor = Path(anchor)
-    anchor_run_idx = extract_run_index_from_data_file(anchor)
-
-    try:
-        base = load_simulation_data(anchor)
-    except Exception as e:
-        print(f"❌ Anchor file is corrupted: {anchor}")
-        print(f"    Error: {e}")
-        print("🔍 Searching for valid files in the same directory...")
-
-        # Try to find any valid file in the same directory to get the group_id
-        dir_path = anchor.parent
-        all_npz = sorted(dir_path.glob("*_data*.npz"))
-
-        base = None
-        for p in all_npz:
-            if extract_run_index_from_data_file(p) != anchor_run_idx:
-                continue
-            if "/inhom_avg_" in str(p).replace("\\", "/"):
-                continue
-            try:
-                temp_data = load_simulation_data(p)
-                if temp_data.get("inhom_enabled", False):
-                    print(f"✅ Found valid anchor file: {p}")
-                    base = temp_data
-                    break
-            except Exception:
-                continue
-        if base is None:
-            raise FileNotFoundError(
-                "No valid inhomogeneous files found in directory to determine group_id"
-            )
-
-    group_id = _normalize_group_id(base.get("inhom_group_id"))
-    if group_id is None:
-        raise ValueError("Missing inhom_group_id in anchor file metadata.")
-    # Keep t_coh constant if present (multiple coherence delays in same folder)
-    anchor_tcoh = base.get("t_coh_value", None)
-
-    anchor_is_inhom = _extract_inhom_enabled(base)
-
-    dir_path = anchor.parent
-    all_npz = sorted(dir_path.glob("*_data*.npz"))
-    matches: List[Path] = []
-    for p in all_npz:
-        if extract_run_index_from_data_file(p) != anchor_run_idx:
-            continue
-        # Skip any already averaged outputs (identified by 'inhom_avg' prefix segment)
-        if "/inhom_avg_" in str(p).replace("\\", "/"):
-            continue
-        try:
-            d = load_simulation_data(p)
-        except Exception as e:
-            print(f"⚠️  Skipping corrupted file: {p}")
-            print(f"    Error: {e}")
-            continue
-        if not _extract_inhom_enabled(d) and anchor_is_inhom:
-            continue
-
-        if _normalize_group_id(d.get("inhom_group_id")) != group_id:
-            continue
-
-        if anchor_tcoh is not None:
-            try:
-                candidate_tcoh = float(np.asarray(d.get("t_coh_value", 0.0)))
-            except Exception:
-                candidate_tcoh = None
-            if candidate_tcoh is None or not np.isclose(candidate_tcoh, float(anchor_tcoh)):
-                continue
-
-        matches.append(p)
-    if not matches:
-        raise FileNotFoundError("No matching inhomogeneous files found for group.")
-    return sorted(matches)
+    return artifacts
