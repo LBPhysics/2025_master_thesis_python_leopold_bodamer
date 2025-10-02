@@ -17,7 +17,7 @@ import argparse
 from pathlib import Path
 
 from process_datas import PostProcessResult, post_process_job
-from hpc_dispatch import submit_sbatch
+from hpc_batch_dispatch import submit_sbatch
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 PLOT_SCRIPT = (SCRIPTS_DIR / "plot_datas.py").resolve()

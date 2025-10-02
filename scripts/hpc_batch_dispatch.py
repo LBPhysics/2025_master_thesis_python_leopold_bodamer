@@ -1,4 +1,3 @@
-# TODO make the requested parameters RAM / TIME / CPUS depend on size of the combinations / n_batches, len(times)
 """Generate and (optionally) submit SLURM jobs for combined t_coh × inhom runs.
 
 This dispatcher creates 1D/2D workflows by creating the full
@@ -11,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shlex
 import shutil
 import subprocess
@@ -51,11 +51,47 @@ class Combination:
             "t_coh_value": float(self.t_coh),
             "inhom_index": int(self.inhom_index),
         }
-
+    
 
 def _set_random_seed(seed: int | None) -> None:
     if seed is not None:
         np.random.seed(seed)
+
+
+def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) -> tuple[str, str]:
+    """Estimate SLURM memory and time requirements based on workload."""
+    combos = n_times * n_inhom
+    num_combos_per_batch = combos // n_batches
+    len_coh_times = n_times  # coherence times
+    
+    # Estimate memory: base 0.3G + factor for data size (complex64 = 8 bytes)
+    len_t_det = len(sim.t_det)
+    mem_gb = 0.3 + (num_combos_per_batch * len_t_det * 8 * 30) / (1024**3)
+    requested_mem_gb = math.ceil(mem_gb * 10) / 10
+    requested_mem = f"{requested_mem_gb}G"
+    
+    # Estimate time: scale based on solver, n_atoms, len_coh_times
+    solver = sim.simulation_config.ode_solver
+    n_atoms = sim.system.n_atoms
+    base_time_per_combo_seconds = 5.78e-6  # normalized from example: 50 combos in 26s for ME with 1 atom, ~300 t_det points
+    if solver == "BR":
+        base_time_per_combo_seconds *= 20  # safety factor for BR
+    base_time_per_combo_seconds *= n_atoms ** 2  # quadratic scaling with n_atoms (matrix diagonalization)
+    base_time_per_combo_seconds *= len_t_det * len_coh_times  # quadratic scaling with detection time length
+    time_seconds = num_combos_per_batch * base_time_per_combo_seconds
+    time_hours = max(0.1, time_seconds / 3600)  # minimum ~36 seconds for safety
+    if time_hours < 1:
+        minutes = int(time_hours * 60)
+        requested_time = f"00:{minutes:02d}:00"
+    else:
+        days = int(time_hours) // 24
+        hours = int(time_hours) % 24
+        if days > 0:
+            requested_time = f"{days}-{hours:02d}:00:00"
+        else:
+            requested_time = f"{hours:02d}:00:00"
+    
+    return requested_mem, requested_time
 
 
 def _coherence_axis(sim, sim_type: str) -> np.ndarray:
@@ -107,6 +143,8 @@ def _render_slurm_script(
     time_cut: float,
     worker_path: Path,
     python_executable: Path,
+    requested_mem: str,
+    requested_time: str,
 ) -> str:
     python_cmd = shlex.quote(str(python_executable))
     worker_arg = shlex.quote(str(worker_path))
@@ -115,8 +153,8 @@ def _render_slurm_script(
 #SBATCH --output=logs/%x.out
 #SBATCH --error=logs/%x.err
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=1G
-#SBATCH --time=0-04:00:00
+#SBATCH --mem={requested_mem}
+#SBATCH --time={requested_time}
 
 set -euo pipefail
 
@@ -227,6 +265,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}, n_batches={args.n_batches}"
     )
 
+    # Estimate RAM and TIME based on batch size
+    len_coh_times = len(t_coh_values)
+    requested_mem, requested_time = estimate_slurm_resources(sim, n_inhom, len_coh_times, args.n_batches)
+
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     job_label = f"{args.sim_type}_{n_inhom}inh_{t_coh_values.size}t_{timestamp}"
     job_dir = JOB_ROOT / job_label
@@ -290,6 +332,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             time_cut=time_cut,
             worker_path=worker_path,
             python_executable=python_executable,
+            requested_mem=requested_mem,
+            requested_time=requested_time,
         )
         script_path = job_dir / f"{job_name}.slurm"
         script_path.write_text(slurm_text, encoding="utf-8")
