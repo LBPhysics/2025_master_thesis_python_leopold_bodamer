@@ -116,6 +116,11 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
     # Add RWA if available
     parts.append("RWA" if sim_f.get("rwa_sl") else "noRWA")
 
+    # Add time parameters
+    parts.append(
+        f"t_dm{sim_f.get('t_det_max')}_t_wait{sim_f.get('t_wait')}_dt_{sim_f.get('dt')}"
+    )
+
     # For inhomogeneous batches, avoid embedding per-run numeric parameters to keep a stable folder
     n_inhomogen = int(sim_f.get("n_inhomogen", 1))
     if n_inhomogen > 1:
@@ -127,31 +132,30 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
         if coupling_cm and coupling_cm > 0:
             parts.append(f"{round(coupling_cm, 0)}cm")
 
-    # Add time parameters
-    parts.append(
-        f"t_dm{sim_f.get('t_det_max', 'na')}_t_wait{sim_f.get('t_wait', 'na')}_dt_{sim_f.get('dt', 'na')}"
-    )
-
     base_path = Path(*parts)
     return base_path
 
 
-def generate_deterministic_data_base(
+def generate_unique_data_base(
     system: "AtomicSystem",
     sim_config: "SimulationConfig",
     *,
     data_root: Union[str, Path],
     ensure: bool = True,
 ) -> Path:
-    """Return deterministic (non-enumerated) base path (no extension).
+    """Return unique base path (no extension) for data storage.
 
-    This is the pure mapping from (system, sim_config) -> directory/filename stem
-    without any collision resolution. Intended for tasks like discovery /
-    skip-if-exists that need to glob for all variants belonging to the same
-    logical parameter set.
+    This generates a unique path by appending a counter if the directory already exists.
     """
     relative_path = generate_base_sub_dir(sim_config, system)
-    abs_path = Path(data_root) / relative_path
+    data_root_path = Path(data_root)
+    candidate_dir = data_root_path / relative_path
+    if candidate_dir.exists():
+        counter = 1
+        while (data_root_path / f"{relative_path}_{counter}").exists():
+            counter += 1
+        relative_path = Path(f"{relative_path}_{counter}")
+    abs_path = data_root_path / relative_path
     if ensure:
         abs_path.mkdir(parents=True, exist_ok=True)
     base_name = _generate_base_stem(sim_config)

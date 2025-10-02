@@ -12,7 +12,7 @@ from .constants import (
 from .file_naming import (
     generate_unique_plot_filename,
     generate_base_sub_dir,
-    generate_deterministic_data_base,
+    generate_unique_data_base,
 )
 from .data_io import (
     compute_sample_id,
@@ -40,7 +40,7 @@ __all__ = [
     # file naming
     "generate_unique_plot_filename",
     "generate_base_sub_dir",
-    "generate_deterministic_data_base",
+    "generate_unique_data_base",
     # data I/O
     "compute_sample_id",
     "load_run_artifact",

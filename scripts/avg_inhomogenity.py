@@ -15,7 +15,9 @@ from qspectro2d.utils.data_io import (
     load_run_artifact,
     resolve_run_prefix,
     save_run_artifact,
+    save_info_file,
 )
+from qspectro2d.utils.file_naming import _generate_base_stem
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -180,10 +182,9 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         if anchor.bath:
             extra_payload["bath"] = anchor.bath
 
-    ensure_info_file(snapshot, data_root=DATA_DIR, extra_payload=extra_payload)
-
     t_index = metadata_out["t_index"]
-    expected_dir, prefix = resolve_run_prefix(snapshot.system, snapshot.simulation_config, DATA_DIR)
+    expected_dir = anchor.path.parent
+    prefix = _generate_base_stem(snapshot.simulation_config)
     expected_path = (
         expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
     )
@@ -192,13 +193,23 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         print(f"⏭️  Averaged artifact already present: {expected_path}")
         return expected_path
 
+    save_info_file(
+        expected_dir / f"{prefix}.pkl",
+        snapshot.system,
+        snapshot.simulation_config,
+        bath=snapshot.bath,
+        laser=snapshot.laser,
+        extra_payload=extra_payload,
+    )
+
     out_path = save_run_artifact(
         snapshot,
         signal_arrays=[averaged_signals[sig] for sig in signal_types],
         t_det=t_det,
         metadata=metadata_out,
         frequency_sample_cm=avg_freq,
-        data_root=DATA_DIR,
+        data_dir=expected_dir,
+        prefix=prefix,
         t_coh=metadata_out.get("t_coh_value"),
     )
 

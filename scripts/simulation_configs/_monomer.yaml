@@ -18,10 +18,11 @@ bath:
   coupling: 0.1
 
 config:
-  solver: Paper_eqs
+  solver: ME
   signal_types: [rephasing]
 
 window:
-  t_det_max: 60.0
-  t_wait: 0.0
-  dt: 0.2
+  t_det_max: 600.0
+  t_wait: 1000.0
+  t_coh: 300.0
+  dt: 2.0

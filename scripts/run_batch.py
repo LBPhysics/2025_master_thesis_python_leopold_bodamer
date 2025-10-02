@@ -25,6 +25,7 @@ from qspectro2d.utils.data_io import (
     compute_sample_id,
     resolve_run_prefix,
     ensure_info_file,
+    load_info_file,
 )
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
@@ -80,7 +81,7 @@ def main() -> None:
         "--samples_file",
         type=str,
         required=True,
-        help="NumPy .npy file containing the sampled frequency grid (shape: n_inhom × n_sites)",
+        help="NumPy .npy file containing the sampled frequency grid (shape: n_inhom × n_atoms)",
     )
     parser.add_argument(
         "--time_cut",
@@ -118,12 +119,18 @@ def main() -> None:
         with job_metadata_path.open("r", encoding="utf-8") as handle:
             job_metadata = json.load(handle)
 
+    data_base_path = Path(job_metadata["data_base_path"])
+    data_dir = data_base_path.parent
+    prefix = data_base_path.name
+
+    sim = load_simulation(config_path, validate=False)
+
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")
     print(f"Config: {config_path}")
     print(f"Combos file: {combos_path}")
     print(f"Samples file: {samples_path}")
-    print(f"Output root: {DATA_DIR}")
+    print(f"Output: {data_base_path}")
 
     combinations = _load_combinations(combos_path)
     if not combinations:
@@ -135,28 +142,25 @@ def main() -> None:
     samples = np.load(samples_path)
     if samples.ndim != 2:
         raise ValueError(
-            f"Expected samples array with shape (n_inhom, n_sites); got {samples.shape}"
+            f"Expected samples array with shape (n_inhom, n_atoms); got {samples.shape}"
         )
-    n_inhom, n_sites = samples.shape
-
-    sim = load_simulation(config_path, validate=False)
+    n_inhom, n_atoms = samples.shape
+    assert n_atoms == sim.system.n_atoms
 
     base_freqs = np.asarray(sim.system.frequencies_cm, dtype=float)
-    if base_freqs.size != n_sites:
+    if base_freqs.size != n_atoms:
         raise ValueError(
             "Mismatch between sampled frequencies and system frequencies: "
-            f"sample columns = {n_sites}, system sites = {base_freqs.size}"
+            f"sample columns = {n_atoms}, system sites = {base_freqs.size}"
         )
 
     # OKE UP TO HERE
-    run_dir, run_prefix = resolve_run_prefix(sim.system, sim.simulation_config, DATA_DIR)
-
-    samples_target = run_dir / f"{run_prefix}_samples.npy"
+    samples_target = data_dir / f"{prefix}_samples.npy"
     if not samples_target.exists():
         shutil.copy2(samples_path, samples_target)
 
     batch_suffix = f"batch_{args.batch_id:03d}.json" if args.batch_id is not None else "batch.json"
-    combos_target = run_dir / f"{run_prefix}_{batch_suffix}"
+    combos_target = data_dir / f"{prefix}_{batch_suffix}"
     if not combos_target.exists():
         shutil.copy2(combos_path, combos_target)
 
@@ -212,7 +216,8 @@ def main() -> None:
             t_det=t_det_axis,
             metadata=metadata,
             frequency_sample_cm=freq_vector,
-            data_root=DATA_DIR,
+            data_dir=data_dir,
+            prefix=prefix,
             t_coh=None,
         )
 

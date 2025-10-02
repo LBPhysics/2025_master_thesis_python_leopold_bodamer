@@ -110,7 +110,7 @@ def run_1d_mode(args) -> None:
     base_freqs_cm = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
     samples_cm = sample_from_gaussian(
         n_samples=n_inhom, fwhm=delta_cm, mu=base_freqs_cm
-    )  # shape (n_inhom, n_sites)
+    )  # shape (n_inhom, n_atoms)
 
     # Determine index subset for batching
     batch_idx: int = int(getattr(args, "batch_idx", 0))
@@ -120,8 +120,6 @@ def run_1d_mode(args) -> None:
         batch_note = "all"
     else:
         chunks = np.array_split(np.arange(n_inhom), n_batches)
-        if batch_idx < 0 or batch_idx >= len(chunks):
-            raise IndexError(f"batch_idx {batch_idx} out of range for n_batches={n_batches}")
         indices = chunks[batch_idx]
         batch_note = f"batch {batch_idx+1}/{n_batches} (size={indices.size})"
 
@@ -130,18 +128,13 @@ def run_1d_mode(args) -> None:
         f"n_inhom={n_inhom}, Δ_inhom={delta_cm:g} cm⁻¹"
     )
     if indices.size:
-        print(
-            f"📦 Batching: {batch_note}; total configs={n_inhom}; "
-            f"this job covers indices [{indices[0]}..{indices[-1]}]"
-        )
+        print(f"📦 Batching: {batch_note}")
     else:
-        print(
-            f"📦 Batching: {batch_note}; total configs={n_inhom}; this job covers no indices (empty chunk)"
-        )
+        print(f"📦 Batching: {batch_note} (empty chunk)")
 
-    from qspectro2d.utils.data_io import generate_deterministic_data_base
+    from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
 
-    data_base_path = generate_deterministic_data_base(
+    data_base_path = generate_unique_data_base(
         sim_oqs.system, sim_oqs.simulation_config, data_root=DATA_DIR
     )
     job_metadata = {
@@ -149,6 +142,15 @@ def run_1d_mode(args) -> None:
         "time_cut": float(time_cut),
         "data_base_path": str(data_base_path),
     }
+
+    save_info_file(
+        data_base_path.parent / f"{data_base_path.name}.pkl",
+        sim_oqs.system,
+        sim_oqs.simulation_config,
+        bath=getattr(sim_oqs, "bath", None),
+        laser=getattr(sim_oqs, "laser", None),
+        extra_payload=job_metadata,
+    )
 
     saved_paths: list[str] = []
     start_time = time.time()
@@ -182,9 +184,9 @@ def run_1d_mode(args) -> None:
             t_det=sim_oqs.t_det,
             metadata=metadata,
             frequency_sample_cm=np.asarray(cfg_freqs, dtype=float),
-            data_root=DATA_DIR,
+            data_dir=data_base_path.parent,
+            prefix=data_base_path.name,
             t_coh=None,
-            extra_payload={"job": job_metadata},
         )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
@@ -246,9 +248,9 @@ def run_2d_mode(args) -> None:
     freq_vector = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
     base_sample_id = compute_sample_id(freq_vector)
 
-    from qspectro2d.utils.data_io import generate_deterministic_data_base
+    from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
 
-    data_base_path = generate_deterministic_data_base(
+    data_base_path = generate_unique_data_base(
         sim_oqs.system, sim_oqs.simulation_config, data_root=DATA_DIR
     )
     job_metadata = {
@@ -256,6 +258,15 @@ def run_2d_mode(args) -> None:
         "time_cut": float(time_cut),
         "data_base_path": str(data_base_path),
     }
+
+    save_info_file(
+        data_base_path.parent / f"{data_base_path.name}.pkl",
+        sim_oqs.system,
+        sim_oqs.simulation_config,
+        bath=getattr(sim_oqs, "bath", None),
+        laser=getattr(sim_oqs, "laser", None),
+        extra_payload=job_metadata,
+    )
 
     saved_paths: list[str] = []
     start_time = time.time()
@@ -280,9 +291,9 @@ def run_2d_mode(args) -> None:
             t_det=sim_oqs.t_det,
             metadata=metadata,
             frequency_sample_cm=freq_vector,
-            data_root=DATA_DIR,
+            data_dir=data_base_path.parent,
+            prefix=data_base_path.name,
             t_coh=None,
-            extra_payload={"job": job_metadata},
         )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
