@@ -173,8 +173,11 @@ def compute_polarization_over_window(
 
     if sim.simulation_config.rwa_sl:
         # States are stored in the rotating frame; convert back to lab for polarization
+        # Use RELATIVE times w.r.t. the start of the simulation window to avoid
+        # imprinting a t_coh-dependent global phase across traces.
+        window_rel = np.asarray(window) - float(res.times[0])
         window_states = from_rotating_frame_list(
-            window_states, window, sim.system.n_atoms, sim.laser.carrier_freq_fs
+            window_states, window_rel, sim.system.n_atoms, sim.laser.carrier_freq_fs
         )
 
     # Analytical polarization using positive-frequency part of dipole operator
