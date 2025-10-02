@@ -75,7 +75,7 @@ def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) ->
     workers = sim.simulation_config.max_workers # should be 16
     # Estimate memory: base 1G + factor for data size (complex64 = 8 bytes)
     len_t = len(sim.times_local) # actually it saves only a portion of this len: t_det up to time_cut
-    mem_mb = 1000 + 10 * (workers * len_t * 8) / (1024**2)  # 10 is a safety factor
+    mem_mb = 100 + 10 * (workers * len_t * 8) / (1024**2)  # 10 is a safety factor
     requested_mem_mb = int(math.ceil(mem_mb))
     requested_mem = f"{requested_mem_mb}M"
     
