@@ -22,7 +22,6 @@ from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import (
     save_run_artifact,
-    compute_sample_id,
     resolve_run_prefix,
     ensure_info_file,
     load_info_file,
@@ -184,11 +183,6 @@ def main() -> None:
         sim.update_delays(t_coh=t_coh_val)
         sim.system.update_frequencies_cm(freq_vector.tolist())
 
-        sample_id = compute_sample_id(freq_vector)
-        sim.simulation_config.current_sample_id = (
-            sample_id  # TODO do i even need this sample_id attribute?
-        )
-
         print(
             f"\n--- combo {global_idx}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
@@ -205,7 +199,6 @@ def main() -> None:
             "batch_id": args.batch_id,
             "n_batches": args.n_batches,
             "sample_index": inhom_idx,
-            "sample_id": sample_id,
         }
 
         t_det_axis = sim.t_det

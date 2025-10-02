@@ -35,7 +35,6 @@ from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import save_run_artifact
 from qspectro2d.config.create_sim_obj import create_base_sim_oqs
 from qspectro2d.core.simulation import SimulationModuleOQS
-from qspectro2d.utils.data_io import compute_sample_id
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -167,16 +166,12 @@ def run_1d_mode(args) -> None:
         E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
 
         # Persist dataset for this configuration
-        sample_id = compute_sample_id(cfg_freqs)
-        sim_cfg.current_sample_id = sample_id
-
         metadata = {
             "signal_types": sim_cfg.signal_types,
             "t_coh_value": t_coh_val,
             "t_index": 0,
             "combination_index": int(idx),
             "sample_index": int(idx),
-            "sample_id": sample_id,
         }
         out_path = save_run_artifact(
             sim_oqs,
@@ -246,7 +241,6 @@ def run_2d_mode(args) -> None:
         )
 
     freq_vector = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
-    base_sample_id = compute_sample_id(freq_vector)
 
     from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
 
@@ -275,14 +269,12 @@ def run_2d_mode(args) -> None:
         print(f"\n--- t_coh={t_coh_val:.2f} fs  [{t_i} / {N_total}]---")
         E_sigs = _compute_e_components_for_tcoh(sim_oqs, t_coh_val, time_cut=time_cut)
 
-        sim_cfg.current_sample_id = base_sample_id
         metadata = {
             "signal_types": sim_cfg.signal_types,
             "t_coh_value": t_coh_val,
             "t_index": int(t_i),
             "combination_index": int(t_i),
             "sample_index": 0,
-            "sample_id": base_sample_id,
         }
 
         out_path = save_run_artifact(

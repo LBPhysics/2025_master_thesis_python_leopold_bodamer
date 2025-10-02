@@ -90,11 +90,6 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     return [_load_entry(candidate) for candidate in candidates]
 
 
-def _aggregate_sample_id(sample_ids: list[str]) -> str:
-    combined = "|".join(sorted(sample_ids))
-    return hashlib.sha1(combined.encode("utf-8")).hexdigest()
-
-
 def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]:
     if not entries:
         raise ValueError("No artifacts available for averaging")
@@ -142,20 +137,15 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     freq_stack = np.stack([entry.frequency_sample_cm for entry in raw_entries], axis=0)
     avg_freq = np.mean(freq_stack, axis=0)
 
-    sample_ids = [str(entry.metadata["sample_id"]) for entry in raw_entries]
-    aggregated_sample_id = _aggregate_sample_id(sample_ids)
-
     combination_indices = [int(entry.metadata.get("combination_index", 0)) for entry in raw_entries]
     new_combination_index = max(combination_indices) if combination_indices else 0
 
     metadata_out = dict(anchor.metadata)
     metadata_out.update(
         {
-            "sample_id": aggregated_sample_id,
             "sample_index": None,
             "inhom_averaged": True,
             "averaged_count": len(raw_entries),
-            "source_sample_ids": sample_ids,
             "source_artifacts": [entry.path.name for entry in raw_entries],
             "combination_index": int(new_combination_index),
         }
@@ -164,7 +154,6 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     sim_cfg = replace(
         anchor.simulation_config,
         inhom_averaged=True,
-        current_sample_id=aggregated_sample_id,
     )
 
     snapshot = SimulationSnapshot(

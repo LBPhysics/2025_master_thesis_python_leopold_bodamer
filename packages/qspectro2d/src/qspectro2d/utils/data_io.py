@@ -45,14 +45,6 @@ def _json_default(obj: Any) -> Any:
 def _json_dumps(payload: Any) -> str:
     return json.dumps(payload, default=_json_default, sort_keys=True)
 
-
-def compute_sample_id(frequency_sample_cm: Sequence[float]) -> str:
-    """Return a SHA1 hash representing the provided frequency vector."""
-
-    arr = np.asarray(frequency_sample_cm, dtype=np.float64)
-    return hashlib.sha1(arr.tobytes()).hexdigest()
-
-
 def _split_prefix(path: Path) -> tuple[Path, str]:
     path = Path(path)
     stem = path.stem

@@ -15,7 +15,6 @@ from .file_naming import (
     generate_unique_data_base,
 )
 from .data_io import (
-    compute_sample_id,
     load_run_artifact,
     resolve_run_prefix,
     save_run_artifact,
@@ -42,7 +41,6 @@ __all__ = [
     "generate_base_sub_dir",
     "generate_unique_data_base",
     # data I/O
-    "compute_sample_id",
     "load_run_artifact",
     "resolve_run_prefix",
     "save_run_artifact",

@@ -158,7 +158,7 @@ def validate(params: dict) -> None:
     if delta_inhomogen_cm < 0:
         raise ValueError("delta_inhomogen_cm must be >= 0")
 
-    # TODO deleted dipole posititvity
+    # NOTE deleted dipole posititvity
 
     # Phase/frequency sampling checks
     if n_phases <= 0:

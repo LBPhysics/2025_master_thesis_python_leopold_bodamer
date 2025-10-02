@@ -1,4 +1,3 @@
-# TODO Get rid of this unnecessary stuff
 """
 File naming utilities for qspectro2d.
 This module provides functionality for generating standardized filenames
@@ -8,7 +7,6 @@ and directory paths for simulation data and plots.
 from __future__ import annotations
 
 # IMPORTS
-from email.mime import base
 from pathlib import Path
 from typing import Union, TYPE_CHECKING
 

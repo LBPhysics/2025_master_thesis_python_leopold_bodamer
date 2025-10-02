@@ -1,4 +1,3 @@
-# TODO rename this module
 """Compute 1D emitted electric field E_ks(t_det) via phase-cycled third-order polarization.
 
 This module provides a clean, focused API that mirrors the physics and flow you described:
