@@ -119,11 +119,12 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         return anchor.path
 
     entries = _discover_entries(anchor)
-    raw_entries = [entry for entry in entries if not entry.simulation_config.get("inhom_averaged")]
+    # Use simulation_config for averaged flag consistently
+    raw_entries = [entry for entry in entries if not entry.simulation_config.inhom_averaged]
     if not raw_entries:
         raise FileNotFoundError("No raw artifacts available for averaging")
 
-    existing = [entry for entry in entries if entry.simulation_config.get("inhom_averaged")]
+    existing = [entry for entry in entries if entry.simulation_config.inhom_averaged]
     if existing and skip_if_exists:
         return existing[0].path
 
@@ -137,8 +138,17 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     freq_stack = np.stack([entry.frequency_sample_cm for entry in raw_entries], axis=0)
     avg_freq = np.mean(freq_stack, axis=0)
 
+    # Determine expected combination index; ensure consistency across raw entries
     combination_indices = [int(entry.metadata.get("combination_index", 0)) for entry in raw_entries]
-    new_combination_index = max(combination_indices) if combination_indices else 0
+    if combination_indices:
+        unique_c = set(combination_indices)
+        if len(unique_c) > 1:
+            raise ValueError(
+                f"Inconsistent combination_index across raw entries: {sorted(unique_c)}"
+            )
+        new_combination_index = combination_indices[0]
+    else:
+        new_combination_index = 0
 
     metadata_out = dict(anchor.metadata)
     metadata_out.update(
@@ -178,6 +188,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
     )
 
+    # Only skip if the specific expected averaged artifact exists
     if skip_if_exists and expected_path.exists():
         print(f"⏭️  Averaged artifact already present: {expected_path}")
         return expected_path
