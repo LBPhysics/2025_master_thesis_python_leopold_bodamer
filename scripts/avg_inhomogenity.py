@@ -88,6 +88,8 @@ def _artifact_prefix(path: Path) -> str:
 
 
 def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
+    """Find all related artifacts for the same t_index and sample_index as the anchor.
+       Includes the anchor itself."""
     directory = anchor.path.parent
     prefix = _artifact_prefix(anchor.path)
 
@@ -100,6 +102,10 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
         # Only include entries with the same sample_index as the anchor
         if entry.metadata.get("sample_index") != anchor.metadata.get("sample_index"):
             continue
+        # Only include entries with the same t_index as the anchor
+        if entry.metadata.get("t_index") != anchor.metadata.get("t_index"):
+            continue
+        
         entries.append(entry)
 
     return entries
@@ -142,6 +148,79 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     if existing and skip_if_exists:
         return existing[0].path
 
+    # Handle single entry case
+    if len(raw_entries) == 1:
+        single_entry = raw_entries[0]
+        signal_types = list(single_entry.metadata.get("signal_types", single_entry.signals.keys()))
+        t_index = single_entry.metadata["t_index"]
+        new_sample_index = int(single_entry.metadata.get("sample_index", 0))
+        new_combination_index = new_sample_index
+
+        metadata_out = dict(single_entry.metadata)
+        metadata_out.update(
+            {
+                "sample_index": None,
+                "inhom_averaged": True,
+                "averaged_count": 1,
+                "source_artifacts": [single_entry.path.name],
+                "combination_index": int(new_combination_index),
+            }
+        )
+
+        sim_cfg = replace(
+            single_entry.simulation_config,
+            inhom_averaged=True,
+        )
+
+        snapshot = SimulationSnapshot(
+            system=single_entry.system,
+            simulation_config=sim_cfg,
+            laser=single_entry.laser,
+            bath=single_entry.bath,
+        )
+
+        extra_payload: dict[str, Any] | None = None
+        if single_entry.job_metadata or single_entry.bath:
+            extra_payload = {}
+            if single_entry.job_metadata:
+                extra_payload["job_metadata"] = single_entry.job_metadata
+            if single_entry.bath:
+                extra_payload["bath"] = single_entry.bath
+
+        expected_dir = single_entry.path.parent
+        prefix = _generate_base_stem(snapshot.simulation_config)
+        expected_path = (
+            expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
+        )
+
+        if skip_if_exists and expected_path.exists():
+            print(f"⏭️  Averaged artifact already present: {expected_path}")
+            return expected_path
+
+        save_info_file(
+            expected_dir / f"{prefix}.pkl",
+            snapshot.system,
+            snapshot.simulation_config,
+            bath=snapshot.bath,
+            laser=snapshot.laser,
+            extra_payload=extra_payload,
+        )
+
+        out_path = save_run_artifact(
+            snapshot,
+            signal_arrays=[single_entry.signals[sig] for sig in signal_types],
+            t_det=single_entry.t_det,
+            metadata=metadata_out,
+            frequency_sample_cm=single_entry.frequency_sample_cm,
+            data_dir=expected_dir,
+            prefix=prefix,
+            t_coh=metadata_out.get("t_coh_value"),
+        )
+
+        print(f"⏭️ Single artifact treated as averaged for t_index={t_index} → {out_path}")
+        return out_path
+
+    # Multi-entry averaging
     t_det, signal_types = _ensure_consistency(raw_entries)
 
     data_stack = {
