@@ -100,9 +100,9 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
         entry = _load_entry(candidate)
         # Only stack 1D artifacts, not already stacked 2D data
-        if entry.simulation_config.get("sim_type") == "2d":
+        if entry.simulation_config.sim_type == "2d":
             continue
-        if bool(entry.simulation_config.get("inhom_averaged")) != averaged_flag:
+        if bool(entry.simulation_config.inhom_averaged) != averaged_flag:
             continue
         entries.append(entry)
 
@@ -149,7 +149,7 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     anchor = _load_entry(abs_path)
     
     # Ensure we're stacking 1D data, not 2D data
-    if anchor.metadata.get("sim_type") == "2d":
+    if anchor.simulation_config.sim_type == "2d":
         raise ValueError("Cannot stack 2D artifacts. Provide a 1D artifact to stack into 2D.")
     
     entries = _discover_entries(anchor)
