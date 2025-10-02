@@ -1,7 +1,13 @@
 """
 Data I/O operations for qspectro2d.
 
-This module provides functionality for loading and saving simulation data,
+This mdef _split_prefix(path: Path) -> tuple[Path, str]:
+    path = Path(path)
+    stem = path.stem
+    if "_run_" not in stem:
+        raise ValueError(f"Artifact filename missing '_run_' segment: {path}")
+    prefix = stem.rsplit("_run_", 1)[0]
+    return path.parent, prefixrovides functionality for loading and saving simulation data,
 including standardized file formats and directory management.
 """
 
@@ -105,28 +111,14 @@ def save_run_artifact(
     t_det: np.ndarray,
     metadata: Mapping[str, Any],
     frequency_sample_cm: Sequence[float],
-    data_root: Path | str | None = None,
-    data_dir: Path | str | None = None,
-    prefix: str | None = None,
+    data_dir: Path | str,
+    filename: str,
     t_coh: np.ndarray | None = None,
     extra_payload: Mapping[str, Any] | None = None,
 ) -> Path:
     """Persist a single run (t_coh × sample) as a compressed ``.npz`` artifact."""
 
-    if data_dir is not None:
-        if prefix is None:
-            raise ValueError("prefix must be provided when data_dir is provided")
-        directory = Path(data_dir)
-    else:
-        if data_root is None:
-            raise ValueError("data_root must be provided when data_dir is not")
-        directory, prefix = resolve_run_prefix(
-            sim_module.system, sim_module.simulation_config, data_root
-        )
-
-    t_index = int(metadata.get("t_index", 0))
-    combination_index = int(metadata.get("combination_index", 0))
-    filename = f"{prefix}_run_t{t_index:03d}_c{combination_index:04d}.npz"
+    directory = Path(data_dir)
     abs_path = directory / filename
 
     signal_types = list(metadata.get("signal_types", []))

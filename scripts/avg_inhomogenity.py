@@ -11,9 +11,7 @@ from typing import Any
 import numpy as np
 
 from qspectro2d.utils.data_io import (
-    ensure_info_file,
     load_run_artifact,
-    resolve_run_prefix,
     save_run_artifact,
     save_info_file,
 )
@@ -153,19 +151,21 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         single_entry = raw_entries[0]
         signal_types = list(single_entry.metadata.get("signal_types", single_entry.signals.keys()))
         t_index = single_entry.metadata["t_index"]
-        new_sample_index = int(single_entry.metadata.get("sample_index", 0))
-        new_combination_index = new_sample_index
 
         metadata_out = dict(single_entry.metadata)
         metadata_out.update(
             {
-                "sample_index": None,
+                "t_index": t_index,
                 "inhom_averaged": True,
                 "averaged_count": 1,
                 "source_artifacts": [single_entry.path.name],
-                "combination_index": int(new_combination_index),
             }
         )
+
+        # Remove sample_index since it was averaged over
+        metadata_out.pop("sample_index", None)
+        # Remove combination_index as it's no longer relevant after averaging
+        metadata_out.pop("combination_index", None)
 
         sim_cfg = replace(
             single_entry.simulation_config,
@@ -188,10 +188,8 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
                 extra_payload["bath"] = single_entry.bath
 
         expected_dir = single_entry.path.parent
-        prefix = _generate_base_stem(snapshot.simulation_config)
-        expected_path = (
-            expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
-        )
+        prefix = _generate_base_stem(snapshot.simulation_config, t_index=t_index)
+        expected_path = expected_dir / f"{prefix}_run_t{int(t_index):03d}.npz"
 
         if skip_if_exists and expected_path.exists():
             print(f"⏭️  Averaged artifact already present: {expected_path}")
@@ -213,7 +211,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             metadata=metadata_out,
             frequency_sample_cm=single_entry.frequency_sample_cm,
             data_dir=expected_dir,
-            prefix=prefix,
+            filename=f"{prefix}_run_t{int(t_index):03d}.npz",
             t_coh=metadata_out.get("t_coh_value"),
         )
 
@@ -231,30 +229,19 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     freq_stack = np.stack([entry.frequency_sample_cm for entry in raw_entries], axis=0)
     avg_freq = np.mean(freq_stack, axis=0)
 
-    # Determine expected combination index; ensure consistency across raw entries
-    sample_indices = [int(entry.metadata.get("sample_index", 0)) for entry in raw_entries]
-    if sample_indices:
-        unique_s = set(sample_indices)
-        if len(unique_s) > 1:
-            raise ValueError(
-                f"Inconsistent sample_index across raw entries: {sorted(unique_s)}"
-            )
-        new_sample_index = sample_indices[0]
-    else:
-        new_sample_index = 0
-
-    new_combination_index = new_sample_index
-
     metadata_out = dict(anchor.metadata)
     metadata_out.update(
         {
-            "sample_index": None,
             "inhom_averaged": True,
             "averaged_count": len(raw_entries),
             "source_artifacts": [entry.path.name for entry in raw_entries],
-            "combination_index": int(new_combination_index),
         }
     )
+
+    # Remove sample_index since it was averaged over
+    # Remove combination_index as it's no longer relevant after averaging
+    metadata_out.pop("combination_index", None)
+    metadata_out.pop("sample_index", None)
 
     sim_cfg = replace(
         anchor.simulation_config,
@@ -278,10 +265,8 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 
     t_index = metadata_out["t_index"]
     expected_dir = anchor.path.parent
-    prefix = _generate_base_stem(snapshot.simulation_config)
-    expected_path = (
-        expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
-    )
+    prefix = _generate_base_stem(snapshot.simulation_config, t_index=t_index)
+    expected_path = expected_dir / f"{prefix}_run_t{int(t_index):03d}.npz"
 
     # Only skip if the specific expected averaged artifact exists
     if skip_if_exists and expected_path.exists():
@@ -304,7 +289,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         metadata=metadata_out,
         frequency_sample_cm=avg_freq,
         data_dir=expected_dir,
-        prefix=prefix,
+        filename=f"{prefix}_run_t{int(t_index):03d}.npz",
         t_coh=metadata_out.get("t_coh_value"),
     )
 

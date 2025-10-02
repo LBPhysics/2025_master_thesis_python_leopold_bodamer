@@ -207,8 +207,7 @@ def main() -> None:
             metadata=metadata,
             frequency_sample_cm=freq_vector,
             data_dir=data_dir,
-            prefix=prefix,
-            t_coh=None,
+            filename=f"{prefix}_run_t{t_idx:03d}_c{global_idx:04d}.npz",
         )
 
         saved_paths.append(str(path))

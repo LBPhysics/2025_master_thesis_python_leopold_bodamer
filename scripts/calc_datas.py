@@ -180,8 +180,7 @@ def run_1d_mode(args) -> None:
             metadata=metadata,
             frequency_sample_cm=np.asarray(cfg_freqs, dtype=float),
             data_dir=data_base_path.parent,
-            prefix=data_base_path.name,
-            t_coh=None,
+            filename=f"{data_base_path.name}_run_t000_c{idx:04d}.npz",
         )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")
@@ -282,8 +281,7 @@ def run_2d_mode(args) -> None:
             metadata=metadata,
             frequency_sample_cm=freq_vector,
             data_dir=data_base_path.parent,
-            prefix=data_base_path.name,
-            t_coh=None,
+            filename=f"{data_base_path.name}_run_t{t_i:03d}_c{t_i:04d}.npz",
         )
         saved_paths.append(str(out_path))
         print(f"    ✅ Saved {out_path}")

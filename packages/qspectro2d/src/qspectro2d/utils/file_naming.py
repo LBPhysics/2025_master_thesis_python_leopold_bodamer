@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from qspectro2d.core.simulation.sim_config import SimulationConfig
 
 
-def _generate_base_stem(sim_config: "SimulationConfig") -> str:
+def _generate_base_stem(sim_config: "SimulationConfig", t_index: int | None = None, combination_index: int | None = None) -> str:
     """Deterministic base filename for simulation outputs.
 
     We keep the stem coarse so that all runs belonging to the same logical
@@ -28,7 +28,13 @@ def _generate_base_stem(sim_config: "SimulationConfig") -> str:
     if sim_config.sim_type == "2d":
         parts.append("stacked")
     base = "_".join(parts)
-    return base
+    
+    if combination_index is not None:
+        return f"{base}_run_t_c{combination_index:04d}"
+    elif t_index is not None:
+        return f"{base}_run_t{t_index:03d}"
+    else:
+        return f"{base}_run"
 
 
 def _generate_unique_filename(path: Union[str, Path], base_name: str) -> str:
