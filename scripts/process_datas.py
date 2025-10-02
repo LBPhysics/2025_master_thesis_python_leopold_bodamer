@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -12,7 +13,7 @@ LogFn = Optional[Callable[[str], None]]
 
 import numpy as np
 
-from avg_inhomogenity import average_inhom_1d
+from avg_inhomogenity import average_inhom_1d, _load_entry, SimulationSnapshot, save_run_artifact, save_info_file, _generate_base_stem
 from stack_times import stack_artifacts
 from qspectro2d.utils.data_io import load_run_artifact
 
@@ -175,21 +176,104 @@ def post_process_job(
     grouped = _group_by_t_index(records)
     print(f"Discovered {len(grouped)} coherence index group(s).")
 
+    raw_records = [rec for rec in records if not rec.metadata.get("inhom_averaged", False)]
+    grouped_by_sample_t = defaultdict(list)
+    for rec in raw_records:
+        sample_index = rec.metadata.get("sample_index")
+        t_index = rec.metadata.get("t_index")
+        grouped_by_sample_t[(sample_index, t_index)].append(rec)
+
     averaged_paths: List[Path] = []
-    for t_index in sorted(grouped):
-        candidates = grouped[t_index]
-        if not candidates:
-            continue
-        anchor_path = candidates[0].path
+    for key in sorted(grouped_by_sample_t):
+        sample_index, t_index = key
+        group = grouped_by_sample_t[key]
         print("-" * 80)
-        print(f"Processing t_index={t_index} using anchor {anchor_path.name}")
-        averaged_path = average_inhom_1d(anchor_path, skip_if_exists=skip_inhom)
-        print(f"  → Averaged artifact: {averaged_path}")
-        # Sanitize metadata of the produced averaged artifact
-        sanitized_path = _sanitize_artifact_metadata(
-            Path(averaged_path), keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
-        )
-        averaged_paths.append(sanitized_path)
+        print(f"Processing sample_index={sample_index}, t_index={t_index} ({len(group)} artifacts)")
+        if len(group) == 1:
+            # Single entry
+            rec = group[0]
+            entry = _load_entry(rec.path)
+            signal_types = list(entry.metadata.get("signal_types", entry.signals.keys()))
+            new_sample_index = int(entry.metadata.get("sample_index", 0))
+            new_combination_index = new_sample_index
+
+            metadata_out = dict(entry.metadata)
+            metadata_out.update(
+                {
+                    "sample_index": None,
+                    "inhom_averaged": True,
+                    "averaged_count": 1,
+                    "source_artifacts": [entry.path.name],
+                    "combination_index": int(new_combination_index),
+                }
+            )
+
+            sim_cfg = replace(
+                entry.simulation_config,
+                inhom_averaged=True,
+            )
+
+            snapshot = SimulationSnapshot(
+                system=entry.system,
+                simulation_config=sim_cfg,
+                laser=entry.laser,
+                bath=entry.bath,
+            )
+
+            extra_payload: dict[str, Any] | None = None
+            if entry.job_metadata or entry.bath:
+                extra_payload = {}
+                if entry.job_metadata:
+                    extra_payload["job_metadata"] = entry.job_metadata
+                if entry.bath:
+                    extra_payload["bath"] = entry.bath
+
+            expected_dir = entry.path.parent
+            prefix = _generate_base_stem(snapshot.simulation_config)
+            expected_path = (
+                expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
+            )
+
+            if skip_inhom and expected_path.exists():
+                averaged_path = expected_path
+                print(f"⏭️  Averaged artifact already present: {averaged_path}")
+            else:
+                save_info_file(
+                    expected_dir / f"{prefix}.pkl",
+                    snapshot.system,
+                    snapshot.simulation_config,
+                    bath=snapshot.bath,
+                    laser=snapshot.laser,
+                    extra_payload=extra_payload,
+                )
+
+                out_path = save_run_artifact(
+                    snapshot,
+                    signal_arrays=[entry.signals[sig] for sig in signal_types],
+                    t_det=entry.t_det,
+                    metadata=metadata_out,
+                    frequency_sample_cm=entry.frequency_sample_cm,
+                    data_dir=expected_dir,
+                    prefix=prefix,
+                    t_coh=metadata_out.get("t_coh_value"),
+                )
+
+                averaged_path = out_path
+                print(f"⏭️ Single artifact treated as averaged for t_index={t_index} → {averaged_path}")
+
+            sanitized_path = _sanitize_artifact_metadata(
+                averaged_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+            )
+            averaged_paths.append(sanitized_path)
+        else:
+            # Multi
+            anchor_path = group[0].path
+            averaged_path = average_inhom_1d(anchor_path, skip_if_exists=skip_inhom)
+            print(f"✅ Averaged {len(group)} artifacts for t_index={t_index} → {averaged_path}")
+            sanitized_path = _sanitize_artifact_metadata(
+                averaged_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
+            )
+            averaged_paths.append(sanitized_path)
 
     unique_averaged: List[Path] = []
     seen: set[str] = set()
