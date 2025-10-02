@@ -17,62 +17,6 @@ from avg_inhomogenity import average_inhom_1d, _load_entry, SimulationSnapshot, 
 from stack_times import stack_artifacts
 from qspectro2d.utils.data_io import load_run_artifact
 
-# Keys we want to remove from artifact metadata after post-processing
-_POSTPROC_META_KEYS_TO_DROP = {
-    # run/batch bookkeeping
-    "sample_index",
-    "batch_id",
-    "combination_index",
-    # verbose provenance lists that clutter plots
-    "source_artifacts",
-    # stacking/averaging helpers
-    "t_indices",
-    "t_coh_axis",
-    "t_coh",
-    "t_index",
-}
-
-
-def _sanitize_artifact_metadata(path: Path, *, keys_to_drop: set[str]) -> Path:
-    """Remove unwanted keys from the metadata_json of a run artifact in-place.
-
-    This rewrites the .npz file preserving all arrays and only updating the
-    embedded JSON string under the "metadata_json" key.
-    """
-    path = Path(path)
-    try:
-        with np.load(path, allow_pickle=False) as bundle:
-            contents = {key: bundle[key] for key in bundle.files}
-
-        meta_key = "metadata_json"
-        if meta_key not in contents:
-            return path
-
-        # Parse, drop, and re-serialize
-        try:
-            meta = json.loads(str(contents[meta_key].item()))
-        except Exception:
-            return path
-
-        changed = False
-        for k in list(keys_to_drop):
-            if k in meta:
-                meta.pop(k, None)
-                changed = True
-
-        if not changed:
-            return path
-
-        contents[meta_key] = np.array(json.dumps(meta, separators=(",", ":")), dtype=np.str_)
-
-        tmp_path = path.with_suffix(".tmp.npz")
-        np.savez_compressed(tmp_path, **contents)
-        tmp_path.replace(path)
-        return path
-    except Exception:
-        # Best-effort: ignore failures so post-processing can continue
-        return path
-
 
 def _load_metadata(job_dir: Path) -> dict[str, Any]:
     metadata_path = job_dir / "metadata.json"
@@ -177,34 +121,28 @@ def post_process_job(
     print(f"Discovered {len(grouped)} coherence index group(s).")
 
     raw_records = [rec for rec in records if not rec.metadata.get("inhom_averaged", False)]
-    grouped_by_sample_t = defaultdict(list)
+    grouped_by_t = defaultdict(list)
     for rec in raw_records:
-        sample_index = rec.metadata.get("sample_index")
         t_index = rec.metadata.get("t_index")
-        grouped_by_sample_t[(sample_index, t_index)].append(rec)
+        grouped_by_t[t_index].append(rec)
 
     averaged_paths: List[Path] = []
-    for key in sorted(grouped_by_sample_t):
-        sample_index, t_index = key
-        group = grouped_by_sample_t[key]
+    for t_index in sorted(grouped_by_t):
+        group = grouped_by_t[t_index]
         print("-" * 80)
-        print(f"Processing sample_index={sample_index}, t_index={t_index} ({len(group)} artifacts)")
+        print(f"Processing t_index={t_index} ({len(group)} artifacts)")
         if len(group) == 1:
             # Single entry
             rec = group[0]
             entry = _load_entry(rec.path)
             signal_types = list(entry.metadata.get("signal_types", entry.signals.keys()))
-            new_sample_index = int(entry.metadata.get("sample_index", 0))
-            new_combination_index = new_sample_index
 
             metadata_out = dict(entry.metadata)
             metadata_out.update(
                 {
-                    "sample_index": None,
                     "inhom_averaged": True,
                     "averaged_count": 1,
                     "source_artifacts": [entry.path.name],
-                    "combination_index": int(new_combination_index),
                 }
             )
 
@@ -231,7 +169,7 @@ def post_process_job(
             expected_dir = entry.path.parent
             prefix = _generate_base_stem(snapshot.simulation_config)
             expected_path = (
-                expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{int(new_combination_index):04d}.npz"
+                expected_dir / f"{prefix}_run_t{int(t_index):03d}_c{0:04d}.npz"
             )
 
             if skip_inhom and expected_path.exists():
@@ -261,18 +199,14 @@ def post_process_job(
                 averaged_path = out_path
                 print(f"⏭️ Single artifact treated as averaged for t_index={t_index} → {averaged_path}")
 
-            sanitized_path = _sanitize_artifact_metadata(
-                averaged_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
-            )
+            sanitized_path = averaged_path
             averaged_paths.append(sanitized_path)
         else:
             # Multi
             anchor_path = group[0].path
             averaged_path = average_inhom_1d(anchor_path, skip_if_exists=skip_inhom)
             print(f"✅ Averaged {len(group)} artifacts for t_index={t_index} → {averaged_path}")
-            sanitized_path = _sanitize_artifact_metadata(
-                averaged_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
-            )
+            sanitized_path = averaged_path
             averaged_paths.append(sanitized_path)
 
     unique_averaged: List[Path] = []
@@ -295,9 +229,7 @@ def post_process_job(
     if sim_type == "1d" and len(grouped) == 1:
         print("Single coherence point detected; stacking is not required.")
         # Ensure the single averaged artifact is sanitized
-        final_path = _sanitize_artifact_metadata(
-            unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
-        ).resolve()
+        final_path = unique_averaged[0].resolve()
         print("=" * 80)
         print("🎯 To plot the averaged 1D data run:")
         print(f"python plot_datas.py --abs_path {final_path}")
@@ -321,10 +253,6 @@ def post_process_job(
 
     stacked_path = stack_artifacts(stack_anchor_path, skip_if_exists=skip_stack).resolve()
     # Sanitize metadata of the final stacked artifact
-    stacked_path = _sanitize_artifact_metadata(
-        stacked_path, keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
-    ).resolve()
-
     print("=" * 80)
     print("🎯 To plot the 2D data run:")
     print(f"python plot_datas.py --abs_path {stacked_path}")

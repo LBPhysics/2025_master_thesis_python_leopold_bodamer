@@ -74,7 +74,7 @@ def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) ->
     num_combos_per_batch = combos // n_batches
     workers = sim.simulation_config.max_workers # should be 16
     # Estimate memory: base 1G + factor for data size (complex64 = 8 bytes)
-    len_t = len(sim.times_local) # actually it saves only a portion of this len: t_det up to time_cut
+    len_t = len(sim.times_local) # NOTE actually it saves only a portion of this len: t_det up to time_cut
     mem_mb = 100 + 10 * (workers * len_t * 8) / (1024**2)  # 10 is a safety factor
     requested_mem_mb = int(math.ceil(mem_mb))
     requested_mem = f"{requested_mem_mb}M"
@@ -276,6 +276,8 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     # Estimate RAM and TIME based on batch size
     len_coh_times = len(t_coh_values)
+    # Set sim to max t_coh for accurate time estimation
+    sim.update_delays(t_coh=max(t_coh_values))
     requested_mem, requested_time = estimate_slurm_resources(sim, n_inhom, len_coh_times, args.n_batches)
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

@@ -94,7 +94,7 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     prefix = _artifact_prefix(anchor.path)
 
     entries: list[RunEntry] = []
-    for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
+    for candidate in sorted(directory.glob(f"{prefix}_run_t*.npz")):
         entry = _load_entry(candidate)
         # Only stack 1D artifacts, not already stacked 2D data
         if entry.simulation_config.sim_type == "2d":
@@ -160,7 +160,6 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     entries = _sort_entries(entries)
     t_det, signal_types = _ensure_consistency(entries)
 
-    t_indices = [int(entry.metadata.get("t_index", idx)) for idx, entry in enumerate(entries)]
     t_coh_values = [float(entry.metadata.get("t_coh_value", 0.0)) for entry in entries]
     t_coh_axis = np.asarray(t_coh_values, dtype=float)
 
@@ -168,24 +167,21 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         sig: np.stack([entry.signals[sig] for entry in entries], axis=0) for sig in signal_types
     }
 
-    combination_indices = [int(entry.metadata.get("combination_index", 0)) for entry in entries]
-    new_combination_index = max(combination_indices) + 1 if combination_indices else len(entries)
-    new_t_index = max(t_indices) + 1 if t_indices else len(entries)
-
     metadata_out = {**anchor.metadata}
     metadata_out.update(
         {
             "sim_type": "2d",
-            "signal_types": signal_types,
-            "t_index": int(new_t_index),
-            "combination_index": int(new_combination_index),
             "stacked_points": len(entries),
-            "t_indices": t_indices,
-            "t_coh_axis": t_coh_values,
+            "signal_types": signal_types,
             "source_artifacts": [entry.path.name for entry in entries],
         }
     )
     metadata_out.pop("t_coh_value", None)
+
+    # Remove t_index since it was stacked into 2D
+    # Remove combination_index as it's no longer relevant after stacking
+    metadata_out.pop("combination_index", None)
+    metadata_out.pop("t_index", None)
 
     sim_cfg = replace(
         anchor.simulation_config,
@@ -212,7 +208,7 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     out_dir = anchor.path.parent
     prefix = _generate_base_stem(snapshot.simulation_config)
     expected_path = (
-        out_dir / f"{prefix}_run_t{int(new_t_index):03d}_c{int(new_combination_index):04d}.npz"
+        out_dir / f"{prefix}.npz"
     )
 
     if skip_if_exists and expected_path.exists():
@@ -234,7 +230,7 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         metadata=metadata_out,
         frequency_sample_cm=anchor.frequency_sample_cm,
         data_dir=out_dir,
-        prefix=prefix,
+        filename=f"{prefix}.npz",
         t_coh=t_coh_axis,
     )
     return out_path
