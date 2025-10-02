@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from qspectro2d.core.simulation import SimulationConfig, SimulationModuleOQS
     from qutip import BosonicEnvironment
 from qspectro2d.utils.file_naming import (
-    generate_deterministic_data_base,
+    generate_unique_data_base,
 )
 
 _SIGNAL_PREFIX = "signal::"
@@ -63,7 +63,7 @@ def _split_prefix(path: Path) -> tuple[Path, str]:
 
 
 def _info_path(directory: Path, prefix: str) -> Path:
-    return directory / f"{prefix}_.pkl"
+    return directory / f"{prefix}.pkl"
 
 
 def ensure_info_file(
@@ -101,7 +101,7 @@ def resolve_run_prefix(
     """Return ``(directory, prefix)`` for outputs of ``system`` and ``sim_config``."""
 
     base = Path(
-        generate_deterministic_data_base(system, sim_config, data_root=data_root, ensure=True)
+        generate_unique_data_base(system, sim_config, data_root=data_root, ensure=True)
     )
     return base.parent, base.name
 
@@ -113,15 +113,24 @@ def save_run_artifact(
     t_det: np.ndarray,
     metadata: Mapping[str, Any],
     frequency_sample_cm: Sequence[float],
-    data_root: Path | str,
+    data_root: Path | str | None = None,
+    data_dir: Path | str | None = None,
+    prefix: str | None = None,
     t_coh: np.ndarray | None = None,
     extra_payload: Mapping[str, Any] | None = None,
 ) -> Path:
     """Persist a single run (t_coh × sample) as a compressed ``.npz`` artifact."""
 
-    directory, prefix = resolve_run_prefix(
-        sim_module.system, sim_module.simulation_config, data_root
-    )
+    if data_dir is not None:
+        if prefix is None:
+            raise ValueError("prefix must be provided when data_dir is provided")
+        directory = Path(data_dir)
+    else:
+        if data_root is None:
+            raise ValueError("data_root must be provided when data_dir is not")
+        directory, prefix = resolve_run_prefix(
+            sim_module.system, sim_module.simulation_config, data_root
+        )
 
     t_index = int(metadata.get("t_index", 0))
     combination_index = int(metadata.get("combination_index", 0))
@@ -145,12 +154,6 @@ def save_run_artifact(
         payload[f"{_SIGNAL_PREFIX}{sig}"] = np.asarray(data)
 
     np.savez_compressed(abs_path, **payload)
-
-    ensure_info_file(
-        sim_module,
-        data_root=data_root,
-        extra_payload=extra_payload,
-    )
 
     return abs_path
 

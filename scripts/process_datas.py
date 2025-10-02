@@ -162,9 +162,9 @@ def post_process_job(
     print("POST-PROCESS GENERALIZED BATCHES")
     print(f"Job directory: {job_path}")
 
-    metadata = _load_metadata(job_path)
-    sim_type = metadata.get("sim_type", "1d")
-    base_path = Path(metadata["data_base_path"]).resolve()
+    job_metadata = _load_metadata(job_path)
+    sim_type = job_metadata.get("sim_type", "1d")
+    base_path = Path(job_metadata["data_base_path"]).resolve()
     data_dir = base_path.parent
     prefix = base_path.name
 

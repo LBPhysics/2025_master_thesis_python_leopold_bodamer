@@ -14,7 +14,9 @@ from qspectro2d.utils.data_io import (
     load_run_artifact,
     resolve_run_prefix,
     save_run_artifact,
+    save_info_file,
 )
+from qspectro2d.utils.file_naming import _generate_base_stem
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -203,9 +205,8 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         if anchor.bath:
             extra_payload["bath"] = anchor.bath
 
-    ensure_info_file(snapshot, data_root=DATA_DIR, extra_payload=extra_payload)
-
-    out_dir, prefix = resolve_run_prefix(snapshot.system, snapshot.simulation_config, DATA_DIR)
+    out_dir = anchor.path.parent
+    prefix = _generate_base_stem(snapshot.simulation_config)
     expected_path = (
         out_dir / f"{prefix}_run_t{int(new_t_index):03d}_c{int(new_combination_index):04d}.npz"
     )
@@ -213,13 +214,23 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     if skip_if_exists and expected_path.exists():
         return expected_path
 
+    save_info_file(
+        out_dir / f"{prefix}.pkl",
+        snapshot.system,
+        snapshot.simulation_config,
+        bath=snapshot.bath,
+        laser=snapshot.laser,
+        extra_payload=extra_payload,
+    )
+
     out_path = save_run_artifact(
         snapshot,
         signal_arrays=[stacked_signals[sig] for sig in signal_types],
         t_det=t_det,
         metadata=metadata_out,
         frequency_sample_cm=anchor.frequency_sample_cm,
-        data_root=DATA_DIR,
+        data_dir=out_dir,
+        prefix=prefix,
         t_coh=t_coh_axis,
     )
     return out_path

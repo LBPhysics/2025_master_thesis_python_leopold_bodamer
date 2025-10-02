@@ -25,7 +25,7 @@ import numpy as np
 from calc_datas import _pick_config_yaml
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
-from qspectro2d.utils.data_io import generate_deterministic_data_base
+from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -202,7 +202,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     _, time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
-    data_base_path = generate_deterministic_data_base(
+    data_base_path = generate_unique_data_base(
         sim.system, sim.simulation_config, data_root=PROJECT_ROOT / "data"
     )
 
@@ -249,12 +249,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         "data_base_path": str(data_base_path),
         "rng_seed": args.rng_seed,
     }
-    _write_json(job_dir / "metadata.json", metadata)  # TODO this can be removed
+    _write_json(job_dir / "metadata.json", metadata)
     from qspectro2d.utils.data_io import ensure_info_file
 
-    ensure_info_file(
-        sim,
-        data_root=PROJECT_ROOT / "data",
+    save_info_file(
+        data_base_path.parent / f"{data_base_path.name}.pkl",
+        sim.system,
+        sim.simulation_config,
+        bath=getattr(sim, "bath", None),
+        laser=getattr(sim, "laser", None),
         extra_payload=metadata,
     )
 
