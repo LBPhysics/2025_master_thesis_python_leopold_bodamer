@@ -76,8 +76,9 @@ def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) ->
     # Estimate memory: base 0.3G + factor for data size (complex64 = 8 bytes)
     len_t = len(sim.times_local) # actually it saves only a portion of this len: t_det up to time_cut
     mem_gb = 0.3 + (num_combos_per_batch * len_t * 8 * 30) / (1024**3) # 30 is a safety factor
-    requested_mem_gb = math.ceil(mem_gb)
-    requested_mem = f"{requested_mem_gb}G"
+    requested_mem_gb = math.ceil(mem_gb * 10) / 10
+    requested_mem_mb = int(requested_mem_gb * 1024)
+    requested_mem = f"{requested_mem_mb}M"
     
     # Estimate time: scale based on solver, n_atoms, len_coh_times
     solver = sim.simulation_config.ode_solver
