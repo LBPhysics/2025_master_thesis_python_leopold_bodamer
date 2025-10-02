@@ -10,9 +10,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from qspectro2d.utils.data_io import (
-    ensure_info_file,
     load_run_artifact,
-    resolve_run_prefix,
     save_run_artifact,
     save_info_file,
 )
