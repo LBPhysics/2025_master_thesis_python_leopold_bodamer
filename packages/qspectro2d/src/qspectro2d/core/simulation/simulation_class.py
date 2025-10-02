@@ -198,7 +198,6 @@ class SimulationModuleOQS:
             delattr(self, "_times_local_manual")
         self.times_local  # Recompute based on config
 
-    """
     @cached_property
     def t_det(self):
         # Detection time grid with exact spacing dt starting at 0.
@@ -224,6 +223,7 @@ class SimulationModuleOQS:
             n_steps = int(np.floor((t_det_max - t_start) / dt)) + 1
             n_steps = min(n_steps, times_local[times_local >= 0].size)
         return t_start + dt * np.arange(n_steps, dtype=float)
+    """
 
     # --- Helper functions -----------------------------------------------------------
     # MAKE THEM TIME DEP HERE

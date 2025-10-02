@@ -97,6 +97,9 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
         # Only average raw (non-averaged) artifacts
         if bool(entry.simulation_config.inhom_averaged) != False:
             continue
+        # Only include entries with the same sample_index as the anchor
+        if entry.metadata.get("sample_index") != anchor.metadata.get("sample_index"):
+            continue
         entries.append(entry)
 
     return entries
@@ -150,16 +153,18 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     avg_freq = np.mean(freq_stack, axis=0)
 
     # Determine expected combination index; ensure consistency across raw entries
-    combination_indices = [int(entry.metadata.get("combination_index", 0)) for entry in raw_entries]
-    if combination_indices:
-        unique_c = set(combination_indices)
-        if len(unique_c) > 1:
+    sample_indices = [int(entry.metadata.get("sample_index", 0)) for entry in raw_entries]
+    if sample_indices:
+        unique_s = set(sample_indices)
+        if len(unique_s) > 1:
             raise ValueError(
-                f"Inconsistent combination_index across raw entries: {sorted(unique_c)}"
+                f"Inconsistent sample_index across raw entries: {sorted(unique_s)}"
             )
-        new_combination_index = combination_indices[0]
+        new_sample_index = sample_indices[0]
     else:
-        new_combination_index = 0
+        new_sample_index = 0
+
+    new_combination_index = new_sample_index
 
     metadata_out = dict(anchor.metadata)
     metadata_out.update(

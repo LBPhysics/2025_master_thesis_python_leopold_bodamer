@@ -202,7 +202,6 @@ def run_1d_mode(args) -> None:
 
 
 def run_2d_mode(args) -> None:
-    # TODO ONLY validate THE simulation object once for the first batch
     # Auto-pick YAML config (prefer '*' marked, else first sorted)
     config_path = _pick_config_yaml()
     print(f"🧩 Using config: {config_path.name}")
@@ -211,11 +210,10 @@ def run_2d_mode(args) -> None:
     print("🎯 Running 2D mode (iterate over t_det as t_coh)")
 
     # Reuse detection times as coherence-axis grid
-    t_coh_vals = sim_oqs.t_det[
-        ::10
-    ]  # NOTE [::10] could take every 10th value to check functionality on local pc
+    t_coh_vals = sim_oqs.t_det
     N_total = len(t_coh_vals)
-
+    t_coh_vals = sim_oqs.t_det[:N_total // 5]  # NOTE ONLY take a small some section
+    N_total = len(t_coh_vals)
     # Determine index subset for batching
     batch_idx: int = int(getattr(args, "batch_idx", 0))
     n_batches: int = int(getattr(args, "n_batches", 1))

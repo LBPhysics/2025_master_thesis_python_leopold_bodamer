@@ -22,15 +22,13 @@ _POSTPROC_META_KEYS_TO_DROP = {
     "sample_index",
     "batch_id",
     "combination_index",
-    "t_index",
     # verbose provenance lists that clutter plots
     "source_artifacts",
     # stacking/averaging helpers
-    "stacked_points",
-    "averaged_count",
     "t_indices",
     "t_coh_axis",
     "t_coh",
+    "t_index",
 }
 
 

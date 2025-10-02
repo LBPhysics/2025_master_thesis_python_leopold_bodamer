@@ -115,7 +115,6 @@ def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]
 
     print(f"Reference: {reference.path}, t_det shape: {t_det.shape}, first 5: {t_det[:5]}")
     for entry in entries[1:]:
-        print(f"Entry: {entry.path}, t_det shape: {entry.t_det.shape}, first 5: {entry.t_det[:5]}")
         if entry.t_det.shape != t_det.shape or not np.allclose(entry.t_det, t_det):
             print(f"Inconsistent! Reference t_det: {t_det}")
             print(f"Entry t_det: {entry.t_det}")
