@@ -1,4 +1,14 @@
-"""Generate and (optionally) submit SLURM jobs for combined t_coh × inhom runs.
+"""Generate and (optionally) submit SLURM jobs for combined t_coh × inh    
+
+# Estimate time: scale based on solver, n_atoms, len_coh_times
+    solver = sim.simulation_config.ode_solver
+    n_atoms = sim.system.n_atoms
+    if solver == "ME":
+        base_time_per_combo_seconds = 1.5  # for len_t=1000, 1 combo, 1 atom, 1 t_coh
+    else:  # BR
+        base_time_per_combo_seconds = 2.5  # for len_t=1000, 1 combo, 1 atom, 1 t_coh
+    base_time_per_combo_seconds *= n_atoms ** 2  # quadratic scaling with n_atoms (matrix diagonalization)
+    base_time_per_combo_seconds *= len_coh_times  # scaling with coherence time points
 
 This dispatcher creates 1D/2D workflows by creating the full
 Cartesian product of coherence times and inhomogeneous samples. It validates the
@@ -62,22 +72,21 @@ def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) ->
     """Estimate SLURM memory and time requirements based on workload."""
     combos = n_times * n_inhom
     num_combos_per_batch = combos // n_batches
-    len_coh_times = n_times  # coherence times
     
     # Estimate memory: base 0.3G + factor for data size (complex64 = 8 bytes)
-    len_t_det = len(sim.t_det)
-    mem_gb = 0.3 + (num_combos_per_batch * len_t_det * 8 * 30) / (1024**3)
+    len_t = len(sim.times_local) # actually it saves only a portion of this len: t_det up to time_cut
+    mem_gb = 0.3 + (num_combos_per_batch * len_t * 8 * 30) / (1024**3) # 30 is a safety factor
     requested_mem_gb = math.ceil(mem_gb * 10) / 10
     requested_mem = f"{requested_mem_gb}G"
     
     # Estimate time: scale based on solver, n_atoms, len_coh_times
     solver = sim.simulation_config.ode_solver
     n_atoms = sim.system.n_atoms
-    base_time_per_combo_seconds = 5.78e-6  # normalized from example: 50 combos in 26s for ME with 1 atom, ~300 t_det points
+    base_time_per_combo_seconds = 1.5  # normalized from example: 1 combo in 3s for ME with 1 atom, 1 t_coh value for len_t = 1000
     if solver == "BR":
-        base_time_per_combo_seconds *= 20  # safety factor for BR
+        base_time_per_combo_seconds = 2.5  # for len_t=1000, 1 combo, 1 atom, 1 t_coh
     base_time_per_combo_seconds *= n_atoms ** 2  # quadratic scaling with n_atoms (matrix diagonalization)
-    base_time_per_combo_seconds *= len_t_det * len_coh_times  # quadratic scaling with detection time length
+    base_time_per_combo_seconds *= len_t / 1000  # scaling with detection time length
     time_seconds = num_combos_per_batch * base_time_per_combo_seconds
     time_hours = max(0.1, time_seconds / 3600)  # minimum ~36 seconds for safety
     if time_hours < 1:
@@ -292,7 +301,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         "rng_seed": args.rng_seed,
     }
     _write_json(job_dir / "metadata.json", metadata)
-    from qspectro2d.utils.data_io import ensure_info_file
 
     save_info_file(
         data_base_path.parent / f"{data_base_path.name}.pkl",
