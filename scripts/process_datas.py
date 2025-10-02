@@ -217,7 +217,7 @@ def post_process_job(
         print("Single coherence point detected; stacking is not required.")
         # Ensure the single averaged artifact is sanitized
         final_path = _sanitize_artifact_metadata(
-            unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP_AVERAGED
+            unique_averaged[0], keys_to_drop=_POSTPROC_META_KEYS_TO_DROP
         ).resolve()
         print("=" * 80)
         print("🎯 To plot the averaged 1D data run:")
