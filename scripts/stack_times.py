@@ -100,9 +100,9 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
         entry = _load_entry(candidate)
         # Only stack 1D artifacts, not already stacked 2D data
-        if entry.metadata.get("sim_type") == "2d":
+        if entry.simulation_config.get("sim_type") == "2d":
             continue
-        if bool(entry.metadata.get("inhom_averaged")) != averaged_flag:
+        if bool(entry.simulation_config.get("inhom_averaged")) != averaged_flag:
             continue
         entries.append(entry)
 

@@ -119,11 +119,11 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         return anchor.path
 
     entries = _discover_entries(anchor)
-    raw_entries = [entry for entry in entries if not entry.metadata.get("inhom_averaged")]
+    raw_entries = [entry for entry in entries if not entry.simulation_config.get("inhom_averaged")]
     if not raw_entries:
         raise FileNotFoundError("No raw artifacts available for averaging")
 
-    existing = [entry for entry in entries if entry.metadata.get("inhom_averaged")]
+    existing = [entry for entry in entries if entry.simulation_config.get("inhom_averaged")]
     if existing and skip_if_exists:
         return existing[0].path
 
