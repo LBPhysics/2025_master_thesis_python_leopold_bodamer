@@ -44,7 +44,6 @@ class AtomicSystem:
         self.n_rings = self.n_atoms // self.n_chains
         self._setup_geometry_and_couplings()
 
-    # CHECKED
     def update_frequencies_cm(self, new_freqs: List[float]):
         if len(new_freqs) != self.n_atoms:
             raise ValueError(f"Expected {self.n_atoms} frequencies, got {len(new_freqs)}")
@@ -57,7 +56,7 @@ class AtomicSystem:
         # cached spectrum/operators depend on frequencies
         self.reset_cache()
 
-    # CHECKED
+
     def update_delta_inhomogen_cm(self, new_delta_inhomogen_cm: float) -> None:
         """Update inhomogeneous broadening (cm^-1)."""
         self.delta_inhomogen_cm = new_delta_inhomogen_cm
@@ -75,7 +74,6 @@ class AtomicSystem:
                 del self.__dict__[key]
 
     # === CORE PARAMETERS ===
-    # CHECKED
     @property
     def dimension(self):
         """Dimension of the Hilbert space (ground + single + double excitations)."""
@@ -206,7 +204,7 @@ class AtomicSystem:
 
         return lowering_op
 
-    @property  # CHECKED
+    @property
     def dipole_op(self) -> Qobj:
         """return the dipole operator in the canonical basis"""
         dip_op = self.lowering_op + self.lowering_op.dag()

@@ -119,8 +119,7 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
     # For inhomogeneous batches, avoid embedding per-run numeric parameters to keep a stable folder
     n_inhomogen = int(sim_f.get("n_inhomogen", 1))
     if n_inhomogen > 1:
-        # Generic markers so all inhom configs land in the same directory
-        parts.append(f"inhom_{sys_f.get('delta_inhomogen', '0')}")
+        parts.append(f"inhom_{sys_f.get('delta_inhomogen_cm', '0')}_cm_{n_inhomogen}n")
 
     if n_atoms > 1:
         # Add coupling strength if applicable. For inhom runs, avoid numeric per-run values.
