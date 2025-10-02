@@ -80,15 +80,26 @@ def _load_entry(path: Path) -> RunEntry:
     )
 
 
+def _artifact_prefix(path: Path) -> str:
+    stem = path.stem
+    if "_run_" not in stem:
+        raise ValueError(f"Unexpected artifact filename (missing '_run_'): {path.name}")
+    return stem.split("_run_", 1)[0]
+
+
 def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     directory = anchor.path.parent
-    prefix = anchor.path.stem.split("_run_", 1)[0]
-    candidates = sorted(
-        directory.glob(f"{prefix}_run_t{int(anchor.metadata['t_index']):03d}_c*.npz")
-    )
+    prefix = _artifact_prefix(anchor.path)
 
-    return [_load_entry(candidate) for candidate in candidates]
+    entries: list[RunEntry] = []
+    for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
+        entry = _load_entry(candidate)
+        # Only average raw (non-averaged) artifacts
+        if bool(entry.simulation_config.inhom_averaged) != False:
+            continue
+        entries.append(entry)
 
+    return entries
 
 def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]:
     if not entries:

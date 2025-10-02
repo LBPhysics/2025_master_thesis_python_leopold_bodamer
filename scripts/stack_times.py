@@ -94,15 +94,12 @@ def _artifact_prefix(path: Path) -> str:
 def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     directory = anchor.path.parent
     prefix = _artifact_prefix(anchor.path)
-    averaged_flag = bool(anchor.metadata.get("inhom_averaged"))
 
     entries: list[RunEntry] = []
     for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
         entry = _load_entry(candidate)
         # Only stack 1D artifacts, not already stacked 2D data
         if entry.simulation_config.sim_type == "2d":
-            continue
-        if bool(entry.simulation_config.inhom_averaged) != averaged_flag:
             continue
         entries.append(entry)
 
@@ -118,8 +115,12 @@ def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]
     signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
     freq_ref = reference.frequency_sample_cm
 
+    print(f"Reference: {reference.path}, t_det shape: {t_det.shape}, first 5: {t_det[:5]}")
     for entry in entries[1:]:
+        print(f"Entry: {entry.path}, t_det shape: {entry.t_det.shape}, first 5: {entry.t_det[:5]}")
         if entry.t_det.shape != t_det.shape or not np.allclose(entry.t_det, t_det):
+            print(f"Inconsistent! Reference t_det: {t_det}")
+            print(f"Entry t_det: {entry.t_det}")
             raise ValueError(f"Inconsistent t_det axis for artifact {entry.path}")
         if not np.allclose(entry.frequency_sample_cm, freq_ref):
             raise ValueError(f"Inconsistent frequency configuration for artifact {entry.path}")
