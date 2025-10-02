@@ -6,7 +6,7 @@ with Open Quantum Systems models. This package provides tools for:
 
 - System parameter configuration and pulse sequence design
 - OQS dynamics simulation with various bath models
-- 1D and 2D spectroscopy calculations with inhomogeneous broadening (TODO not yet)
+- 1D and 2D spectroscopy calculations with inhomogeneous broadening
 - Data visualization tools
 - Configuration management and file I/O utilities
 

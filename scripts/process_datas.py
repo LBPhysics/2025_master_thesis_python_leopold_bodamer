@@ -1,4 +1,3 @@
-# TODO Read expected count from metadata.json (n_inhomogen) and compare with the number of found samples per t_index. Warn if short.
 """Post-process generalized batch outputs into averaged 1D and stacked 2D artifacts."""
 
 from __future__ import annotations
@@ -20,14 +19,12 @@ from qspectro2d.utils.data_io import load_run_artifact
 # Keys we want to remove from artifact metadata after post-processing
 _POSTPROC_META_KEYS_TO_DROP = {
     # run/batch bookkeeping
-    "sample_id",
     "sample_index",
     "batch_id",
     "combination_index",
     "t_index",
     # verbose provenance lists that clutter plots
     "source_artifacts",
-    "source_sample_ids",
     # stacking/averaging helpers
     "stacked_points",
     "averaged_count",

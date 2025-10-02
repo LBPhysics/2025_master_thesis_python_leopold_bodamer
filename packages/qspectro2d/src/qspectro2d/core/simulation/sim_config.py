@@ -34,7 +34,6 @@ class SimulationConfig:
 
     # Sampling / batching metadata
     inhom_averaged: bool = False  # True if data represent an average over inhom configs
-    current_sample_id: str | None = None  # Stable identifier (hash) for the active frequency sample
 
     max_workers: int = 1
     signal_types: List[str] = field(default_factory=lambda: ["rephasing"])
@@ -65,10 +64,8 @@ class SimulationConfig:
             f"Use rwa_sl         : {self.rwa_sl}\n\n"
             "-------------------------------\n"
             f"Phase Cycles       : {self.n_phases}\n"
-            f"Inhom Points      : {self.n_inhomogen}\n"
-            f"Inhom Active       : {self.n_inhomogen > 1}\n"
+            f"Inhom Samples      : {self.n_inhomogen}\n"
             f"Inhom Averaged     : {self.inhom_averaged}\n"
-            f"Sample ID          : {self.current_sample_id}\n"
             f"Max Workers        : {self.max_workers}\n"
             "-------------------------------\n"
         )

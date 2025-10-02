@@ -94,13 +94,13 @@ def _artifact_prefix(path: Path) -> str:
 def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     directory = anchor.path.parent
     prefix = _artifact_prefix(anchor.path)
-    target_sample_id = str(anchor.metadata.get("sample_id"))
     averaged_flag = bool(anchor.metadata.get("inhom_averaged"))
 
     entries: list[RunEntry] = []
     for candidate in sorted(directory.glob(f"{prefix}_run_t*_c*.npz")):
         entry = _load_entry(candidate)
-        if str(entry.metadata.get("sample_id")) != target_sample_id:
+        # Only stack 1D artifacts, not already stacked 2D data
+        if entry.metadata.get("sim_type") == "2d":
             continue
         if bool(entry.metadata.get("inhom_averaged")) != averaged_flag:
             continue
@@ -116,10 +116,13 @@ def _ensure_consistency(entries: list[RunEntry]) -> tuple[np.ndarray, list[str]]
     reference = entries[0]
     t_det = reference.t_det
     signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
+    freq_ref = reference.frequency_sample_cm
 
     for entry in entries[1:]:
         if entry.t_det.shape != t_det.shape or not np.allclose(entry.t_det, t_det):
             raise ValueError(f"Inconsistent t_det axis for artifact {entry.path}")
+        if not np.allclose(entry.frequency_sample_cm, freq_ref):
+            raise ValueError(f"Inconsistent frequency configuration for artifact {entry.path}")
         current_signals = list(entry.metadata.get("signal_types", entry.signals.keys()))
         if current_signals != signal_types:
             raise ValueError(
@@ -140,10 +143,15 @@ def _sort_entries(entries: Iterable[RunEntry]) -> list[RunEntry]:
 
 
 def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
-    """Stack all artifacts that share the same sample_id as ``abs_path`` into a 2D dataset."""
+    """Stack all artifacts that share the same frequency configuration into a 2D dataset."""
 
     abs_path = abs_path.expanduser().resolve()
     anchor = _load_entry(abs_path)
+    
+    # Ensure we're stacking 1D data, not 2D data
+    if anchor.metadata.get("sim_type") == "2d":
+        raise ValueError("Cannot stack 2D artifacts. Provide a 1D artifact to stack into 2D.")
+    
     entries = _discover_entries(anchor)
 
     if len(entries) <= 1:
@@ -162,7 +170,6 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         sig: np.stack([entry.signals[sig] for entry in entries], axis=0) for sig in signal_types
     }
 
-    sample_id = str(anchor.metadata.get("sample_id"))
     combination_indices = [int(entry.metadata.get("combination_index", 0)) for entry in entries]
     new_combination_index = max(combination_indices) + 1 if combination_indices else len(entries)
     new_t_index = max(t_indices) + 1 if t_indices else len(entries)
@@ -186,7 +193,6 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         anchor.simulation_config,
         sim_type="2d",
         t_coh=None,
-        current_sample_id=sample_id,
         inhom_averaged=bool(anchor.metadata.get("inhom_averaged")),
     )
 

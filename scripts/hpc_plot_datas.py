@@ -169,7 +169,8 @@ def main() -> None:
         return
 
     print("Submitting SLURM job...")
-    submit_sbatch(script_path)
+    submit_msg = submit_sbatch(script_path)
+    print(f"  {script_path.name}: {submit_msg}")
 
 
 if __name__ == "__main__":
