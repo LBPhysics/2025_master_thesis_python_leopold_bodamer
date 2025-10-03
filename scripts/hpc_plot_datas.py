@@ -2,21 +2,22 @@
 
 This helper combines two manual steps executed after HPC computations finish:
 
-1. Run :mod:`process_datas` to average inhomogeneous samples and stack
-   across coherence points (when applicable).
+1. Run :mod:`process_datas` to process run artifacts (stack and average).
 2. Generate a ready-to-submit SLURM script that calls :mod:`plot_datas` on the
    resulting artifact and optionally submit it via ``sbatch``.
 
 The script targets the run-artifact workflow. It expects the same job
-structure created by ``hpc_dispatch.py`` and ``run_batch.py``.
+structure created by ``hpc_batch_dispatch.py`` and ``run_batch.py``.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
-from process_datas import PostProcessResult, post_process_job
+from process_datas import process_datas
 from hpc_batch_dispatch import submit_sbatch
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
@@ -28,6 +29,37 @@ SLURM_PARTITION: str = "GPGPU"
 SLURM_CPUS: int = 2
 SLURM_MEM: str = "200G"
 SLURM_TIME: str = "30:00"
+
+
+def post_process_job(job_dir: Path, *, skip_if_exists: bool = False) -> Path | None:
+    """Post-process the job by finding an artifact and calling process_datas."""
+    metadata_path = job_dir / "metadata.json"
+    if not metadata_path.exists():
+        print(f"Metadata file not found: {metadata_path}")
+        return None
+    
+    with metadata_path.open("r", encoding="utf-8") as f:
+        metadata = json.load(f)
+    
+    data_base_path = Path(metadata["data_base_path"])
+    data_dir = data_base_path.parent
+    
+    # Find any *_s*.npz file (they are all equivalent for processing)
+    candidates = list(data_dir.glob("*_s*.npz"))
+    if not candidates:
+        print(f"No artifacts found in {data_dir}")
+        return None
+    
+    # Use the first one found
+    artifact = candidates[0]
+    print(f"Using artifact: {artifact}")
+    
+    try:
+        final_path = process_datas(artifact, skip_if_exists=skip_if_exists)
+        return final_path
+    except Exception as e:
+        print(f"Post-processing failed: {e}")
+        return None
 
 
 def _next_logs_dir(job_dir: Path) -> Path:
@@ -102,7 +134,7 @@ def _render_slurm_script(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Average/stack run artifacts and generate a plotting SLURM script (new pipeline)."
+            "Process artifacts and generate, submit a plotting SLURM script."
         )
     )
     parser.add_argument(
@@ -112,14 +144,9 @@ def main() -> None:
         help="Path to batch_jobs/<job_label> (contains metadata.json)",
     )
     parser.add_argument(
-        "--skip_inhom",
+        "--skip_if_exists",
         action="store_true",
-        help="Reuse existing averaged artifacts when present",
-    )
-    parser.add_argument(
-        "--skip_stack",
-        action="store_true",
-        help="Reuse existing stacked artifact when present",
+        help="Reuse existing final artifact if present",
     )
     parser.add_argument(
         "--no_submit",
@@ -129,16 +156,15 @@ def main() -> None:
     args = parser.parse_args()
 
     job_dir = Path(args.job_dir).resolve()
-    result: PostProcessResult | None = post_process_job(
+    result: Path | None = post_process_job(
         job_dir,
-        skip_inhom=args.skip_inhom,
-        skip_stack=args.skip_stack,
+        skip_if_exists=args.skip_if_exists,
     )
 
     if result is None:
         raise SystemExit("Post-processing failed; see messages above.")
 
-    final_artifact = result.final_path
+    final_artifact = result
     print("📦 Final artifact for plotting:")
     print(f"  {final_artifact}")
 

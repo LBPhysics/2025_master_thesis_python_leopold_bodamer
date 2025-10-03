@@ -19,13 +19,11 @@ instabilities are detected once and early.
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
@@ -33,7 +31,7 @@ from typing import Sequence
 from matplotlib.pylab import f
 import numpy as np
 
-from calc_datas import _pick_config_yaml
+from calc_datas import _pick_config_yaml, coherence_axis, build_combinations, write_json
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
@@ -48,22 +46,6 @@ for _parent in SCRIPTS_DIR.parents:
 JOB_ROOT = SCRIPTS_DIR / "batch_jobs"
 JOB_ROOT.mkdir(parents=True, exist_ok=True)
 
-
-@dataclass(frozen=True)
-class Combination:
-    index: int
-    t_index: int
-    t_coh: float
-    inhom_index: int
-
-    def to_dict(self) -> dict[str, float | int]:
-        return {
-            "index": int(self.index),
-            "t_index": int(self.t_index),
-            "t_coh_value": float(self.t_coh),
-            "inhom_index": int(self.inhom_index),
-        }
-    
 
 def _set_random_seed(seed: int | None) -> None:
     if seed is not None:
@@ -84,7 +66,7 @@ def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) ->
     # Estimate time: scale based on solver, n_atoms, len_coh_times
     solver = sim.simulation_config.ode_solver
     n_atoms = sim.system.n_atoms
-    base_time_per_combo_seconds = 1.5  # normalized from example: 1 combo in 3s for ME with 1 atom, 1 t_coh value for len_t = 1000
+    base_time_per_combo_seconds = 1  # normalized from example: 1 combo in 3s for ME with 1 atom, 1 t_coh value for len_t = 1000
     if solver == "BR":
         base_time_per_combo_seconds = 2.5  # for len_t=1000, 1 combo, 1 atom, 1 t_coh
     base_time_per_combo_seconds *= n_atoms ** 2  # quadratic scaling with n_atoms (matrix diagonalization)
@@ -105,42 +87,12 @@ def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) ->
     return requested_mem, requested_time
 
 
-def _coherence_axis(sim, sim_type: str) -> np.ndarray:
-    if sim_type == "1d":
-        return np.array([float(sim.simulation_config.t_coh)], dtype=float)
-    return np.asarray(sim.t_det, dtype=float)
-
-
-def _build_combinations(t_coh_values: Sequence[float], n_inhom: int) -> list[Combination]:
-    combos: list[Combination] = []
-    index = 0
-    for t_idx, t_coh in enumerate(t_coh_values):
-        for inhom_idx in range(n_inhom):
-            combos.append(
-                Combination(
-                    index=index,
-                    t_index=t_idx,
-                    t_coh=float(t_coh),
-                    inhom_index=inhom_idx,
-                )
-            )
-            index += 1
-    return combos
-
-
 def _split_indices(n_items: int, n_batches: int) -> list[np.ndarray]:
     if n_batches <= 0:
         raise ValueError("n_batches must be positive")
     if n_items == 0:
         return [np.array([], dtype=int) for _ in range(n_batches)]
     return [chunk.astype(int) for chunk in np.array_split(np.arange(n_items), n_batches)]
-
-
-def _write_json(path: Path, payload: dict | list) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
 
 
 def _render_slurm_script(
@@ -269,8 +221,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         mu=base_freqs,
     )
 
-    t_coh_values = _coherence_axis(sim, args.sim_type)
-    combinations = _build_combinations(t_coh_values, n_inhom)
+    t_coh_values = coherence_axis(sim, args.sim_type)
+    combinations = build_combinations(t_coh_values, n_inhom)
 
     print(
         f"Prepared {len(combinations)} combination(s) → "
@@ -305,7 +257,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "data_base_path": str(data_base_path),
         "rng_seed": args.rng_seed,
     }
-    _write_json(job_dir / "metadata.json", metadata)
+    write_json(job_dir / "metadata.json", metadata)
 
     info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
     if not info_path.exists():
@@ -334,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     for batch_idx, indices in enumerate(batch_indices):
         combos_subset = [combinations[i].to_dict() for i in indices.tolist()]
         combos_file = job_dir / f"batch_{batch_idx:03d}.json"
-        _write_json(combos_file, {"combos": combos_subset})
+        write_json(combos_file, {"combos": combos_subset})
 
         job_name = f"{args.sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
         slurm_text = _render_slurm_script(

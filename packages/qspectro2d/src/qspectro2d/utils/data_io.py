@@ -1,14 +1,5 @@
 """
 Data I/O operations for qspectro2d.
-
-This mdef split_prefix(path: Path) -> tuple[Path, str]:
-    path = Path(path)
-    stem = path.stem
-    if "_run_" not in stem:
-        raise ValueError(f"Artifact filename missing '_run_' segment: {path}")
-    prefix = stem.rsplit("_run_", 1)[0]
-    return path.parent, prefixrovides functionality for loading and saving simulation data,
-including standardized file formats and directory management.
 """
 
 from __future__ import annotations

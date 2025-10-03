@@ -1,7 +1,7 @@
 """Execute a batch of (t_coh, inhomogeneity) combinations for spectroscopy runs.
 
 This worker script is intended to be called from generated SLURM jobs. It receives a
-list of combinations produced by ``hpc_dispatch.py`` and performs the
+list of combinations produced by ``hpc_batch_dispatch.py`` and performs the
 actual field computations, saving the resulting datasets to the standard ``data``
 folder of the repository.
 """
@@ -206,7 +206,7 @@ def main() -> None:
             metadata=metadata,
             frequency_sample_cm=freq_vector,
             data_dir=data_dir,
-            filename=f"{prefix}_run_t{t_idx:03d}_c{global_idx:04d}.npz",
+            filename=f"{prefix}_run_t{t_idx:03d}_s{inhom_idx:03d}.npz",
         )
 
         saved_paths.append(str(path))
