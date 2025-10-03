@@ -32,9 +32,10 @@ import numpy as np
 
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_run_artifact
+from qspectro2d.utils.data_io import save_run_artifact, save_info_file
 from qspectro2d.config.create_sim_obj import create_base_sim_oqs
 from qspectro2d.core.simulation import SimulationModuleOQS
+from qspectro2d.utils.file_naming import generate_unique_data_base
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -131,8 +132,6 @@ def run_1d_mode(args) -> None:
     else:
         print(f"📦 Batching: {batch_note} (empty chunk)")
 
-    from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
-
     data_base_path = generate_unique_data_base(
         sim_oqs.system, sim_oqs.simulation_config, data_root=DATA_DIR
     )
@@ -174,7 +173,6 @@ def run_1d_mode(args) -> None:
             "sample_index": int(idx),
         }
         out_path = save_run_artifact(
-            sim_oqs,
             signal_arrays=E_sigs,
             t_det=sim_oqs.t_det,
             metadata=metadata,
@@ -239,8 +237,6 @@ def run_2d_mode(args) -> None:
 
     freq_vector = np.asarray(sim_oqs.system.frequencies_cm, dtype=float)
 
-    from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
-
     data_base_path = generate_unique_data_base(
         sim_oqs.system, sim_oqs.simulation_config, data_root=DATA_DIR
     )
@@ -275,7 +271,6 @@ def run_2d_mode(args) -> None:
         }
 
         out_path = save_run_artifact(
-            sim_oqs,
             signal_arrays=E_sigs,
             t_det=sim_oqs.t_det,
             metadata=metadata,

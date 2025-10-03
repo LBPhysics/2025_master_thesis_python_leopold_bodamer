@@ -1,7 +1,7 @@
 """
 Data I/O operations for qspectro2d.
 
-This mdef _split_prefix(path: Path) -> tuple[Path, str]:
+This mdef split_prefix(path: Path) -> tuple[Path, str]:
     path = Path(path)
     stem = path.stem
     if "_run_" not in stem:
@@ -14,8 +14,6 @@ including standardized file formats and directory management.
 from __future__ import annotations
 
 # IMPORTS
-import glob
-import hashlib
 import json
 import pickle
 from pathlib import Path
@@ -27,11 +25,8 @@ import numpy as np
 if TYPE_CHECKING:
     from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
     from qspectro2d.core.atomic_system.system_class import AtomicSystem
-    from qspectro2d.core.simulation import SimulationConfig, SimulationModuleOQS
+    from qspectro2d.core.simulation import SimulationConfig
     from qutip import BosonicEnvironment
-from qspectro2d.utils.file_naming import (
-    generate_unique_data_base,
-)
 
 _SIGNAL_PREFIX = "signal::"
 _META_KEY = "metadata_json"
@@ -51,12 +46,13 @@ def _json_default(obj: Any) -> Any:
 def _json_dumps(payload: Any) -> str:
     return json.dumps(payload, default=_json_default, sort_keys=True)
 
-def _split_prefix(path: Path) -> tuple[Path, str]:
+def split_prefix(path: Path) -> tuple[Path, str]:
     path = Path(path)
     stem = path.stem
-    if "_run_" not in stem:
-        raise ValueError(f"Artifact filename missing '_run_' segment: {path}")
-    prefix = stem.split("_run_", 1)[0]
+    if "_run_" in stem:
+        prefix = stem.rsplit("_run_", 1)[0]
+    else:
+        prefix = stem
     return path.parent, prefix
 
 
@@ -64,48 +60,7 @@ def _info_path(directory: Path, prefix: str) -> Path:
     return directory / f"{prefix}.pkl"
 
 
-def ensure_info_file(
-    sim_module: "SimulationModuleOQS",
-    *,
-    data_root: Path | str,
-    extra_payload: Mapping[str, Any] | None = None,
-) -> Path:
-    """Write the info file corresponding to ``sim_module`` and return its path."""
-
-    directory, prefix = resolve_run_prefix(
-        sim_module.system, sim_module.simulation_config, data_root
-    )
-    info_path = _info_path(directory, prefix)
-    info_path.parent.mkdir(parents=True, exist_ok=True)
-
-    bath = getattr(sim_module, "bath", None) or getattr(sim_module, "bath_system", None)
-    laser = getattr(sim_module, "laser", None)
-
-    save_info_file(
-        info_path,
-        sim_module.system,
-        sim_module.simulation_config,
-        bath=bath,
-        laser=laser,
-        extra_payload=extra_payload,
-    )
-
-    return info_path
-
-
-def resolve_run_prefix(
-    system: "AtomicSystem", sim_config: "SimulationConfig", data_root: Path | str
-) -> tuple[Path, str]:
-    """Return ``(directory, prefix)`` for outputs of ``system`` and ``sim_config``."""
-
-    base = Path(
-        generate_unique_data_base(system, sim_config, data_root=data_root, ensure=True)
-    )
-    return base.parent, base.name
-
-
 def save_run_artifact(
-    sim_module: "SimulationModuleOQS",
     *,
     signal_arrays: Sequence[np.ndarray],
     t_det: np.ndarray,
@@ -114,7 +69,6 @@ def save_run_artifact(
     data_dir: Path | str,
     filename: str,
     t_coh: np.ndarray | None = None,
-    extra_payload: Mapping[str, Any] | None = None,
 ) -> Path:
     """Persist a single run (t_coh × sample) as a compressed ``.npz`` artifact."""
 
@@ -227,7 +181,7 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     metadata = json.loads(str(contents.pop(_META_KEY).item())) if _META_KEY in contents else {}
 
     # Load from info file
-    directory, prefix = _split_prefix(path)
+    directory, prefix = split_prefix(path)
     info_path = _info_path(directory, prefix)
     info = load_info_file(info_path)
 

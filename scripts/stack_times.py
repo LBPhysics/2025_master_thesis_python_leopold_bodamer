@@ -13,6 +13,7 @@ from qspectro2d.utils.data_io import (
     load_run_artifact,
     save_run_artifact,
     save_info_file,
+    split_prefix,
 )
 from qspectro2d.utils.file_naming import _generate_base_stem
 
@@ -82,16 +83,8 @@ def _load_entry(path: Path) -> RunEntry:
     )
 
 
-def _artifact_prefix(path: Path) -> str:
-    stem = path.stem
-    if "_run_" not in stem:
-        raise ValueError(f"Unexpected artifact filename (missing '_run_'): {path.name}")
-    return stem.split("_run_", 1)[0]
-
-
 def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
-    directory = anchor.path.parent
-    prefix = _artifact_prefix(anchor.path)
+    directory, prefix = split_prefix(anchor.path)
 
     entries: list[RunEntry] = []
     for candidate in sorted(directory.glob(f"{prefix}_run_t*.npz")):
@@ -224,7 +217,6 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     )
 
     out_path = save_run_artifact(
-        snapshot,
         signal_arrays=[stacked_signals[sig] for sig in signal_types],
         t_det=t_det,
         metadata=metadata_out,

@@ -201,7 +201,6 @@ def main() -> None:
         t_det_axis = sim.t_det
 
         path = save_run_artifact(
-            sim,
             signal_arrays=e_components,
             t_det=t_det_axis,
             metadata=metadata,
