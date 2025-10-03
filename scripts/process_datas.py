@@ -142,7 +142,6 @@ def post_process_job(
                 {
                     "inhom_averaged": True,
                     "averaged_count": 1,
-                    "source_artifacts": [entry.path.name],
                 }
             )
 

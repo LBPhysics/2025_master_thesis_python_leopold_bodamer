@@ -172,7 +172,6 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             "sim_type": "2d",
             "stacked_points": len(entries),
             "signal_types": signal_types,
-            "source_artifacts": [entry.path.name for entry in entries],
         }
     )
     metadata_out.pop("t_coh_value", None)
