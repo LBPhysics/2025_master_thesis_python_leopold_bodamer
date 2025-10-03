@@ -178,7 +178,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
                 extra_payload["bath"] = single_entry.bath
 
         expected_dir = single_entry.path.parent
-        prefix = _generate_base_stem(snapshot.simulation_config, t_index=t_index)
+        prefix = _generate_base_stem(snapshot.simulation_config)
         expected_path = expected_dir / f"{prefix}_run_t{int(t_index):03d}.npz"
 
         if skip_if_exists and expected_path.exists():
@@ -254,7 +254,7 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 
     t_index = metadata_out["t_index"]
     expected_dir = anchor.path.parent
-    prefix = _generate_base_stem(snapshot.simulation_config, t_index=t_index)
+    prefix = _generate_base_stem(snapshot.simulation_config)
     expected_path = expected_dir / f"{prefix}_run_t{int(t_index):03d}.npz"
 
     # Only skip if the specific expected averaged artifact exists
