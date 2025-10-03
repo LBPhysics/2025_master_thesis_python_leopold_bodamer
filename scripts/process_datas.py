@@ -309,12 +309,10 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 
     # Stack each group to 2D if needed
     processed_per_sample: list[RunEntry] = []
-    num_stacked = 0
     for sample_idx, group in groups.items():
         if len(group) > 1:
             stacked = _stack_group_to_2d(group)
             processed_per_sample.append(stacked)
-            num_stacked += 1
         else:
             processed_per_sample.append(group[0])
 
@@ -358,8 +356,11 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         t_coh=t_coh_for_save,
     )
 
-    print(f"✅ Processed and saved final averaged artifact: {out_path}\n")
-    print(f"   (processed {len(entries)} files, stacked {num_stacked} groups, averaged {len(processed_per_sample)} samples)\n")
+    # Get stacked points info
+    stacked_points = processed_per_sample[0].metadata.get("stacked_points", 1) if processed_per_sample and processed_per_sample[0].simulation_config.sim_type == "2d" else 1
+
+    print(f"✅ Averaged samples check: Processed and saved final averaged artifact: {out_path}\n")
+    print(f"   (processed {len(entries)} files, stacked {stacked_points} time points, averaged {len(processed_per_sample)} samples)\n")
     return out_path
 
 
