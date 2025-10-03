@@ -30,12 +30,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
+from matplotlib.pylab import f
 import numpy as np
 
 from calc_datas import _pick_config_yaml
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
-from qspectro2d.utils.data_io import generate_unique_data_base, save_info_file
+from qspectro2d.utils.data_io import save_info_file
+from qspectro2d.utils.file_naming import generate_unique_data_base
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
