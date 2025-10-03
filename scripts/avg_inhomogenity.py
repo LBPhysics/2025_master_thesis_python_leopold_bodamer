@@ -148,7 +148,6 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
                 "t_index": t_index,
                 "inhom_averaged": True,
                 "averaged_count": 1,
-                "source_artifacts": [single_entry.path.name],
             }
         )
 
@@ -225,7 +224,6 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         {
             "inhom_averaged": True,
             "averaged_count": len(raw_entries),
-            "source_artifacts": [entry.path.name for entry in raw_entries],
         }
     )
 

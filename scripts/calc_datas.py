@@ -211,8 +211,6 @@ def run_2d_mode(args) -> None:
     # Reuse detection times as coherence-axis grid
     t_coh_vals = sim_oqs.t_det
     N_total = len(t_coh_vals)
-    t_coh_vals = sim_oqs.t_det[:N_total // 5]  # NOTE ONLY take a small some section
-    N_total = len(t_coh_vals)
     # Determine index subset for batching
     batch_idx: int = int(getattr(args, "batch_idx", 0))
     n_batches: int = int(getattr(args, "n_batches", 1))
