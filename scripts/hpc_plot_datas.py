@@ -99,11 +99,6 @@ def _render_slurm_script(
     return "\n".join(lines) + "\n"
 
 
-def _record_target(job_dir: Path, final_artifact: Path) -> None:
-    record = job_dir / "plotting_target.txt"
-    record.write_text(final_artifact.as_posix() + "\n", encoding="utf-8")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -159,7 +154,6 @@ def main() -> None:
     )
     script_path = job_dir / f"{JOB_NAME}.slurm"
     script_path.write_text(script_content, encoding="utf-8")
-    _record_target(job_dir, final_artifact)
 
     print(f"📝 Generated plotting script: {script_path}")
     print(f"   Logs directory: {logs_dir}")

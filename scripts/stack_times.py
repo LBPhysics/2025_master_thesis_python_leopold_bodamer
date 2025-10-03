@@ -160,6 +160,12 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         sig: np.stack([entry.signals[sig] for entry in entries], axis=0) for sig in signal_types
     }
 
+    # Ensure t_coh_axis is sorted and reorder signals accordingly
+    if not np.all(np.diff(t_coh_axis) >= 0):
+        sort_idx = np.argsort(t_coh_axis)
+        t_coh_axis = t_coh_axis[sort_idx]
+        stacked_signals = {sig: arr[sort_idx] for sig, arr in stacked_signals.items()}
+
     metadata_out = {**anchor.metadata}
     metadata_out.update(
         {
@@ -207,14 +213,16 @@ def stack_artifacts(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     if skip_if_exists and expected_path.exists():
         return expected_path
 
-    save_info_file(
-        out_dir / f"{prefix}.pkl",
-        snapshot.system,
-        snapshot.simulation_config,
-        bath=snapshot.bath,
-        laser=snapshot.laser,
-        extra_payload=extra_payload,
-    )
+    info_path = out_dir / f"{prefix}.pkl"
+    if not info_path.exists():
+        save_info_file(
+            info_path,
+            snapshot.system,
+            snapshot.simulation_config,
+            bath=snapshot.bath,
+            laser=snapshot.laser,
+            extra_payload=extra_payload,
+        )
 
     out_path = save_run_artifact(
         signal_arrays=[stacked_signals[sig] for sig in signal_types],

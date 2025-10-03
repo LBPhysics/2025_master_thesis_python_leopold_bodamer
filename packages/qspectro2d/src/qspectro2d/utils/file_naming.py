@@ -95,8 +95,6 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
     sim_f = sim_config.to_dict()
     sys_f = system.to_dict()
 
-    parts.append(f"{sim_f['sim_type']}_spectroscopy")
-
     # Add system details
     n_atoms = sys_f.get("n_atoms")
     n_chains = sys_f.get("n_chains")

@@ -176,14 +176,16 @@ def post_process_job(
                 averaged_path = expected_path
                 print(f"⏭️  Averaged artifact already present: {averaged_path}")
             else:
-                save_info_file(
-                    expected_dir / f"{prefix}.pkl",
-                    snapshot.system,
-                    snapshot.simulation_config,
-                    bath=snapshot.bath,
-                    laser=snapshot.laser,
-                    extra_payload=extra_payload,
-                )
+                info_path = expected_dir / f"{prefix}.pkl"
+                if not info_path.exists():
+                    save_info_file(
+                        info_path,
+                        snapshot.system,
+                        snapshot.simulation_config,
+                        bath=snapshot.bath,
+                        laser=snapshot.laser,
+                        extra_payload=extra_payload,
+                    )
 
                 out_path = save_run_artifact(
                     signal_arrays=[entry.signals[sig] for sig in signal_types],
@@ -191,7 +193,7 @@ def post_process_job(
                     metadata=metadata_out,
                     frequency_sample_cm=entry.frequency_sample_cm,
                     data_dir=expected_dir,
-                    prefix=prefix,
+                    filename=f"{prefix}.npz",
                     t_coh=metadata_out.get("t_coh_value"),
                 )
 
