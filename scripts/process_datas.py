@@ -186,7 +186,6 @@ def post_process_job(
                 )
 
                 out_path = save_run_artifact(
-                    snapshot,
                     signal_arrays=[entry.signals[sig] for sig in signal_types],
                     t_det=entry.t_det,
                     metadata=metadata_out,
