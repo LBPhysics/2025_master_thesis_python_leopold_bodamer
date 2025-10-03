@@ -185,14 +185,16 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             print(f"⏭️  Averaged artifact already present: {expected_path}")
             return expected_path
 
-        save_info_file(
-            expected_dir / f"{prefix}.pkl",
-            snapshot.system,
-            snapshot.simulation_config,
-            bath=snapshot.bath,
-            laser=snapshot.laser,
-            extra_payload=extra_payload,
-        )
+        info_path = expected_dir / f"{prefix}.pkl"
+        if not info_path.exists():
+            save_info_file(
+                info_path,
+                snapshot.system,
+                snapshot.simulation_config,
+                bath=snapshot.bath,
+                laser=snapshot.laser,
+                extra_payload=extra_payload,
+            )
 
         out_path = save_run_artifact(
             signal_arrays=[single_entry.signals[sig] for sig in signal_types],
@@ -262,14 +264,16 @@ def average_inhom_1d(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         print(f"⏭️  Averaged artifact already present: {expected_path}")
         return expected_path
 
-    save_info_file(
-        expected_dir / f"{prefix}.pkl",
-        snapshot.system,
-        snapshot.simulation_config,
-        bath=snapshot.bath,
-        laser=snapshot.laser,
-        extra_payload=extra_payload,
-    )
+    info_path = expected_dir / f"{prefix}.pkl"
+    if not info_path.exists():
+        save_info_file(
+            info_path,
+            snapshot.system,
+            snapshot.simulation_config,
+            bath=snapshot.bath,
+            laser=snapshot.laser,
+            extra_payload=extra_payload,
+        )
 
     out_path = save_run_artifact(
         signal_arrays=[averaged_signals[sig] for sig in signal_types],

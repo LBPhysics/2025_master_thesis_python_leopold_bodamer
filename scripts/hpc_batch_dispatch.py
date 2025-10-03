@@ -307,14 +307,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     }
     _write_json(job_dir / "metadata.json", metadata)
 
-    save_info_file(
-        data_base_path.parent / f"{data_base_path.name}.pkl",
-        sim.system,
-        sim.simulation_config,
-        bath=getattr(sim, "bath", None),
-        laser=getattr(sim, "laser", None),
-        extra_payload=metadata,
-    )
+    info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
+    if not info_path.exists():
+        save_info_file(
+            info_path,
+            sim.system,
+            sim.simulation_config,
+            bath=getattr(sim, "bath", None),
+            laser=getattr(sim, "laser", None),
+            extra_payload=metadata,
+        )
 
     batch_indices = _split_indices(len(combinations), args.n_batches)
     script_paths: list[Path] = []

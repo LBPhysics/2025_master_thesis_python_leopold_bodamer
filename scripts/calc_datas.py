@@ -141,14 +141,16 @@ def run_1d_mode(args) -> None:
         "data_base_path": str(data_base_path),
     }
 
-    save_info_file(
-        data_base_path.parent / f"{data_base_path.name}.pkl",
-        sim_oqs.system,
-        sim_oqs.simulation_config,
-        bath=getattr(sim_oqs, "bath", None),
-        laser=getattr(sim_oqs, "laser", None),
-        extra_payload=job_metadata,
-    )
+    info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
+    if not info_path.exists():
+        save_info_file(
+            info_path,
+            sim_oqs.system,
+            sim_oqs.simulation_config,
+            bath=getattr(sim_oqs, "bath", None),
+            laser=getattr(sim_oqs, "laser", None),
+            extra_payload=job_metadata,
+        )
 
     saved_paths: list[str] = []
     start_time = time.time()
@@ -246,14 +248,16 @@ def run_2d_mode(args) -> None:
         "data_base_path": str(data_base_path),
     }
 
-    save_info_file(
-        data_base_path.parent / f"{data_base_path.name}.pkl",
-        sim_oqs.system,
-        sim_oqs.simulation_config,
-        bath=getattr(sim_oqs, "bath", None),
-        laser=getattr(sim_oqs, "laser", None),
-        extra_payload=job_metadata,
-    )
+    info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
+    if not info_path.exists():
+        save_info_file(
+            info_path,
+            sim_oqs.system,
+            sim_oqs.simulation_config,
+            bath=getattr(sim_oqs, "bath", None),
+            laser=getattr(sim_oqs, "laser", None),
+            extra_payload=job_metadata,
+        )
 
     saved_paths: list[str] = []
     start_time = time.time()

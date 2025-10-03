@@ -58,6 +58,16 @@ def extend_time_domain_data(
     if t_det.ndim != 1:
         raise ValueError("t_det must be a 1D array")
 
+    # Ensure t_det is sorted
+    if not np.all(np.diff(t_det) >= 0):
+        sort_idx = np.argsort(t_det)
+        t_det = t_det[sort_idx]
+        for idx, arr in enumerate(datas):
+            if arr.ndim == 1:
+                datas[idx] = arr[sort_idx]
+            elif arr.ndim == 2:
+                datas[idx] = arr[:, sort_idx]
+
     n_det = int(t_det.size)
     n_det_ext = int(np.ceil(pad * n_det))
 
@@ -83,6 +93,14 @@ def extend_time_domain_data(
 
     if t_coh.ndim != 1:
         raise ValueError("t_coh must be a 1D array when provided")
+
+    # Ensure t_coh is sorted
+    if not np.all(np.diff(t_coh) >= 0):
+        sort_idx = np.argsort(t_coh)
+        t_coh = t_coh[sort_idx]
+        for idx, arr in enumerate(datas):
+            if arr.ndim == 2:
+                datas[idx] = arr[sort_idx, :]
 
     n_coh = int(t_coh.size)
     n_coh_ext = int(np.ceil(pad * n_coh))

@@ -59,54 +59,6 @@ FIGURES_DIR.mkdir(exist_ok=True)
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered in exp")
 
 
-# Lightweight proxies for dict-based payloads (new artifact format)
-class _DictProxy:
-    def __init__(self, payload: Dict[str, Any] | None, *, name: str) -> None:
-        self._payload = dict(payload or {})
-        self._name = name
-
-    def to_dict(self) -> Dict[str, Any]:
-        return dict(self._payload)
-
-    def __getattr__(self, attr: str) -> Any:
-        if attr in self._payload:
-            return self._payload[attr]
-        raise AttributeError(f"{self._name} has no attribute '{attr}'")
-
-
-class _SimulationConfigProxy(_DictProxy):
-    def __init__(self, payload: Dict[str, Any] | None) -> None:
-        super().__init__(payload, name="SimulationConfig")
-        if "signal_types" not in self._payload or self._payload["signal_types"] is None:
-            self._payload["signal_types"] = []
-
-    @property
-    def signal_types(self) -> List[str]:
-        raw = self._payload.get("signal_types", [])
-        return list(raw) if isinstance(raw, (list, tuple)) else [raw]
-
-
-class _SystemProxy(_DictProxy):
-    def __init__(self, payload: Dict[str, Any] | None) -> None:
-        super().__init__(payload, name="AtomicSystem")
-
-    def __getattr__(self, attr: str) -> Any:
-        if attr == "frequencies_fs":
-            freqs = self._payload.get("frequencies_fs")
-            if freqs is None and "frequencies_cm" in self._payload:
-                cm_vals = np.asarray(self._payload["frequencies_cm"], dtype=float)
-                freqs = list(convert_cm_to_fs(cm_vals))
-                self._payload["frequencies_fs"] = freqs
-            if freqs is not None:
-                return freqs
-        return super().__getattr__(attr)
-
-
-class _LaserProxy(_DictProxy):
-    def __init__(self, payload: Dict[str, Any] | None) -> None:
-        super().__init__(payload, name="LaserPulseSequence")
-
-
 def _resolve_input_path(raw: str | None) -> Path:
     if raw is None:
         raise ValueError("--abs_path must be provided")
@@ -396,49 +348,14 @@ def main():
             print(f"🔄 Loading: {resolved_path}")
 
         loaded_data_and_info = load_simulation_data(abs_path=resolved_path)
-        # Quick probe to decide dimension and basic info
-        from qspectro2d.core.atomic_system.system_class import AtomicSystem
-        from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
-        from qspectro2d.core.simulation import SimulationConfig
 
-        sim_cfg_payload = loaded_data_and_info.get("sim_config") or loaded_data_and_info.get(
-            "simulation_config"
-        )
-        if sim_cfg_payload is None:
+        sim_config = loaded_data_and_info.get("sim_config") or loaded_data_and_info.get("simulation_config")
+        if sim_config is None:
             raise KeyError("Simulation configuration missing from loaded data")
-        if isinstance(sim_cfg_payload, SimulationConfig):
-            sim_config = sim_cfg_payload
-        elif isinstance(sim_cfg_payload, dict):
-            sim_config = _SimulationConfigProxy(sim_cfg_payload)
-        else:
-            to_dict = getattr(sim_cfg_payload, "to_dict", None)
-            if callable(to_dict):
-                sim_config = _SimulationConfigProxy(to_dict())
-            else:
-                raise TypeError("Unsupported simulation configuration payload type")
 
-        system_payload = loaded_data_and_info.get("system")
-        if isinstance(system_payload, AtomicSystem):
-            system = system_payload
-        elif isinstance(system_payload, dict):
-            system = _SystemProxy(system_payload)
-        else:
-            to_dict = getattr(system_payload, "to_dict", None)
-            system = _SystemProxy(to_dict()) if callable(to_dict) else _SystemProxy({})
-
-        laser_payload = loaded_data_and_info.get("laser")
-        if isinstance(laser_payload, LaserPulseSequence):
-            laser = laser_payload
-        elif isinstance(laser_payload, dict):
-            laser = _LaserProxy(laser_payload)
-        elif laser_payload is None:
-            laser = _LaserProxy({})
-        else:
-            to_dict = getattr(laser_payload, "to_dict", None)
-            laser = _LaserProxy(to_dict()) if callable(to_dict) else _LaserProxy({})
-
-        bath_payload = loaded_data_and_info.get("bath")
-        bath_env = bath_payload if isinstance(bath_payload, BosonicEnvironment) else None
+        system = loaded_data_and_info.get("system")
+        laser = loaded_data_and_info.get("laser")
+        bath_env = loaded_data_and_info.get("bath")
 
         is_2d = getattr(sim_config, "sim_type", "1d") == "2d"
         dimension = "2d" if is_2d else "1d"
@@ -469,10 +386,6 @@ def main():
             signal_types = metadata_block.get("signal_types", [])
         if not signal_types:
             signal_types = loaded_data_and_info.get("signal_types", [])
-        if not signal_types:
-            signal_types = [
-                key for key, val in loaded_data_and_info.items() if isinstance(val, np.ndarray)
-            ]
         signal_types = list(signal_types)
 
         # Collect raw data arrays
