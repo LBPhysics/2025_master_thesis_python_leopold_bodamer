@@ -89,7 +89,7 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
         Path: Relative path for data storage
     """
     # Base directory based on number of atoms and solver type
-    parts = []
+    parts: list[str] = []
 
     # Add simulation dimension (1d/2d)
     sim_f = sim_config.to_dict()
@@ -112,9 +112,7 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
     parts.append("RWA" if sim_f.get("rwa_sl") else "noRWA")
 
     # Add time parameters
-    parts.append(
-        f"t_dm{sim_f.get('t_det_max')}_t_wait{sim_f.get('t_wait')}_dt_{sim_f.get('dt')}"
-    )
+    parts.append(f"t_dm{sim_f.get('t_det_max')}_t_wait{sim_f.get('t_wait')}_dt_{sim_f.get('dt')}")
 
     # For inhomogeneous batches, avoid embedding per-run numeric parameters to keep a stable folder
     n_inhomogen = int(sim_f.get("n_inhomogen", 1))

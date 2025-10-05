@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import List, Sequence, Tuple, Optional, Dict
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from unittest import result
 import numpy as np
 from copy import deepcopy
 from qutip import Qobj, Result, mesolve, brmesolve
@@ -41,13 +40,17 @@ def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
     """Slice the list of states in `res` to only keep the detection window portion."""
     # Assuming res_times is sorted and equally spaced
     times = np.asarray(res.times)
-    if len(times) < 2:
-        raise ValueError("res.times must have at least 2 elements to determine dt.")
     window = np.asarray(window)
-    start_idx = np.argmin(np.abs(times - window[0]))
-    idxs = start_idx + np.arange(len(window))
-    idxs = np.clip(idxs, 0, len(times) - 1)  # stay in bounds
-    return [res.states[i] for i in idxs]
+    # nearest index for each window time
+    idxs = np.searchsorted(times, window, side="left")
+    idxs = np.clip(idxs, 0, len(times) - 1)
+    # choose nearer of left/right neighbors
+    left = np.maximum(idxs - 1, 0)
+    choose_left = (idxs == len(times)) | (
+        (idxs > 0) & (np.abs(window - times[left]) <= np.abs(times[idxs] - window))
+    )
+    idxs = np.where(choose_left, left, idxs)
+    return [res.states[int(i)] for i in idxs]
 
 
 def compute_evolution(
@@ -69,8 +72,6 @@ def compute_evolution(
     Result
         QuTiP Result object containing states, times, and final_state.
     """
-    import numpy as np
-    from qutip import mesolve, brmesolve
     from qspectro2d.config.default_simulation_params import SOLVER_OPTIONS
 
     options: dict = SOLVER_OPTIONS.copy()
@@ -102,17 +103,27 @@ def compute_evolution(
             )
 
     # Helper to get active pulses at time t
-    def get_active_pulses(t):
-        return [p for p in pulses if p.active_time_range[0] <= t < p.active_time_range[1]]
+    EPS = 1e-12
+
+    def get_active_pulse_at_interval(i):
+        t0 = event_times[i]
+        t1 = event_times[i + 1]
+        t_mid = 0.5 * (t0 + t1)
+        for p in pulses:
+            if (p.active_time_range[0] - EPS) <= t_mid < (p.active_time_range[1] + EPS):
+                return True
+        return False
 
     # Get all event times: pulse starts, ends, and simulation boundaries
-    event_times = [p.active_time_range[0] for p in pulses] + [p.active_time_range[1] for p in pulses]
+    event_times = [p.active_time_range[0] for p in pulses] + [
+        p.active_time_range[1] for p in pulses
+    ]
     event_times = [times_array[0]] + event_times + [times_array[-1]]
     event_times = sorted(set(event_times))  # Unique and sorted
 
     # Precompute indices for efficient slicing
-    event_i0 = np.searchsorted(times_array, event_times, side='left')
-    event_i1 = np.searchsorted(times_array, event_times, side='right')
+    event_i0 = np.searchsorted(times_array, event_times, side="left")
+    event_i1 = np.searchsorted(times_array, event_times, side="right")
 
     # Initialize
     all_states = []
@@ -121,15 +132,11 @@ def compute_evolution(
 
     # Evolve over each interval where active pulses are constant
     for i in range(len(event_times) - 1):
-        t_start = event_times[i]
-
-        active_pulses = get_active_pulses(t_start)
-        active_indices = [pulses.index(p) for p in active_pulses]
+        active_pulses = get_active_pulse_at_interval(i)
 
         # Determine Hamiltonian
-        if active_indices:
-            sim_active = sim_with_only_pulses(sim_oqs, active_indices)
-            H = sim_active.evo_obj
+        if active_pulses:
+            H = sim_oqs.evo_obj
         else:
             H = sim_oqs.H0_diagonalized
 
@@ -245,22 +252,17 @@ def phase_cycle_component(
     *,
     lmn: Tuple[int, int, int] = (0, 0, 0),
     phi_det: float = 0.0,
-    normalize: bool = False,
 ) -> np.ndarray:
     """Extract P_{l,m,n}(t) from a grid P^3[phi1,phi2,t].
 
     P_{l,m,n}(t) = Σ_{phi1} Σ_{phi2} P^3_{phi1,phi2}(t) exp(-i(l phi1 + m phi2 + n phi_det))
     """
     l, m, n = lmn
-    P_out = np.zeros(P_grid.shape[-1], dtype=np.complex128)
-    for i, phi1 in enumerate(phases):
-        for j, phi2 in enumerate(phases):
-            phase = -1j * (l * phi1 + m * phi2 + n * phi_det)
-            P_out += P_grid[i, j, :] * np.exp(phase)
-            # check if all P_grid entries are zero and warn
-
-    if normalize:
-        P_out /= len(phases) ** 2
+    L, M, T = P_grid.shape
+    phi = np.asarray(phases, float)
+    phase_mat = np.exp(-1j * (l * phi[:, None] + m * phi[None, :] + n * phi_det))
+    P_out = (P_grid * phase_mat[..., None]).sum(axis=(0, 1))
+    P_out /= L * M
     return P_out
 
 
@@ -350,7 +352,6 @@ def parallel_compute_1d_e_comps(
             P_grid,
             lmn=lmn_tuple,
             phi_det=phi_det_val,
-            normalize=True,
         )
         E_comp = 1j * P_comp
         if t_mask is not None:

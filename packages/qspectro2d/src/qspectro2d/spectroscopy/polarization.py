@@ -16,7 +16,7 @@ def complex_polarization(
       lowering operator μ^(-) in the energy eigenbasis and carries the
       exp(-i ω t) time dependence relevant for emitted fields.
     - Therefore we project the dipole operator onto its strictly upper-triangular
-      part (k = -1), which selects matrix elements connecting higher to lower
+      part (k = +1), which selects matrix elements connecting higher to lower
       energy states (|lower⟩⟨higher|).
 
     Accepts a single Qobj (ket or density matrix) or list of Qobj.

@@ -17,22 +17,15 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from calc_datas import _pick_config_yaml
+from calc_datas import pick_config_yaml
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import (
     save_run_artifact,
 )
 
-SCRIPTS_DIR = Path(__file__).parent.resolve()
-for _parent in SCRIPTS_DIR.parents:
-    if (_parent / ".git").is_dir():
-        PROJECT_ROOT = _parent
-        break
-else:
-    raise RuntimeError("Could not locate project root (missing .git directory)")
+from calc_datas import DATA_DIR
 
-DATA_DIR = (PROJECT_ROOT / "data").resolve()
 DATA_DIR.mkdir(exist_ok=True)
 
 
@@ -107,7 +100,7 @@ def main() -> None:
 
     combos_path = Path(args.combos_file).resolve()
     samples_path = Path(args.samples_file).resolve()
-    config_path = _pick_config_yaml().resolve()
+    config_path = pick_config_yaml().resolve()
     job_dir = combos_path.parent
     job_metadata_path = job_dir / "metadata.json"
     job_metadata: dict[str, Any] | None = None
@@ -141,7 +134,6 @@ def main() -> None:
             f"Expected samples array with shape (n_inhom, n_atoms); got {samples.shape}"
         )
     n_inhom, n_atoms = samples.shape
-    assert n_atoms == sim.system.n_atoms
 
     base_freqs = np.asarray(sim.system.frequencies_cm, dtype=float)
     if base_freqs.size != n_atoms:
@@ -181,7 +173,7 @@ def main() -> None:
         sim.system.update_frequencies_cm(freq_vector.tolist())
 
         print(
-            f"\n--- combo {global_idx}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
+            f"\n--- combo {global_idx} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
         )
 

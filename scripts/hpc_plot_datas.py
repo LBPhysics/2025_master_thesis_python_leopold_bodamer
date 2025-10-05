@@ -18,8 +18,8 @@ import json
 from pathlib import Path
 
 from hpc_batch_dispatch import submit_sbatch
+from calc_datas import SCRIPTS_DIR
 
-SCRIPTS_DIR = Path(__file__).parent.resolve()
 PLOT_SCRIPT = (SCRIPTS_DIR / "plot_datas.py").resolve()
 
 # Default SLURM settings used in the generated plotting script.
@@ -106,9 +106,7 @@ def _render_slurm_script(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Generate and submit a SLURM script to process artifacts and plot on HPC."
-        )
+        description=("Generate and submit a SLURM script to process artifacts and plot on HPC.")
     )
     parser.add_argument(
         "--job_dir",
@@ -128,23 +126,23 @@ def main() -> None:
     if not metadata_path.exists():
         print(f"Metadata file not found: {metadata_path}")
         raise SystemExit("Metadata file missing.")
-    
+
     with metadata_path.open("r", encoding="utf-8") as f:
         metadata = json.load(f)
-    
+
     data_base_path = Path(metadata["data_base_path"])
     data_dir = data_base_path.parent
-    
+
     # Find any *_s*.npz file (they are all equivalent for processing)
     candidates = list(data_dir.glob("*_s*.npz"))
     if not candidates:
         print(f"No artifacts found in {data_dir}")
         raise SystemExit("No artifacts found.")
-    
+
     # Use the first one found
     artifact = candidates[0]
     print(f"Using artifact: {artifact}")
-    
+
     logs_dir = _next_logs_dir(job_dir)
     script_content = _render_slurm_script(
         job_dir=job_dir,

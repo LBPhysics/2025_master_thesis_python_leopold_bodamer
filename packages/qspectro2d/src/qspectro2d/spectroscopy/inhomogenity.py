@@ -1,6 +1,6 @@
 # this module provides functions to handle inhomogeneous broadening
 # via Gaussian distributions characterized by FWHM and center frequencies.
-# NOTE AT the moment not used
+
 import numpy as np
 from typing import Union
 
@@ -62,22 +62,6 @@ def sample_from_gaussian(
     Sampling is truncated to the interval [mu - max_detuning*fwhm, mu + max_detuning*fwhm]
     via vectorized rejection sampling. If fwhm == 0, the distribution collapses to a delta
     at ``mu`` and the function returns copies of ``mu``.
-
-    Parameters
-    ----------
-    n_samples : int
-        Number of samples to generate per center.
-    fwhm : float | np.ndarray
-        Full width at half maximum. Can be a scalar or broadcastable to ``mu``.
-    mu : float | np.ndarray
-        Center(s) of the Gaussian(s). Scalar or 1D array-like.
-    max_detuning : float, default=10.0
-        Truncation half-width in units of fwhm.
-
-    Returns
-    -------
-    np.ndarray
-        Samples with shape (n_samples,) if ``mu`` is scalar, else (n_samples, len(mu)).
     """
     if n_samples <= 0:
         return np.empty((0,), dtype=float)
@@ -95,7 +79,9 @@ def sample_from_gaussian(
         try:
             fwhm_arr = np.broadcast_to(fwhm_arr, mu_arr.shape)
         except ValueError as exc:
-            raise ValueError("fwhm is not broadcastable to mu shape") from exc
+            raise ValueError(
+                f"fwhm with shape {np.shape(fwhm_arr)} is not broadcastable to mu shape {mu_arr.shape}"
+            ) from exc
 
     # Handle zero-FWHM (delta) case early
     if np.allclose(fwhm_arr, 0.0):

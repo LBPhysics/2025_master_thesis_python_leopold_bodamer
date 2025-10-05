@@ -56,7 +56,7 @@ warnings.filterwarnings(
 # ---------------------------------------------------------------------------
 # Helper function
 # ---------------------------------------------------------------------------
-def _pick_config_yaml():
+def pick_config_yaml():
     """Pick a config YAML from scripts/simulation_configs.
 
     Preference order:
@@ -138,7 +138,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config_path = _pick_config_yaml().resolve()
+    config_path = pick_config_yaml().resolve()
 
     print("=" * 80)
     print("LOCAL ALL-COMBINATIONS RUNNER")
@@ -171,6 +171,9 @@ def main() -> None:
     )
 
     t_coh_values = coherence_axis(sim, args.sim_type)
+    # only take half of t_coh_values:
+    t_coh_values = t_coh_values[: len(t_coh_values) // 2]
+
     combinations = build_combinations(t_coh_values, n_inhom)
 
     print(
@@ -227,7 +230,7 @@ def main() -> None:
         sim.system.update_frequencies_cm(freq_vector.tolist())
 
         print(
-            f"\n--- combo {global_idx}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
+            f"\n--- combo {global_idx} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
         )
 

@@ -71,8 +71,6 @@ def to_rotating_frame_list(
     omega_laser: float,
 ) -> List[Qobj]:
     """Batch version of ρ_RWA = U† ρ_lab U with simple broadcasting.
-
-    - times: scalar → apply same t to all states
     - times: array-like → must match len(states)
     """
     if not all(isinstance(s, Qobj) for s in states):
@@ -94,8 +92,6 @@ def from_rotating_frame_list(
     omega_laser: float,
 ) -> List[Qobj]:
     """Batch version of ρ_lab = U ρ_RWA U† with simple broadcasting.
-
-    - times: scalar → apply same t to all states
     - times: array-like → must match len(states)
     """
     if not all(isinstance(s, Qobj) for s in states):

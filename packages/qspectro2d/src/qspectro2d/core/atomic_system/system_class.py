@@ -56,7 +56,6 @@ class AtomicSystem:
         # cached spectrum/operators depend on frequencies
         self.reset_cache()
 
-
     def update_delta_inhomogen_cm(self, new_delta_inhomogen_cm: float) -> None:
         """Update inhomogeneous broadening (cm^-1)."""
         self.delta_inhomogen_cm = new_delta_inhomogen_cm
@@ -112,7 +111,7 @@ class AtomicSystem:
             return 0
 
         # Start with a zero operator of correct dimension
-        H = ket2dm(self.basis[0]) * 0.0
+        H = 0.0
 
         # On-site energies for single-excitation manifold
         for i_site in range(1, N + 1):
@@ -124,7 +123,7 @@ class AtomicSystem:
             for i_site in range(1, N):
                 for j_site in range(i_site + 1, N + 1):
                     # basis index (0-based) of |i,j>
-                    idx_d = pair_to_index(i_site, j_site, N) - 1
+                    idx_d = pair_to_index(i_site, j_site, N)
                     omega_sum = float(
                         self.frequencies_fs[i_site - 1] + self.frequencies_fs[j_site - 1]
                     )
@@ -154,7 +153,7 @@ class AtomicSystem:
         if not (1 <= i <= N and 1 <= j <= N and i != j):
             raise ValueError(f"double indices must be distinct in [1,{N}], got (i,j)=({i},{j})")
         a, b = (i, j) if i < j else (j, i)
-        return pair_to_index(a, b, N) - 1
+        return pair_to_index(a, b, N)
 
     @cached_property
     def eigenstates(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -183,7 +182,7 @@ class AtomicSystem:
     def lowering_op(self) -> Qobj:
         """return the lowering operator in the canonical basis
         ~ positive frequency part of the dipole operator mu^(+)"""
-        lowering_op = 0
+        lowering_op = 0.0
         # Single-excitation lowering operator: sum_i μ_i |0><i|
         for i in range(1, self.n_atoms + 1):
             mu_i = self.dip_moments[i - 1]
@@ -199,8 +198,8 @@ class AtomicSystem:
                     mu_i = self.dip_moments[i - 1]
                     mu_j = self.dip_moments[j - 1]
                     # Annihilating excitation on site i from |i,j> leaves |j>, and vice versa
-                    lowering_op += mu_i * (self.basis[j] * self.basis[idx - 1].dag())
-                    lowering_op += mu_j * (self.basis[i] * self.basis[idx - 1].dag())
+                    lowering_op += mu_i * (self.basis[j] * self.basis[idx].dag())
+                    lowering_op += mu_j * (self.basis[i] * self.basis[idx].dag())
 
         return lowering_op
 
@@ -220,7 +219,7 @@ class AtomicSystem:
 
         - For max_excitation == 1, only the single-excitation projectors are included.
         """
-        N_op = 0
+        N_op = 0.0
         dim = self.dimension
 
         for i in range(dim):
@@ -259,7 +258,7 @@ class AtomicSystem:
         if self.max_excitation == 2 and N >= 3:
             for i in range(1, N):
                 for j in range(i + 1, N + 1):
-                    idx_ij = pair_to_index(i, j, N) - 1
+                    idx_ij = pair_to_index(i, j, N)
                     ket_ij = self.basis[idx_ij]
 
                     for k in range(1, N + 1):
@@ -270,7 +269,7 @@ class AtomicSystem:
                         Jij_val = J[j - 1, k - 1]
                         if not np.isclose(Jij_val, 0.0):
                             a, b = (min(i, k), max(i, k))
-                            idx_ik = pair_to_index(a, b, N) - 1
+                            idx_ik = pair_to_index(a, b, N)
                             if idx_ij < idx_ik:  # add each undirected connection once
                                 ket_ik = self.basis[idx_ik]
                                 HJ += (
@@ -281,7 +280,7 @@ class AtomicSystem:
                         Iik_val = J[i - 1, k - 1]
                         if not np.isclose(Iik_val, 0.0):
                             a2, b2 = (min(k, j), max(k, j))
-                            idx_kj = pair_to_index(a2, b2, N) - 1
+                            idx_kj = pair_to_index(a2, b2, N)
                             if idx_ij < idx_kj:
                                 ket_kj = self.basis[idx_kj]
                                 HJ += (
@@ -371,7 +370,7 @@ class AtomicSystem:
             return 2
 
     def deph_op_i(self, i: int) -> Qobj:
-        """Return site i population operator in the eigenbasis (|i><i|).
+        """Return site i population operator in the site basis (|i><i|).
         Also works for double states |i,j> -> returns |i,j><i,j|."""
         if i == 0:
             raise ValueError("indexing ground state -> use i elem 1,...,N+1")
@@ -389,11 +388,22 @@ class AtomicSystem:
             "# The system with:",
             f"    {'n_atoms':<20}: {self.n_atoms}",
         ]
-        lines.append("\n# Frequencies and Dipole Moments:")
+
+        # Frequencies section, adjusted to mirror to_dict logic
+        if len(self.frequencies_cm_history) > 1:
+            all_freqs = np.array(self.frequencies_cm_history)
+            lines.append("\n# Frequencies (cm^-1):")
+            lines.append(f"    Current: {self.frequencies_cm}")
+            lines.append(f"    Min: {float(all_freqs.min()):.2f}")
+            lines.append(f"    Max: {float(all_freqs.max()):.2f}")
+        else:
+            lines.append("\n# Frequencies (cm^-1):")
+            lines.append(f"    {self.frequencies_cm}")
+
+        lines.append("\n# Dipole Moments:")
         for i in range(self.n_atoms):
-            lines.append(
-                f"    Atom {i}: ω = {self.frequencies_cm[i]} cm^-1, μ = {self.dip_moments[i]}"
-            )
+            lines.append(f"    Atom {i}: μ = {self.dip_moments[i]}")
+
         lines.append("\n# Coupling / Inhomogeneity:")
         if self.n_atoms == 2:
             lines.append(f"    {'coupling':<20}: {self.coupling_cm} cm^-1")
@@ -403,7 +413,8 @@ class AtomicSystem:
             lines.append(f"    {'positions shape':<20}: {self._positions.shape}")
             lines.append(f"    {'coupling matrix (cm^-1)':<20}:")
             lines.append(str(self.coupling_matrix_cm))
-        lines.append(f"\n    {'psi_ini':<20}:<")
+
+        lines.append(f"\n    {'psi_ini':<20}:")
         lines.append(str(self.psi_ini))
         lines.append(f"\n    {'System Hamiltonian (undiagonalized)':<20}:")
         lines.append(str(self.hamiltonian))
@@ -417,48 +428,69 @@ class AtomicSystem:
         return self.summary()
 
     def to_dict(self):
+        if len(self.frequencies_cm_history) > 1:
+            all_freqs = np.array(self.frequencies_cm_history)
+            freq_info = {
+                "current": self.frequencies_cm,
+                "min": float(all_freqs.min()),
+                "max": float(all_freqs.max()),
+            }
+        else:
+            freq_info = self.frequencies_cm
+
         d = {
             "n_atoms": self.n_atoms,
-            "frequencies_cm": self.frequencies_cm,
+            "frequencies_cm": freq_info,
             "dip_moments": self.dip_moments,
-            "delta_inhomogen_cm": self.delta_inhomogen_cm,
-            "coupling_cm": self.coupling_cm,
         }
+
+        if self.n_chains != 1:
+            d["n_chains"] = self.n_chains
+
+        if self.n_rings != 1:
+            d["n_rings"] = self.n_rings
+
+        if self.delta_inhomogen_cm != 0.0:
+            d["delta_inhomogen_cm"] = self.delta_inhomogen_cm
+
+        if self.coupling_cm != 0.0:
+            d["coupling_cm"] = self.coupling_cm
+
         return d
 
 
 def pair_to_index(i: int, j: int, n: int) -> int:
-    """0-based canonical index for |i,j> with i<j, given n atoms.
-    ground=0, singles=1..n, doubles=(n+1)..
-    Returns the index+1 of the basis corresponding to the double excitation |i,j>.
+    """
+    Basis index k (0-based) for the double-excitation |i,j> with 1 <= i < j <= n.
+
+    Layout:
+      ground  -> k = 0
+      singles -> k = 1..n
+      doubles -> k = n+1 .. n + C(n,2)
+
+    The doubles are ordered lexicographically by increasing j, then i.
     """
     assert 1 <= i < j <= n
-    return 1 + n + math.comb(j - 1, 2) + i
+    return n + math.comb(j - 1, 2) + i
 
 
 def index_to_pair(k: int, n: int) -> Tuple[int, int]:
-    """Inverse map: from index k (in double block == corresponds to state basis[k-1]) to (atoms i,j excited)."""
-    pair_rank = k - (1 + n)  # rank inside double block (0-based)
+    """
+    Inverse map: from global basis index k (in the doubles block) to (i, j).
 
-    # find j with C(j-1,2) < r <= C(j,2)
+    Requires: k in [n+1, n + C(n,2)].
+    Returns i, j with 1 <= i < j <= n.
+    """
+    # rank inside the doubles block, 0-based
+    r = k - (n + 1)
+    if r < 0 or r >= math.comb(n, 2):
+        raise ValueError(f"k={k} is not in the doubles block for n={n}.")
+
+    # find smallest j with C(j,2) > r  (i.e., j such that the cumulative count passes r)
     j = 2
-    while math.comb(j, 2) < pair_rank:
+    while math.comb(j, 2) <= r:
         j += 1
-    i = pair_rank - math.comb(j - 1, 2)
+
+    # remove the count up to the previous j, then 1-base for i
+    i = r - math.comb(j - 1, 2) + 1
     return i, j
-
-
-''' 
-Not used 
-
-
-    def update_coupling_cm(self, new_coupling_cm: float) -> None:
-        """Update base coupling (cm^-1) and refresh internal fs cache/coupling matrix."""
-        self.coupling_cm = new_coupling_cm
-        self.coupling_fs = float(convert_cm_to_fs(self.coupling_cm))
-        # Coupling affects J matrix and H; recompute couplings and reset caches
-        self._compute_isotropic_couplings()
-        self.reset_cache()
-
-
-'''
