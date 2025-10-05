@@ -182,7 +182,7 @@ class SimulationModuleOQS:
             return self._times_local_manual
 
         cfg = self.simulation_config
-        t0 = -2 * self.laser.pulse_fwhms[0] - cfg.t_coh - cfg.t_wait
+        t0 = -2 * self.laser.carrier_fwhm_fs - cfg.t_coh - cfg.t_wait
         dt = cfg.dt
         # Compute number of steps to cover from t0 to t_det_max with step dt
         n_steps = int(np.floor((cfg.t_det_max - t0) / dt)) + 1

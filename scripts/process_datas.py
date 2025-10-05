@@ -42,7 +42,6 @@ class RunEntry:
     system: Any
     laser: Any | None
     bath: Any | None
-    job_metadata: dict[str, Any] | None
     t_coh: np.ndarray | None = None
 
 
@@ -74,7 +73,6 @@ def _load_entry(path: Path) -> RunEntry:
         system=system,
         laser=artifact.get("laser"),
         bath=artifact.get("bath"),
-        job_metadata=artifact.get("job_metadata"),
         t_coh=t_coh,
     )
 
@@ -171,7 +169,6 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
         system=reference.system,
         laser=reference.laser,
         bath=reference.bath,
-        job_metadata=reference.job_metadata,
         t_coh=t_coh_axis,
     )
 
@@ -197,7 +194,6 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             system=single.system,
             laser=single.laser,
             bath=single.bath,
-            job_metadata=single.job_metadata,
             t_coh=single.t_coh,
         )
 
@@ -248,7 +244,6 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             system=reference.system,
             laser=reference.laser,
             bath=reference.bath,
-            job_metadata=reference.job_metadata,
             t_coh=t_coh,
         )
     else:
@@ -296,7 +291,6 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             system=reference.system,
             laser=reference.laser,
             bath=reference.bath,
-            job_metadata=reference.job_metadata,
         )
 
 
@@ -347,7 +341,6 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             final_entry.simulation_config,
             bath=final_entry.bath,
             laser=final_entry.laser,
-            extra_payload=final_entry.job_metadata,
         )
 
     out_path = save_run_artifact(

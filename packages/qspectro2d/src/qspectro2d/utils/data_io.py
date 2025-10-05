@@ -37,6 +37,7 @@ def _json_default(obj: Any) -> Any:
 def _json_dumps(payload: Any) -> str:
     return json.dumps(payload, default=_json_default, sort_keys=True)
 
+
 def split_prefix(path: Path) -> tuple[Path, str]:
     path = Path(path)
     stem = path.stem
@@ -180,7 +181,6 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     system = info.get("system", {})
     laser = info.get("laser")
     bath = info.get("bath")
-    job_meta = info.get("job_metadata")
 
     signals: dict[str, np.ndarray] = {}
     for key in list(contents.keys()):
@@ -199,7 +199,6 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
         "system": system,
         "laser": laser,
         "bath": bath,
-        "job_metadata": job_meta,
     }
 
 

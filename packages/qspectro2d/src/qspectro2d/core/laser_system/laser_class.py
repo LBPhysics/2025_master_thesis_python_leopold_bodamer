@@ -117,46 +117,39 @@ class LaserPulseSequence:
     pulses: List[LaserPulse] = field(default_factory=list)
 
     def __post_init__(self):
-        # Keep pulses ordered in time at initialization; later updates preserve order
-        # based on the sequence logic (pulse_delays are cumulative from 0).
+        # Keep pulses ordered in time at initialization;
         self.pulses.sort(key=lambda p: p.pulse_peak_time)
 
-        # Peak amplitude of the first pulse (E0)
-        if not self.pulses:
-            self._E0 = 0.0
-            self.carrier_freq_fs = None
-        else:
-
-            self._E0 = self.pulses[0].pulse_amplitude
-            """Common carrier frequency in fs^-1 if all pulses share the same value. Else None."""
-            first_fs = self.pulses[0].pulse_freq_fs
-            if all(np.isclose(p.pulse_freq_fs, first_fs) for p in self.pulses):
-                self.carrier_freq_fs = float(first_fs)
+        self._E0 = self.pulses[0].pulse_amplitude
+        self.carrier_freq_fs = self.pulses[0].pulse_freq_fs
+        self.carrier_fwhm_fs = self.pulses[0].pulse_fwhm_fs
+        self.carrier_type = self.pulses[0].envelope_type
 
     @property
     def E0(self) -> float:
-        """Peak amplitude of the first pulse (E0)."""
+        """Reference amplitude of the first pulse (E0)."""
         return self._E0
+
+    @property
+    def pulse_amplitudes(self) -> List[float]:
+        """List of pulse amplitudes."""
+        return [p.pulse_amplitude for p in self.pulses]
 
     # --- Dynamic Properties ---
     @property
     def pulse_indices(self) -> List[int]:
+        """List of pulse indices."""
         return [p.pulse_index for p in self.pulses]
 
     @property
     def pulse_peak_times(self) -> List[float]:
+        """List of pulse peak times."""
         return [p.pulse_peak_time for p in self.pulses]
 
     # --- Inter-pulse pulse_delays convenience -------------------------------------
     @property
     def pulse_delays(self) -> List[float]:
         """Inter-pulse pulse_delays Δt_i = t_{i} - t_{i-1} (length = n_pulses-1).
-
-        Returns
-        -------
-        list[float]
-            List of positive (or zero) pulse_delays between successive pulse peak times.
-
         Notes
         -----
         This is a derived quantity from the sorted pulse_peak_times. For a
@@ -189,21 +182,15 @@ class LaserPulseSequence:
             Must have length len(pulses)-1. Each entry is the time between
             consecutive pulses (earlier → later), all non-negative.
         """
-        # Accept any
-        #  convertible to list of floats
         if not isinstance(new_pulse_delays, (list, tuple, np.ndarray)):
             raise TypeError("new_pulse_delays must be a list/tuple/ndarray of floats")
         new_pulse_delays = list(map(float, list(new_pulse_delays)))
 
         n = len(self.pulses)
-        if n == 0:
-            raise ValueError("No pulses defined.")
         if len(new_pulse_delays) != n - 1:
             raise ValueError(
                 f"Number of pulse_delays ({len(new_pulse_delays)}) must be one less than number of pulses ({n})"
             )
-        if any(d < 0 for d in new_pulse_delays):
-            raise ValueError("All pulse_delays must be non-negative.")
 
         # Build forward cumulative times [0, d1, d1+d2, ..., sum(d1..d_{n-1})]
         t_forward = np.insert(np.cumsum(new_pulse_delays), 0, 0.0)
@@ -235,31 +222,8 @@ class LaserPulseSequence:
             self.pulses[i].pulse_phase = phases_list[i]
 
     @property
-    def pulse_fwhms(self) -> List[float]:
-        return [p.pulse_fwhm_fs for p in self.pulses]
-
-    @property
-    def pulse_freqs_cm(self) -> List[float]:
-        return [p.pulse_freq_cm for p in self.pulses]
-
-    @property
-    def pulse_freqs_fs(self) -> List[float]:
-        return [p.pulse_freq_fs for p in self.pulses]
-
-    @property
-    def envelope_types(self) -> List[str]:
-        return [p.envelope_type for p in self.pulses]
-
-    @property
-    def pulse_amplitudes(self) -> List[float]:
-        return [p.pulse_amplitude for p in self.pulses]
-
-    @property
     def carrier_freq_cm(self) -> Optional[float]:
-        f_fs = self.carrier_freq_fs
-        if f_fs is None:
-            return None
-        return float(convert_fs_to_cm(f_fs))
+        return convert_fs_to_cm(self.carrier_freq_fs)
 
     # --- Factory Methods ---
     @staticmethod
@@ -316,9 +280,6 @@ class LaserPulseSequence:
 
     def select_pulses(self, indices: Sequence[int]) -> None:
         """Restruct the LaserPulseSequence to only the pulses at the given indices."""
-        if not indices:
-            return LaserPulseSequence(pulses=[])
-
         # Ensure indices are valid
         n = len(self.pulses)
         for i in indices:
@@ -330,16 +291,7 @@ class LaserPulseSequence:
 
         self.pulses = selected
 
-    # --- Convenience ---
-    def __len__(self):
-        return len(self.pulses)
-
-    def __getitem__(self, index):
-        return self.pulses[index]
-
-    def __iter__(self):
-        return iter(self.pulses)
-
+    # Output
     def summary(self):
         print(str(self))
 
@@ -349,8 +301,9 @@ class LaserPulseSequence:
 
     def to_dict(self) -> dict:
         return {
+            "LASER": "",
             "E_0": self.E0,
             "w_L": self.carrier_freq_cm,
-            "FWHM_0": self.pulse_fwhms[0],
-            "env": self.envelope_types[0],
+            "FWHM": self.carrier_fwhm_fs,
+            "env": self.carrier_type,
         }

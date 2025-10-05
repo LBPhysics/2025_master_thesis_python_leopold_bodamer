@@ -241,7 +241,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     samples_file = job_dir / "samples.npy"
     np.save(samples_file, samples.astype(float))
 
-    metadata = {
+    job_metadata = {
         "sim_type": args.sim_type,
         "n_inhom": n_inhom,
         "n_t_coh": int(t_coh_values.size),
@@ -253,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "data_base_path": str(data_base_path),
         "rng_seed": args.rng_seed,
     }
-    write_json(job_dir / "metadata.json", metadata)
+    write_json(job_dir / "job_metadata.json", job_metadata)
 
     info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
     if not info_path.exists():
@@ -263,7 +263,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             sim.simulation_config,
             bath=getattr(sim, "bath", None),
             laser=getattr(sim, "laser", None),
-            extra_payload=metadata,
+            extra_payload=job_metadata,
         )
 
     batch_indices = _split_indices(len(combinations), args.n_batches)
