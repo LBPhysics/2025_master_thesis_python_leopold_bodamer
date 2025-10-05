@@ -172,7 +172,7 @@ def main() -> None:
 
     t_coh_values = coherence_axis(sim, args.sim_type)
     # only take half of t_coh_values:
-    t_coh_values = t_coh_values[: len(t_coh_values) // 2]
+    # t_coh_values = t_coh_values[: len(t_coh_values) // 2]
 
     combinations = build_combinations(t_coh_values, n_inhom)
 
@@ -181,7 +181,7 @@ def main() -> None:
         f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}"
     )
 
-    metadata = {
+    job_metadata = {
         "sim_type": args.sim_type,
         "n_inhom": n_inhom,
         "n_t_coh": int(t_coh_values.size),
@@ -199,7 +199,7 @@ def main() -> None:
             sim.simulation_config,
             bath=getattr(sim, "bath", None),
             laser=getattr(sim, "laser", None),
-            extra_payload=metadata,
+            extra_payload=job_metadata,
         )
 
     # Save samples and combinations for reference

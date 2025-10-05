@@ -8,23 +8,20 @@ and reduces code duplication.
 
 import numpy as np
 import warnings
-from ..utils.constants import (
-    BOLTZMANN,
-    convert_cm_to_fs,
-)
+
+# from ..utils.constants import BOLTZMANN, convert_cm_to_fs
 
 # === signal processing / phase cycling ===
 PHASE_CYCLING_PHASES = [0, np.pi / 2, np.pi, 3 * np.pi / 2]
 DETECTION_PHASE = 0.0  # Fixed phase for detection pulse
 SIGNAL_TYPES = ["rephasing"]  # Default signal == photon echo to simulate
 COMPONENT_MAP: dict[str, tuple[int, int, int]] = {
-    "average": (0, 0, 0),  # special case for averaging all phases
-    "rephasing": (-1, 1, 1),
+    "average": (0, 0, 0),  # special case for just averaging all phases
+    "rephasing": (-1, 1, 1),  # photon echo is extracted here
     "nonrephasing": (1, -1, 1),
 }  # represents the (k1, k2, k3) phase factors for each signal type
 # last pulse is 10% of the first two to ensure probing character
 RELATIVE_E0S = [1.0, 1.0, 0.1]
-
 
 # Validation thresholds for physics checks
 NEGATIVE_EIGVAL_THRESHOLD = -1e-3
@@ -32,7 +29,7 @@ TRACE_TOLERANCE = 1e-6
 
 # supported solvers and bath models
 SUPPORTED_SOLVERS = ["ME", "BR", "Paper_eqs"]
-SUPPORTED_BATHS = ["ohmic"]  # , "dl"
+SUPPORTED_BATHS = ["ohmic"]  # , "dl" NOTE: not yet implemented
 SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
 SUPPORTED_SIM_TYPES = ["1d", "2d"]
 

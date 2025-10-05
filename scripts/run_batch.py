@@ -102,7 +102,7 @@ def main() -> None:
     samples_path = Path(args.samples_file).resolve()
     config_path = pick_config_yaml().resolve()
     job_dir = combos_path.parent
-    job_metadata_path = job_dir / "metadata.json"
+    job_metadata_path = job_dir / "job_metadata.json"
     job_metadata: dict[str, Any] | None = None
     if job_metadata_path.exists():
         with job_metadata_path.open("r", encoding="utf-8") as handle:
@@ -112,7 +112,9 @@ def main() -> None:
     data_dir = data_base_path.parent
     prefix = data_base_path.name
 
-    sim = load_simulation(config_path, validate=False)
+    sim = load_simulation(
+        config_path, validate=True
+    )  # To really get the new max_workers on the hpc
 
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")

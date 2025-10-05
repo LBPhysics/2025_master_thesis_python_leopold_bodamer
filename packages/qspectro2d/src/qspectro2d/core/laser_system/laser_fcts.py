@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 
-def single_pulse_envelope(t_array: np.ndarray, pulse: "LaserPulse") -> np.ndarray:
+def single_pulse_envelope(t_array: np.ndarray, pulse: LaserPulse) -> np.ndarray:
     """Compute envelope contribution of a single pulse for provided time array.
 
     Parameters
@@ -69,35 +69,21 @@ def pulse_envelopes(
         pulse_seq (LaserPulseSequence): The pulse sequence
 
     """
-    # Import here to avoid circular imports
-    from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
-
-    if not isinstance(pulse_seq, LaserPulseSequence):
-        raise TypeError("pulse_seq must be a LaserPulseSequence instance.")
-
     # Normalize input to numpy array for vectorized operations
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
-    if is_scalar:
-        t_array = t_array[None]  # shape (1,)
 
     envelope_total = np.zeros_like(t_array, dtype=float)
     for pulse in pulse_seq.pulses:
         envelope_total += single_pulse_envelope(t_array, pulse)
 
-    if is_scalar:
-        return float(envelope_total[0])
-    return envelope_total
+    return float(envelope_total[0]) if is_scalar else envelope_total
 
 
 def e_pulses(
-    t: Union[float, np.ndarray], pulse_seq: "LaserPulseSequence"
+    t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
     """Calculate RWA positive freq. electric field: E^(+) = E0 * exp(-i * phi) * envelopes."""
-    from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
-
-    if not isinstance(pulse_seq, LaserPulseSequence):
-        raise TypeError("pulse_seq must be a LaserPulseSequence instance.")
 
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
@@ -108,9 +94,6 @@ def e_pulses(
     for i in range(len(pulse_seq.pulses)):
         phi = pulse_seq.pulse_phases[i]
         E_amp = pulse_seq.pulse_amplitudes[i]
-        # print(f"Pulse phase: {phi}, amplitude: {E_amp}")
-        if phi is None or E_amp is None:
-            continue
         single_env = single_pulse_envelope(t_array, pulse_seq.pulses[i])
         field_total += E_amp * single_env * np.exp(-1j * phi)
 
@@ -130,12 +113,8 @@ def epsilon_pulses(
 
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
-    if is_scalar:
-        t_array = t_array[None]
 
-    field_total = np.zeros_like(t_array, dtype=complex)
+    carrier = np.zeros_like(t_array, dtype=complex)
     omega = pulse_seq.carrier_freq_fs
     carrier = np.exp(-1j * (omega * t_array)) * e_pulses(t_array, pulse_seq)
-    field_total = carrier
-
-    return field_total
+    return complex(carrier[0]) if is_scalar else carrier

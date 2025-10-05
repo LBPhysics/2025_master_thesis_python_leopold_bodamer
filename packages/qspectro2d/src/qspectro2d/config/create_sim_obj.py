@@ -29,12 +29,10 @@ import yaml
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from . import default_simulation_params as dflt
 
-__all__ = ["load_simulation", "create_base_sim_oqs", "get_max_workers"]
+__all__ = ["load_simulation", "create_base_sim_oqs"]
 
 
 # HELPERS
-
-
 def _read_yaml(path: Path) -> Mapping[str, Any]:
     if not path.exists():
         raise FileNotFoundError(path)

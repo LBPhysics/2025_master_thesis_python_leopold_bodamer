@@ -71,21 +71,22 @@ class SimulationConfig:
         result = {
             "ode_solver": self.ode_solver,
             "rwa_sl": self.rwa_sl,
-            "dt": self.dt,
-            "t_wait": self.t_wait,
-            "t_det_max": self.t_det_max,
             "sim_type": self.sim_type,
-            "n_inhomogen": self.n_inhomogen,
-            "n_phases": self.n_phases,
             "max_workers": self.max_workers,
             "signal_types": self.signal_types,
+            "t_det_max": self.t_det_max,
+            "dt": self.dt,
+            "t_wait": self.t_wait,
         }
         if self.t_coh is not None:
             result["t_coh"] = self.t_coh
         if self.solver_options:
             result["solver_options"] = self.solver_options
+        result["n_inhomogen"] = self.n_inhomogen
         if self.n_inhomogen != 1:
             result["inhom_averaged"] = self.inhom_averaged
+        if self.n_phases != 4:
+            result["n_phases"] = self.n_phases
         return result
 
     def __str__(self) -> str:
