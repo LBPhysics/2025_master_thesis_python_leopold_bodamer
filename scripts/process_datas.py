@@ -17,17 +17,17 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-
 import numpy as np
 
-from qspectro2d.utils.data_io import load_run_artifact, save_run_artifact, save_info_file, split_prefix
+from qspectro2d.utils.data_io import (
+    load_run_artifact,
+    save_run_artifact,
+    save_info_file,
+    split_prefix,
+)
 
-SCRIPTS_DIR = Path(__file__).parent.resolve()
-for _parent in SCRIPTS_DIR.parents:
-    if (_parent / ".git").is_dir():
-        PROJECT_ROOT = _parent
-        break
-DATA_DIR = (PROJECT_ROOT / "data").resolve()
+from calc_datas import DATA_DIR
+
 DATA_DIR.mkdir(exist_ok=True)
 
 
@@ -50,13 +50,14 @@ def _load_entry(path: Path) -> RunEntry:
     artifact = load_run_artifact(path)
 
     metadata = dict(artifact["metadata"])
-    if "t_coh_value" in metadata:
-        metadata["t_coh_value"] = float(np.asarray(metadata["t_coh_value"]))
-
     signals = {key: np.asarray(val) for key, val in artifact["signals"].items()}
     t_det = np.asarray(artifact["t_det"], dtype=float)
     freq_sample = np.asarray(artifact["frequency_sample_cm"], dtype=float)
-    t_coh = np.asarray(artifact.get("t_coh", []), dtype=float) if artifact.get("t_coh") is not None else None
+    t_coh = (
+        np.asarray(artifact.get("t_coh", []), dtype=float)
+        if artifact.get("t_coh") is not None
+        else None
+    )
 
     sim_cfg = artifact["simulation_config"]
     system = artifact["system"]
@@ -127,7 +128,8 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
 
     # Stack signals
     stacked_signals = {
-        sig: np.stack([entry.signals[sig] for entry in group_sorted], axis=0) for sig in signal_types
+        sig: np.stack([entry.signals[sig] for entry in group_sorted], axis=0)
+        for sig in signal_types
     }
 
     t_coh_values = [entry.metadata.get("t_coh_value", 0.0) for entry in group_sorted]
@@ -218,7 +220,9 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             for sig in signal_types
         }
 
-        avg_freq = np.mean(np.stack([entry.frequency_sample_cm for entry in entries], axis=0), axis=0)
+        avg_freq = np.mean(
+            np.stack([entry.frequency_sample_cm for entry in entries], axis=0), axis=0
+        )
 
         metadata_out = dict(reference.metadata)
         metadata_out.update(
@@ -326,7 +330,7 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         t_coh_for_save = final_entry.t_coh
     else:
         final_filename = f"1d_inhom_averaged.npz"
-        t_coh_for_save = final_entry.metadata.get("t_coh_value")
+        t_coh_for_save = None
 
     final_path = directory / final_filename
 
@@ -335,7 +339,7 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
         return final_path
 
     # Save info if needed
-    info_path = directory / final_filename.replace('.npz', '.pkl')
+    info_path = directory / final_filename.replace(".npz", ".pkl")
     if not info_path.exists():
         save_info_file(
             info_path,
@@ -357,10 +361,16 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     )
 
     # Get stacked points info
-    stacked_points = processed_per_sample[0].metadata.get("stacked_points", 1) if processed_per_sample and processed_per_sample[0].simulation_config.sim_type == "2d" else 1
+    stacked_points = (
+        processed_per_sample[0].metadata.get("stacked_points", 1)
+        if processed_per_sample and processed_per_sample[0].simulation_config.sim_type == "2d"
+        else 1
+    )
 
     print(f"✅ Averaged samples check: Processed and saved final averaged artifact: {out_path}\n")
-    print(f"   (processed {len(entries)} files, stacked {stacked_points} time points, averaged {len(processed_per_sample)} samples)\n")
+    print(
+        f"   (processed {len(entries)} files, stacked {stacked_points} time points, averaged {len(processed_per_sample)} samples)\n"
+    )
     return out_path
 
 

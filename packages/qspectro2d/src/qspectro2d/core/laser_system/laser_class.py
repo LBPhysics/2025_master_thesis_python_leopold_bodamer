@@ -7,8 +7,8 @@ import numpy as np
 from ...utils.constants import convert_cm_to_fs, convert_fs_to_cm
 
 # Default Gaussian active window size in multiples of FWHM that roughly
-# corresponds to ~1% envelope cutoff at the boundaries.
-DEFAULT_ACTIVE_WINDOW_NFWHM: float = 1.094
+# corresponds to ~0.01% envelope cutoff at the boundaries.
+DEFAULT_ACTIVE_WINDOW_NFWHM: float = 1.823
 
 
 @dataclass
@@ -51,7 +51,7 @@ class LaserPulse:
         `pulse_peak_time`, `pulse_fwhm_fs`, or `envelope_type`.
         """
         if self.envelope_type == "gaussian":
-            # Use extended active window (≈1% cutoff) defined by active_time_range (± n_fwhm * FWHM)
+            # Use extended active window (≈0.01% cutoff) defined by active_time_range (± n_fwhm * FWHM)
             self._t_start, self._t_end = self.active_time_range  # uses DEFAULT_ACTIVE_WINDOW_NFWHM
             self._sigma = self.pulse_fwhm_fs / (2 * np.sqrt(2 * np.log(2)))
             # Baseline value chosen at EXTENDED window edge (edge_span), not at FWHM, so
@@ -80,7 +80,7 @@ class LaserPulse:
     def active_time_range(self) -> Tuple[float, float]:
         """Return (t_min, t_max) where the envelope is effectively non-zero.
 
-        Gaussian: uses ± DEFAULT_ACTIVE_WINDOW_NFWHM × FWHM (~1% boundary).
+        Gaussian: uses ± DEFAULT_ACTIVE_WINDOW_NFWHM × FWHM (~0.01% boundary).
         Other envelopes: uses ± FWHM around the peak.
         """
         if self.envelope_type == "gaussian":
@@ -189,7 +189,8 @@ class LaserPulseSequence:
             Must have length len(pulses)-1. Each entry is the time between
             consecutive pulses (earlier → later), all non-negative.
         """
-        # Accept any sequence convertible to list of floats
+        # Accept any
+        #  convertible to list of floats
         if not isinstance(new_pulse_delays, (list, tuple, np.ndarray)):
             raise TypeError("new_pulse_delays must be a list/tuple/ndarray of floats")
         new_pulse_delays = list(map(float, list(new_pulse_delays)))
@@ -313,20 +314,8 @@ class LaserPulseSequence:
 
         return LaserPulseSequence(pulses=pulses)
 
-    def select_pulses(self, indices: Sequence[int]) -> "LaserPulseSequence":
-        """
-        Return a new LaserPulseSequence containing only the pulses at the given indices.
-
-        Parameters
-        ----------
-        indices : sequence of int
-            Indices of pulses to keep (0-based). Duplicates are allowed.
-
-        Returns
-        -------
-        LaserPulseSequence
-            A new instance containing only the selected pulses, sorted by peak time.
-        """
+    def select_pulses(self, indices: Sequence[int]) -> None:
+        """Restruct the LaserPulseSequence to only the pulses at the given indices."""
         if not indices:
             return LaserPulseSequence(pulses=[])
 
@@ -360,230 +349,8 @@ class LaserPulseSequence:
 
     def to_dict(self) -> dict:
         return {
-            "pulses": [p.to_dict() for p in self.pulses],
-            "E0": self.E0,
-            "carrier_freq_cm": self.carrier_freq_cm,
+            "E_0": self.E0,
+            "w_L": self.carrier_freq_cm,
+            "FWHM_0": self.pulse_fwhms[0],
+            "env": self.envelope_types[0],
         }
-
-
-'''
-unused helper functions for pulses
-
-    def get_active_pulses_at_time(self, time: float) -> List[LaserPulse]:
-        """Return list of pulses active at given time (within their active_time_range)."""
-        active_pulses: List[LaserPulse] = []
-        for pulse in self.pulses:
-            start_time, end_time = pulse.active_time_range
-            if start_time <= time <= end_time:
-                active_pulses.append(pulse)
-
-        return active_pulses
-
-
-
-    @staticmethod
-    def from_general_specs(
-        pulse_peak_times: Union[float, List[float]],
-        pulse_phases: Union[float, List[float]],
-        pulse_amplitudes: Union[float, List[float]],
-        pulse_fwhms: Union[float, List[float]],
-        pulse_freqs_cm: Union[float, List[float]],  # cm^-1 interface preserved
-        envelope_types: Union[str, List[str]],
-        pulse_indices: Optional[List[int]] = None,
-    ) -> "LaserPulseSequence":
-        if isinstance(pulse_peak_times, (float, int)):
-            pulse_peak_times = [pulse_peak_times]
-
-        n = len(pulse_peak_times)
-
-        def expand(param, name):
-            if isinstance(param, (float, int, str)):
-                return [param] * n
-            if isinstance(param, list):
-                if len(param) != n:
-                    raise ValueError(f"{name} must have length {n}")
-                return param
-            raise TypeError(f"{name} must be float, str, or list")
-
-        pulse_phases = expand(pulse_phases, "pulse_phases")
-        amps = expand(pulse_amplitudes, "pulse_amplitudes")
-        fwhms = expand(pulse_fwhms, "pulse_fwhms")
-        freqs_cm = expand(pulse_freqs_cm, "pulse_freqs_cm (cm^-1)")
-        envs = expand(envelope_types, "envelope_types")
-
-        if pulse_indices is None:
-            pulse_indices = list(range(n))
-        elif len(pulse_indices) != n:
-            raise ValueError("pulse_indices must match number of pulses")
-
-        pulses = [
-            LaserPulse(
-                pulse_index=i,
-                pulse_peak_time=peak_times[i],
-                pulse_phase=phases[i],
-                pulse_fwhm_fs=pulse_fwhm_fs,
-                pulse_freq_cm=carrier_freq_cm,
-                pulse_amplitude=base_amplitude * relative_E0s[i],
-                envelope_type=envelope_type,
-            )
-            for i in range(n_pulses)
-        ]
-
-
-        return LaserPulseSequence(pulses=pulses)
-
-
-    def get_total_amplitude_at_time(self, time: float) -> float:
-        """
-        Calculate the total electric field amplitude (E0) at a given time.
-        This is the sum of all active pulse amplitudes at that time.
-
-        Parameters:
-            time (float): The time at which to calculate the total amplitude
-
-        Returns:
-            float: Total electric field amplitude E0 = sum of all active pulse_amplitudes
-        """
-        active_pulses = self.get_active_pulses_at_time(time)
-        total_amplitude = sum(pulse.pulse_amplitude for pulse in active_pulses)
-
-        return total_amplitude
-
-
-
-    # --- Additional dynamic update helpers ---------------------------------
-    def set_absolute_peak_times(self, peak_times: List[float]) -> None:
-        """Set absolute peak times for all pulses.
-
-        The first pulse can be any time, but by convention sequences use 0 fs.
-        Keeps internal envelope caches synchronized.
-        """
-        if len(peak_times) != len(self.pulses):
-            raise ValueError(
-                f"Number of peak times ({len(peak_times)}) must equal number of pulses ({len(self.pulses)})."
-            )
-        # Optionally enforce non-decreasing times to preserve order
-        if any(t2 < t1 for t1, t2 in zip(peak_times, peak_times[1:])):
-            raise ValueError("Peak times must be non-decreasing.")
-        for pulse, t in zip(self.pulses, peak_times):
-            pulse.pulse_peak_time = float(t)
-            if hasattr(pulse, "_recompute_envelope_support"):
-                pulse._recompute_envelope_support()
-
-    def update_fwhms(self, fwhms_fs: List[float]) -> None:
-        """Batch update FWHM values (fs) and refresh envelope caches."""
-        if len(fwhms_fs) != len(self.pulses):
-            raise ValueError(
-                f"Number of FWHMs ({len(fwhms_fs)}) must equal number of pulses ({len(self.pulses)})."
-            )
-        for pulse, fwhm in zip(self.pulses, fwhms_fs):
-            if fwhm <= 0:
-                raise ValueError("FWHM must be positive.")
-            pulse.pulse_fwhm_fs = float(fwhm)
-            pulse._recompute_envelope_support()
-
-    def update_amplitudes(self, amplitudes: List[float]) -> None:
-        """Batch update pulse amplitudes (E0)."""
-        if len(amplitudes) != len(self.pulses):
-            raise ValueError(
-                f"Number of amplitudes ({len(amplitudes)}) must equal number of pulses ({len(self.pulses)})."
-            )
-        for pulse, amp in zip(self.pulses, amplitudes):
-            pulse.pulse_amplitude = float(amp)
-
-    def update_envelope_types(self, envelope_types: List[str]) -> None:
-        """Batch update envelope types and refresh caches."""
-        if len(envelope_types) != len(self.pulses):
-            raise ValueError(
-                f"Number of envelope types ({len(envelope_types)}) must equal number of pulses ({len(self.pulses)})."
-            )
-        for pulse, env in zip(self.pulses, envelope_types):
-            pulse.envelope_type = str(env)
-            pulse._recompute_envelope_support()
-
-    def update_frequencies_cm(self, freqs_cm: List[float]) -> None:
-        """Batch update carrier frequencies in cm^-1 for all pulses."""
-        if len(freqs_cm) != len(self.pulses):
-            raise ValueError(
-                f"Number of frequencies ({len(freqs_cm)}) must equal number of pulses ({len(self.pulses)})."
-            )
-        for pulse, f_cm in zip(self.pulses, freqs_cm):
-            pulse.update_frequency_cm(float(f_cm))
-
-            
-    def get_field_info_at_time(self, time: float) -> dict:
-        """
-        Get comprehensive information about the electric field at a given time.
-
-        Parameters:
-            time (float): The time at which to analyze the field
-
-        Returns:
-            dict: Dictionary containing:
-                - 'active_pulses': List of (pulse_index, pulse) tuples
-                - 'num_active_pulses': Number of active pulses
-                - 'total_amplitude': Total E0 = sum of active pulse amplitudes
-                - 'individual_amplitudes': List of individual pulse amplitudes
-                - 'pulse_indices': List of indices of active pulses
-        """
-        active = self.get_active_pulses_at_time(time)
-
-        return {
-            "active_pulses": active,
-            "num_active_pulses": len(active),
-            "total_amplitude": sum(p.pulse_amplitude for p in active),
-            "individual_amplitudes": [p.pulse_amplitude for p in active],
-            "pulse_indices": [p.pulse_index for p in active],
-        }
-
-
-        
-###
-
-def identify_non_zero_pulse_regions(times: np.ndarray, pulse_seq: LaserPulseSequence) -> np.ndarray:
-    """
-    Identify regions where the pulse envelope is non-zero across an array of time values.
-
-    Args:
-        times (np.ndarray): Array of time values to evaluate
-        pulse_seq (LaserPulseSequence): The pulse sequence to evaluate
-
-    Returns:
-        np.ndarray: Boolean array where True indicates times where envelope is non-zero
-    """
-
-    if not isinstance(pulse_seq, LaserPulseSequence):
-        raise TypeError("pulse_seq must be a LaserPulseSequence instance.")
-
-    # Initialize an array of all False values
-    active_regions = np.zeros_like(times, dtype=bool)
-
-    # Vectorized over time array per pulse, then OR-reduce across pulses
-    for pulse in pulse_seq.pulses:
-        start_time, end_time = pulse.active_time_range
-        active_regions |= (times >= start_time) & (times <= end_time)
-
-    return active_regions
-
-
-def split_by_active_regions(times: np.ndarray, active_regions: np.ndarray) -> List[np.ndarray]:
-    """
-    Split the time array into segments based on active regions.
-
-    Args:
-        times (np.ndarray): Array of time values.
-        active_regions (np.ndarray): Boolean array indicating active regions.
-
-    Returns:
-        List[np.ndarray]: List of time segments split by active regions.
-    """
-    # Find where the active_regions changes value
-    change_indices = np.where(np.diff(active_regions.astype(int)) != 0)[0] + 1
-
-    # Split the times at those change points
-    split_times = np.split(times, change_indices)
-
-    # Return list of time segments
-    return split_times
-
-'''

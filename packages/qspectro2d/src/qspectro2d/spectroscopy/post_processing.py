@@ -6,7 +6,6 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-
 __all__ = [
     "extend_time_domain_data",
     "compute_spectra",
@@ -57,16 +56,6 @@ def extend_time_domain_data(
         raise ValueError("datas must be a non-empty list of arrays")
     if t_det.ndim != 1:
         raise ValueError("t_det must be a 1D array")
-
-    # Ensure t_det is sorted
-    if not np.all(np.diff(t_det) >= 0):
-        sort_idx = np.argsort(t_det)
-        t_det = t_det[sort_idx]
-        for idx, arr in enumerate(datas):
-            if arr.ndim == 1:
-                datas[idx] = arr[sort_idx]
-            elif arr.ndim == 2:
-                datas[idx] = arr[:, sort_idx]
 
     n_det = int(t_det.size)
     n_det_ext = int(np.ceil(pad * n_det))
@@ -138,30 +127,18 @@ def compute_spectra(
     Based on the paper: https://doi.org/10.1063/5.0214023
 
     For each input data array:
-    - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
+    - Along detection time, always use -i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
       (implemented via IFFT, no normalization scaling applied).
     - If coherence axis is present:
-        - nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT)
         - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (IFFT)
+        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT))
 
     Returns:
         (nu_cohs, nu_dets, datas_nu, signal_types_out)
-        - nu_cohs: frequency axis (cm^-1) for coherence (or None if t_coh is None)
-        - nu_dets: frequency axis (cm^-1) for detection
+        - frequency axes (10^4 cm^-1)
         - datas_nu: list of spectra arrays in frequency domain
         - signal_types_out: list of signal labels, aligned with datas_nu
-
-    Notes:
-        Frequency-to-wavenumber conversion follows the user's formula:
-            nu = np.fft.fftfreq(N, d=dt) / 2.998 * 10
     """
-    if not datas:
-        raise ValueError("datas must be a non-empty list of arrays")
-    if t_det is None:
-        raise ValueError("t_det must be provided")
-    if t_det.ndim != 1:
-        raise ValueError("t_det must be a 1D array")
-
     # Normalize signal types to length of datas.
     if len(signal_types) == 1 and len(datas) > 1:
         sig_types = [signal_types[0]] * len(datas)
@@ -172,9 +149,10 @@ def compute_spectra(
 
     # Detection axis frequency and wavenumber
     n_det = int(t_det.size)
-    dt_det = float(np.median(np.diff(t_det))) if n_det > 1 else 1.0
+    dt_det = t_det[1] - t_det[0]
     freq_dets = np.fft.fftfreq(n_det, d=dt_det)
     nu_dets = freq_dets / 2.998 * 10
+    nu_dets = np.fft.fftshift(nu_dets)
 
     # Coherence axis frequency and wavenumber (optional)
     if t_coh is None:
@@ -183,9 +161,10 @@ def compute_spectra(
         if t_coh.ndim != 1:
             raise ValueError("t_coh must be 1D when provided")
         n_coh = int(t_coh.size)
-        dt_coh = float(np.median(np.diff(t_coh))) if n_coh > 1 else 1.0
+        dt_coh = t_coh[1] - t_coh[0]
         freq_cohs = np.fft.fftfreq(n_coh, d=dt_coh)
         nu_cohs = freq_cohs / 2.998 * 10
+        nu_cohs = np.fft.fftshift(nu_cohs)
 
     # Build spectra
     datas_nu: List[np.ndarray] = []
@@ -197,7 +176,7 @@ def compute_spectra(
                 raise ValueError(
                     f"datas[{idx}] must be 1D with length len(t_det) when t_coh is None"
                 )
-            spec_det = np.fft.ifft(arr, axis=0)
+            spec_det = np.fft.fftshift(np.fft.ifft(arr, axis=0))
             datas_nu.append(spec_det)
             out_types.append(stype)
             continue
@@ -207,7 +186,7 @@ def compute_spectra(
         if arr.ndim != 2 or arr.shape != (n_coh, n_det):
             raise ValueError(f"datas[{idx}] must be 2D with shape (len(t_coh), len(t_det))")
 
-        # Detection axis (+i) via IFFT along last axis
+        # Detection axis (+i) via IFFT along det axis
         spec_2d = np.fft.ifft(arr, axis=1)
 
         # Coherence axis sign depends on signal type
@@ -218,6 +197,7 @@ def compute_spectra(
             spec_2d = np.fft.ifft(spec_2d, axis=0)
             out_types.append("rephasing")
 
+        spec_2d = np.fft.fftshift(spec_2d, axes=(0, 1))
         datas_nu.append(spec_2d)
 
     # NOTE Optional absorptive combination (commented per request)

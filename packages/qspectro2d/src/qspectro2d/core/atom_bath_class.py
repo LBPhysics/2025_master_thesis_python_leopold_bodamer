@@ -1,7 +1,7 @@
 # TODO potentially Replace hard‑coded deph_rate and down_rate with rates computed from bath.power_spectrum(self.system.omega_ij(...)), and add thermal raising where applicable
 from dataclasses import dataclass
 import numpy as np
-from qutip import BosonicEnvironment
+from qutip import BosonicEnvironment, Qobj
 
 from .atomic_system import AtomicSystem
 
@@ -12,7 +12,7 @@ class AtomBathCoupling:
     bath: BosonicEnvironment
 
     @property
-    def br_decay_channels(self):
+    def br_decay_channels(self) -> list[tuple[Qobj, BosonicEnvironment]]:
         """Generate the a_ops list for Bloch-Redfield solver.
         Includes:
           - Pure dephasing projectors for all excitation states
@@ -23,25 +23,27 @@ class AtomBathCoupling:
         provide operator structures only. Coupling strengths are encoded in the bath object.
         """
         sys = self.system
-        br_ops: list[list] = []
+        br_ops: list[tuple] = []
         n_atoms = sys.n_atoms
 
         # Helper: add dephasing projector for basis index k
-        def add_projector(k: int):
+        def projector(k: int):
             """Return site k population operator in the site basis (|k><k|)."""
-            if k == 0:
-                raise ValueError("indexing ground state -> use k elem 1,...,N+1")
             deph_op = sys.deph_op_i(k)
-            br_ops.append([sys.to_eigenbasis(deph_op), self.bath])
+            return deph_op
+
+        def add_op(op: Qobj):
+            """add a system operator that couples to the bath"""
+            br_ops.append([sys.to_eigenbasis(op), self.bath])
 
         for i_atom in range(1, n_atoms + 1):
             # singles manifold projectors
-            add_projector(i_atom)
+            add_op(projector(i_atom))
 
             # Radiative-like decay (lowering + raising) operators from singles to ground: |0><i| + |i><0|
             Li = sys.basis[0] * sys.basis[i_atom].dag()
             decay_op = Li + Li.dag()
-            br_ops.append([sys.to_eigenbasis(decay_op), self.bath])
+            add_op(decay_op)
 
         # Double manifold projectors only if available
         max_exc = sys.max_excitation
@@ -51,29 +53,29 @@ class AtomBathCoupling:
                     from qspectro2d.core.atomic_system.system_class import pair_to_index
 
                     idx = pair_to_index(i_atom, j_atom, n_atoms)
-                    add_projector(idx - 1)
-                    add_projector(
-                        idx - 1
+                    add_op(projector(idx))
+                    add_op(
+                        projector(idx)
                     )  # each double excited state gets one contribution from each site
             if n_atoms == 2:  # to match the paper
                 return br_ops
             for i_atom in range(1, n_atoms):  # otherwise add decay channels
                 for j_atom in range(i_atom + 1, n_atoms + 1):
+                    idx = pair_to_index(i_atom, j_atom, n_atoms)
 
                     # Double -> single lowering (if double manifold present)
                     # |i> corresponds to basis index i, etc.
-                    Li = sys.basis[i_atom] * sys.basis[idx - 1].dag()
+                    Li = sys.basis[i_atom] * sys.basis[idx].dag()
                     op_ij_i = Li + Li.dag()
-                    br_ops.append([sys.to_eigenbasis(op_ij_i), self.bath])
-
-                    Lj = sys.basis[j_atom] * sys.basis[idx - 1].dag()
+                    add_op(op_ij_i)
+                    Lj = sys.basis[j_atom] * sys.basis[idx].dag()
                     op_ij_j = Lj + Lj.dag()
-                    br_ops.append([sys.to_eigenbasis(op_ij_j), self.bath])
+                    add_op(op_ij_j)
 
         return br_ops
 
     @property
-    def me_decay_channels(self):
+    def me_decay_channels(self) -> list[Qobj]:
         """Generate c_ops for Lindblad solver respecting max_excitation.
 
         Strategy:
@@ -105,15 +107,15 @@ class AtomBathCoupling:
                     from qspectro2d.core.atomic_system.system_class import pair_to_index
 
                     idx = pair_to_index(i, j, n_atoms)
-                    deph_op_ij = sys.deph_op_i(idx - 1)
+                    deph_op_ij = sys.deph_op_i(idx)
                     c_ops.append(sys.to_eigenbasis(deph_op_ij) * np.sqrt(deph_rate))
                     c_ops.append(
                         sys.to_eigenbasis(deph_op_ij) * np.sqrt(deph_rate)
                     )  # each double excited state gets one contribution from each site
 
                     # Double -> single lowering
-                    L_idx_i = sys.basis[i] * sys.basis[idx - 1].dag()  # |i><i,j|
-                    L_idx_j = sys.basis[j] * sys.basis[idx - 1].dag()  # |j><i,j|
+                    L_idx_i = sys.basis[i] * sys.basis[idx].dag()  # |i><i,j|
+                    L_idx_j = sys.basis[j] * sys.basis[idx].dag()  # |j><i,j|
                     c_ops.append(sys.to_eigenbasis(L_idx_i) * np.sqrt(down_rate))
                     c_ops.append(sys.to_eigenbasis(L_idx_j) * np.sqrt(down_rate))
 
@@ -207,16 +209,12 @@ class AtomBathCoupling:
             elif j == 1:
                 return Gamma_11
             elif j == 2:
-                return Gamma_t_ab + 0.5 * (
-                    self.paper_gamma_ij(i, j) + self.paper_gamma_ij(j, i)
-                )
+                return Gamma_t_ab + 0.5 * (self.paper_gamma_ij(i, j) + self.paper_gamma_ij(j, i))
         if i == 2:
             if j == 0:
                 return Gamma_t_a0 + 0.5 * self.paper_gamma_ij(1, i)
             elif j == 1:
-                return Gamma_t_ab + 0.5 * (
-                    self.paper_gamma_ij(i, j) + self.paper_gamma_ij(j, i)
-                )
+                return Gamma_t_ab + 0.5 * (self.paper_gamma_ij(i, j) + self.paper_gamma_ij(j, i))
             elif j == 2:
                 return Gamma_22
         elif i == 3:

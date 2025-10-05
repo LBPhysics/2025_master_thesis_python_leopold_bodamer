@@ -41,7 +41,7 @@ class SimulationModuleOQS:
         return evo_obj
 
     @property
-    def decay_channels(self):
+    def decay_channels(self) -> list[Qobj] | list[tuple[Qobj, BosonicEnvironment]]:
         solver = self.simulation_config.ode_solver
         if solver == "ME":
             decay_channels = self.sb_coupling.me_decay_channels
@@ -61,7 +61,8 @@ class SimulationModuleOQS:
             omega_L = self.laser.carrier_freq_fs
             # Determine excitation number for each eigenstate
             # Based on index: 0 -> 0 excitations, 1..N -> 1, N+1..end -> 2
-            H_diag -= omega_L * self.system.number_op  # is the same in both bases
+            N_eig = self.system.to_eigenbasis(self.system.number_op)
+            H_diag -= omega_L * N_eig
         return H_diag
 
     def paper_eqs_evo(self, t: float) -> Qobj:
@@ -208,114 +209,3 @@ class SimulationModuleOQS:
         # Ensure it doesn't exceed t_det_max
         t_det = t_det[t_det <= t_det_max]
         return t_det
-    """
-    @cached_property
-    def t_det(self):
-        # Detection time grid with exact spacing dt starting at the first time >0 in times_local.
-        dt = self.simulation_config.dt
-        t_det_max = self.simulation_config.t_det_max
-        # Compute the first time > 0
-        times_local = self.times_local
-        t_start = times_local[times_local >= 0][0]
-        n_steps = int(np.floor(t_det_max / dt)) + 1
-        if t_start + dt * (n_steps - 1) > t_det_max:
-            # Cap it to avoid overshooting t_det_max and times_local
-            n_steps = int(np.floor((t_det_max - t_start) / dt)) + 1
-            n_steps = min(n_steps, times_local[times_local >= 0].size)
-        return t_start + dt * np.arange(n_steps, dtype=float)
-    """
-
-    # --- Helper functions -----------------------------------------------------------
-    # MAKE THEM TIME DEP HERE
-    # only for the paper solver
-    def time_dep_paper_gamma_ij(self, i: int, j: int, t: float) -> float:
-        """
-        Calculate the population relaxation rates. for the dimer system, analogous to the gamma_ij in the paper.
-
-        Parameters:
-            i (int): Index of the first state.
-            j (int): Index of the second state.
-
-        Returns:
-            float: Population relaxation rate.
-        """
-        w_ij = self.time_dep_omega_ij(i, j, t)
-        """
-        from qspectro2d.core.bath_system.bath_fcts import (
-            power_spectrum_func_paper,
-            extract_bath_parameters,
-        )
-
-        args = extract_bath_parameters(self.bath)
-        
-        args["alpha"] = args["alpha"] * args["wc"]  # rescale coupling for paper eqs
-        P_wij = power_spectrum_func_paper(w_ij, **args)
-        """
-        P_wij = self.bath.power_spectrum(w_ij)
-        result = np.sin(2 * self.sb_coupling.theta) ** 2 * P_wij
-        # Handle NaN/inf values
-        return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
-
-    def time_dep_paper_Gamma_ij(self, i: int, j: int, t: float) -> float:
-        """
-        Calculate the pure dephasing rates. for the dimer system, analogous to the gamma_ij in the paper.
-
-        Parameters:
-            i (int): Index of the first state.
-            j (int): Index of the second state.
-
-        Returns:
-            float: Pure dephasing rate.
-        """
-        # Pure dephasing rates helper
-        """
-        from qspectro2d.core.bath_system.bath_fcts import (
-            power_spectrum_func_paper,
-            extract_bath_parameters,
-        )
-
-        args = extract_bath_parameters(self.bath)
-        args["alpha"] = args["alpha"] * args["wc"]  # rescale coupling for paper eqs
-        P_0 = power_spectrum_func_paper(0, **args)
-        """
-        P_0 = self.bath.power_spectrum(0)
-        P_0 = np.nan_to_num(P_0, nan=0.0, posinf=0.0, neginf=0.0)  # Handle NaN/inf
-
-        Gamma_t_ab = 2 * np.cos(2 * self.sb_coupling.theta) ** 2 * P_0  # tilde
-        Gamma_t_a0 = (1 - 0.5 * np.sin(2 * self.sb_coupling.theta) ** 2) * P_0
-        Gamma_11 = self.time_dep_paper_gamma_ij(2, 1, t)
-        Gamma_22 = self.time_dep_paper_gamma_ij(1, 2, t)
-        Gamma_abar_0 = 2 * P_0
-        Gamma_abar_a = Gamma_abar_0  # holds for dimer
-
-        result = 0.0
-        if i == 1:
-            if j == 0:
-                result = Gamma_t_a0 + 0.5 * self.time_dep_paper_gamma_ij(2, i, t)
-            elif j == 1:
-                result = Gamma_11
-            elif j == 2:
-                gamma_ij = self.time_dep_paper_gamma_ij(i, j, t)
-                gamma_ji = self.time_dep_paper_gamma_ij(j, i, t)
-                result = Gamma_t_ab + 0.5 * (gamma_ij + gamma_ji)
-        elif i == 2:
-            if j == 0:
-                result = Gamma_t_a0 + 0.5 * self.time_dep_paper_gamma_ij(1, i, t)
-            elif j == 1:
-                gamma_ij = self.time_dep_paper_gamma_ij(i, j, t)
-                gamma_ji = self.time_dep_paper_gamma_ij(j, i, t)
-                result = Gamma_t_ab + 0.5 * (gamma_ij + gamma_ji)
-            elif j == 2:
-                result = Gamma_22
-        elif i == 3:
-            if j == 0:
-                result = Gamma_abar_0
-            elif j == 1:
-                result = Gamma_abar_a + 0.5 * (self.time_dep_paper_gamma_ij(2, j, t))
-            elif j == 2:
-                result = Gamma_abar_a + 0.5 * (self.time_dep_paper_gamma_ij(1, j, t))
-        else:
-            raise ValueError("Invalid indices for i and j.")
-
-        # Handle NaN/inf values in the final result
-        return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)

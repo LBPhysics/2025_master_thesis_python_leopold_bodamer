@@ -4,7 +4,6 @@ import numpy as np
 
 from .laser_class import LaserPulse, LaserPulseSequence
 
-
 __all__ = [
     "pulse_envelopes",
     "e_pulses",
@@ -60,7 +59,7 @@ def pulse_envelopes(
     Combined envelope (unitless) for pulses at time(s) t.
     Envelope semantics:
     - 'cos2': Compact support strictly inside [t_peak - FWHM, t_peak + FWHM]; zero outside.
-    - 'gaussian': Finite-support approximation: active window extends to ± n_fwhm * FWHM (n_fwhm≈1.094)
+    - 'gaussian': Finite-support approximation: active window extends to ± n_fwhm * FWHM (n_fwhm≈1.823)
        and a constant baseline equal to the Gaussian value at that EXTENDED edge is subtracted, then
        negative values clamped to zero. This preserves smooth Gaussian tails between ±FWHM and the
        extended edge while forcing the envelope ≈ 0 at the window boundaries.

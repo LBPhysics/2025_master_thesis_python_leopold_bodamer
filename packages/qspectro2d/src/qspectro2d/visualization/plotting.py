@@ -1,7 +1,7 @@
 from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Literal, Union, Tuple
+from typing import Literal, Union, Tuple, Optional
 from matplotlib.axes import Axes
 
 from ..core.laser_system import (
@@ -358,227 +358,67 @@ def plot_example_evo(
     return fig
 
 
-def plot_1d_el_field(
+def plot_el_field(
     axis_det: np.ndarray,
     data: np.ndarray,
-    domain: Literal["time", "freq"] = "time",
+    axis_coh: Optional[np.ndarray] = None,
     component: Literal["real", "img", "abs", "phase"] = "real",
-    title: str | None = None,
-    section: Union[tuple[float, float], None] = None,
-    function_symbol: str = "S",
-    normalize: bool = False,
-    ax: Union[Axes, None] = None,
+    domain: Literal["time", "freq"] = "time",
+    section: Optional[tuple[float, float]] = None,
+    ax: Optional[plt.Axes] = None,
     **kwargs: dict,
 ) -> plt.Figure:
-    """Plot 1D complex data (time or frequency domain).
+    if component not in ("real", "img", "abs", "phase"):
+        raise ValueError("Invalid component. Must be 'real', 'img', 'abs', or 'phase'.")
 
-    Inputs: axis_det (1d), complex data (same length), domain selector, component selector
-    Output: matplotlib Figure object
-    Normalization: optional (default True) to max absolute amplitude
-    Cropping: optional via section=(min,max)
-    """
+    # Crop data if section provided
+    if data.ndim == 1:
+        if section is not None:
+            axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
+    elif data.ndim == 2:
+        if section is not None:
+            axis_coh, data = crop_nd_data_along_axis(axis_coh, data, section, axis=0)
+            axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=1)
+
+    # Select the component to plot
+    plot_data, base_title = _component_data(data, component)
+
     if ax is None:
         fig, ax = plt.subplots()
     else:
         fig = ax.figure
+    if data.ndim == 1:
+        # 1D plot
+        color, linestyle = _style_for_component(component, 1, domain=domain)
+        ax.plot(axis_det, plot_data, color=color, linestyle=linestyle)
+        x_label, y_label, title_suffix = _domain_labels(domain, 1)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.set_title(base_title + " " + title_suffix)
+        fig.tight_layout()
+        add_text_box(ax, kwargs=kwargs)
+        return fig
 
-    # CROP + NORMALIZE
-
-    if section is not None:
-        axis_det, data = crop_nd_data_along_axis(axis_det, data, section=section, axis=0)
-    if normalize:
-        max_abs = np.abs(data).max()
-        if max_abs == 0:
-            raise ValueError("Data array is all zeros, cannot normalize.")
-        data = data / max_abs
-
-    # COMPONENT HANDLING
-    y_data, label, ylabel, x_label, final_title = _resolve_1d_labels_and_component(
-        data=data,
-        domain=domain,
-        component=component,
-        function_symbol=function_symbol,
-        provided_title=title,
-    )
-
-    # STYLE
-    color, linestyle = _style_for_component(component)
-
-    # PLOT
-    ax.plot(axis_det, y_data, label=label, color=color, linestyle=linestyle)
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(ylabel)
-    ax.set_title(final_title)
-    ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-    add_text_box(ax=ax, kwargs=kwargs)
-    fig.tight_layout()
-    simplify_figure_text(fig)
-
-    return fig
-
-
-def plot_2d_el_field(
-    axis_det: np.ndarray,  # detection axis
-    axis_coh: np.ndarray,  # coherence axis
-    data: np.ndarray,  # complex 2D array
-    t_wait: float = np.inf,
-    domain: Literal["time", "freq"] = "time",
-    component: Literal["real", "img", "abs", "phase"] = "real",
-    use_custom_colormap: bool = False,
-    section: Union[list[tuple[float, float]], None] = None,
-    normalize: bool = True,
-    ax: Union[Axes, None] = None,
-    show_diagonal: bool = True,
-    smooth: bool = True,
-    **kwargs: dict,
-) -> Union[plt.Figure, None]:
-    """
-    Create a color plot of 2D electric field data for spectroscopy.
-
-    Parameters
-    ----------
-    axis_det : 1D array representing x grid (time/frequency values).
-    axis_coh : 1D array representing y grid (time/frequency values).
-    data : 2D complex array with shape (len(axis_coh), len(axis_det)).
-    t_wait : float, default np.inf
-        Waiting time T (fs) to include in plot title and filename. If np.inf,
-        no waiting time is displayed.
-    domain : {"time", "freq"}, default "time"
-        for frequency-domain plots (10^4 cm^-1).
-    component : {"real", "img", "abs", "phase"}, default "real"
-    use_custom_colormap : bool, default False
-        If True, uses custom red-white-blue colormap centered at zero.
-        Automatically set to True for "real", "img", and "phase" components.
-    section : first tuple crops coh axis (coh_min, coh_max),
-              second tuple crops det axis (det_min, det_max) to zoom into specific region.
-    smooth : bool, default False
-        If True, render with imshow(interpolation="bilinear") for a smooth look.
-        If False, use pcolormesh with shading="auto" for exact axis alignment.
-    """
-
-    # VALIDATE INPUT
-    if data.ndim != 2 or data.shape[0] != len(axis_coh) or data.shape[1] != len(axis_det):
-        raise ValueError(
-            f"Data shape {data.shape} does not match axis_det ({len(axis_det)}) and axis_coh ({len(axis_coh)}) dimensions."
-        )
-
-    data = np.asarray(data, dtype=np.complex128)
-
-    # SECTION CROPPING
-    if section is not None:
-        # expect list[(coh_min, coh_max),(det_min, det_max)]
-        axis_coh, data = crop_nd_data_along_axis(axis_coh, data, section=section[0], axis=0)
-        axis_det, data = crop_nd_data_along_axis(axis_det, data, section=section[1], axis=1)
-    # NORMALIZE
-    if normalize:
-        max_abs = np.abs(data).max()
-        if max_abs == 0:
-            raise ValueError("Data array is all zeros, cannot normalize.")
-        data = data / max_abs
-
-    # SET PLOT LABELS AND COLORMAP
-    data, title_base = _component_2d_data(data=data, component=component)
-    colormap, x_title, y_title, domain_suffix = _domain_2d_labels(domain=domain)
-    title = title_base + domain_suffix
-    if t_wait != np.inf:
-        title += rf"$\ (T = {t_wait:.2f}\,\text{{fs}})$"
-
-    # CUSTOM COLORMAP FOR ZERO-CENTERED DATA
-    norm = None
-    # For real and imag data, use red-white-blue colormap by default
-    if component in ("real", "img", "phase"):
-        use_custom_colormap = True
-    elif component == "abs":
-        use_custom_colormap = False
-
-    if use_custom_colormap:
-        vmax = np.max(np.abs(data))
-        vmin = -vmax
-        vcenter = 0
-
-        # Use the built-in 'RdBu_r' colormap - reversed to make red=positive, blue=negative
-        colormap = plt.get_cmap("RdBu_r")
-
-        # Center the colormap at zero for diverging data
-        if vmin < vcenter < vmax:
-            norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
-        else:
-            print(
-                f"Warning: Cannot use TwoSlopeNorm with vmin={vmin}, vcenter={vcenter}, vmax={vmax}. Using default normalization."
-            )
-
-    cbarlabel = r"$\propto S_{\text{out}} / E_{0}$"
-
-    # GENERATE FIGURE
-    if ax is None:
-        fig, ax = plt.subplots()
-    else:
-        fig = ax.figure
-
-    if smooth:
-        # Use imshow to enable bilinear (or other) interpolation; map data to axes via extent
-        im_plot = ax.imshow(
-            data,  # shape: [len(axis_coh), len(axis_det)]
-            aspect="equal",
-            cmap=colormap,
-            extent=[axis_det.min(), axis_det.max(), axis_coh.min(), axis_coh.max()],
+    elif data.ndim == 2:
+        # 2D plot
+        colormap, norm = _style_for_component(component, 2, plot_data, domain)
+        im = ax.imshow(
+            plot_data.T,  # Transpose to have detection on y, coherence on x
+            extent=[axis_coh.min(), axis_coh.max(), axis_det.min(), axis_det.max()],
             origin="lower",
+            aspect="auto",
+            cmap=colormap,
             norm=norm,
             interpolation="bilinear",
         )
-    else:
-        # Create the pcolormesh plot for the 2D data (respects provided axes directly)
-        im_plot = ax.pcolormesh(
-            axis_det,
-            axis_coh,
-            data,  # shape: [len(axis_coh), len(axis_det)]
-            cmap=colormap,
-            norm=norm,
-            shading="auto",  # infer cell edges from centers; avoids off-by-one
-        )
-        # Ensure aspect is not distorted (matches previous imshow aspect="auto")
-        ax.set_aspect("auto")
-    if use_custom_colormap:
-        im_plot.set_clim(vmin=vmin, vmax=vmax)
-
-    cbar = fig.colorbar(im_plot, ax=ax, label=cbarlabel)
-
-    # NOTE Add contour lines with different styles for positive and negative values
-    # add_custom_contour_lines(axis_det, axis_coh, data, component)
-
-    # Improve overall plot appearance
-    ax.set_title(title)
-    ax.set_xlabel(x_title)
-    ax.set_ylabel(y_title)
-
-    # Optional: draw diagonal x==y for convenience
-    if domain == "time":
-        show_diagonal = False  # typically not useful in time domain
-    if show_diagonal:
-        # Only draw over the overlapping range
-        x_min, x_max = axis_det.min(), axis_det.max()
-        y_min, y_max = axis_coh.min(), axis_coh.max()
-        d_min = max(x_min, y_min)
-        d_max = min(x_max, y_max)
-        if d_min < d_max:
-            ax.plot(
-                [d_min, d_max],
-                [d_min, d_max],
-                linestyle=LINE_STYLES[-1],
-                color=COLORS[-3],
-                linewidth=1.0,
-                alpha=0.8,
-            )
-
-    # Add additional parameters as a text box if provided
-    add_text_box(ax=ax, kwargs=kwargs)
-
-    fig.tight_layout()
-
-    """# Add a border around the plot for better visual definition plt.gca().spines["top"].set_visible(True); plt.gca().spines["bottom"].set_linewidth(1.5)"""
-
-    simplify_figure_text(fig)
-    return fig
+        x_label, y_label, cbar_label, title_suffix = _domain_labels(domain, 2)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.set_title(base_title + " " + title_suffix)
+        plt.colorbar(im, ax=ax, label=cbar_label)
+        fig.tight_layout()
+        add_text_box(ax, kwargs=kwargs)
+        return fig
 
 
 # HELPER FUNCTIONS
@@ -634,91 +474,92 @@ def crop_nd_data_along_axis(
     return cropped_coords, cropped_data
 
 
-# NEW INTERNAL HELPERS (1D/2D LABEL + COMPONENT LOGIC)
-def _style_for_component(component: str) -> Tuple[str, str]:
-    """Return (color, linestyle) for a given 1D component.
+# INTERNAL HELPERS (1D/2D LABEL + COMPONENT LOGIC)
+def _style_for_component(
+    component: str, ndim: int, data: Optional[np.ndarray] = None, domain: str = "time"
+) -> Tuple:
+    """Return style parameters for a given component and dimension.
 
-    Strategy: distinct color per component; primary solid line style.
-    Fallback: first style/color.
+    For 1D: returns (color, linestyle)
+    For 2D: returns (colormap, norm)
     """
-    color_map = {"abs": 0, "real": 1, "img": 2, "phase": 3}
-    idx = color_map.get(component, 0)
-    color = COLORS[idx]
-    linestyle = LINE_STYLES[0]
-    return color, linestyle
+    if ndim == 1:
+        color_map = {"abs": 0, "real": 1, "img": 2, "phase": 3}
+        idx = color_map.get(component, 0)
+        color = COLORS[idx]
+        linestyle = LINE_STYLES[0]
+        return color, linestyle
+    elif ndim == 2:
+        norm = None
+        if component in ("real", "img", "phase"):
+            use_custom_colormap = True
+        else:
+            use_custom_colormap = False
 
-
-def _resolve_1d_labels_and_component(
-    data: np.ndarray,
-    domain: str,
-    component: str,
-    function_symbol: str,
-    provided_title: str | None,
-) -> Tuple[np.ndarray, str, str, str, str]:
-    """Process complex 1D data component + build labels.
-
-    Returns: (y_data, legend_label, y_label, x_label, final_title)
-    """
-    if domain not in ("time", "freq"):
-        raise ValueError("Domain not recognized. Use 'time' or 'freq'.")
-
-    in_time = domain == "time"
-    var_symbol = "t" if in_time else "\omega"
-    x_label = r"$t \, [\text{fs}]$" if in_time else r"$\omega$ [$10^4$ cm$^{-1}$]"
-    default_title = f"{function_symbol} in {'Time' if in_time else 'Frequency'} Domain"
-    title = provided_title or default_title
-
-    # Compute component
-    if component == "abs":
-        y_data = np.abs(data)
-        base = f"|{function_symbol}({var_symbol})|"
-    elif component == "real":
-        y_data = np.real(data)
-        base = f"\mathrm{{Re}}[{function_symbol}({var_symbol})]"
-    elif component == "img":
-        y_data = np.imag(data)
-        base = f"\mathrm{{Im}}[{function_symbol}({var_symbol})]"
-    elif component == "phase":
-        y_data = np.angle(data)
-        base = f"\mathrm{{Arg}}[{function_symbol}({var_symbol})]"
+        if use_custom_colormap:
+            vmax = np.max(np.abs(data))
+            vmin = -vmax
+            vcenter = 0
+            colormap = plt.get_cmap("RdBu_r")
+            if vmin < vcenter < vmax:
+                norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
+            else:
+                print(
+                    f"Warning: Cannot use TwoSlopeNorm with vmin={vmin}, vcenter={vcenter}, vmax={vmax}. Using default normalization."
+                )
+        else:
+            # standard colormap
+            if domain == "time":
+                colormap = "viridis"
+            elif domain == "freq":
+                colormap = "plasma"
+            else:
+                colormap = "viridis"  # default
+        return colormap, norm
     else:
-        raise ValueError("Component must be one of 'abs','real','img','phase'.")
-
-    label = f"${base}$"
-    ylabel = label if component != "phase" else f"${base}$ [rad]"
-    return y_data, label, ylabel, x_label, title
+        raise ValueError("ndim must be 1 or 2")
 
 
-def _component_2d_data(data: np.ndarray, component: str) -> Tuple[np.ndarray, str]:
-    """Return transformed 2D data + base title according to component."""
+def _component_data(data: np.ndarray, component: str) -> Tuple[np.ndarray, str]:
+    """Return transformed data + base title according to component."""
     if component not in ("real", "img", "abs", "phase"):
-        raise ValueError("Invalid component for 2D plot.")
+        raise ValueError("Invalid component.")
     if component == "real":
-        return np.real(data), r"$\text{2D Real }$"
+        return np.real(data), r"$\text{Real }$"
     if component == "img":
-        return np.imag(data), r"$\text{2D Imag }$"
+        return np.imag(data), r"$\text{Imag }$"
     if component == "abs":
-        return np.abs(data), r"$\text{2D Abs }$"
-    return np.angle(data), r"$\text{2D Phase }$"  # phase
+        return np.abs(data), r"$\text{Abs }$"
+    return np.angle(data), r"$\text{Phase }$"  # phase
 
 
-def _domain_2d_labels(domain: str) -> Tuple[str, str, str, str]:
-    """Return (colormap, x_label, y_label, title_suffix) for domain."""
+def _domain_labels(domain: str, ndim: int) -> Tuple[str, ...]:
+    """Return labels for domain and dimension.
+
+    For 1D: (x_label, y_label, title_suffix)
+    For 2D: (x_label, y_label, colorbar_label, title_suffix)
+    """
     if domain not in ("time", "freq"):
         raise ValueError("Invalid domain. Use 'time' or 'freq'.")
-    if domain == "time":
-        return (
-            "viridis",
-            r"$t_{\text{det}}$ [fs]",
-            r"$t_{\text{coh}}$ [fs]",
-            r"$\text{Time domain signal}$",
-        )
-    return (
-        "plasma",
-        r"$\omega_{\text{det}}$ [$10^4$ cm$^{-1}$]",
-        r"$\omega_{\text{coh}}$ [$10^4$ cm$^{-1}$]",
-        r"$\text{Spectrum}$",
-    )
+    signal_label = r"$E_{k_S}$"
+    title_suffix = "Time domain signal" if domain == "time" else "Spectrum"
+    if ndim == 1:
+        if domain == "time":
+            return r"$t_{\text{det}}$ [fs]", signal_label, title_suffix
+        else:
+            return r"$\omega_{\text{det}}$ [$10^4$ cm$^{-1}$]", signal_label, title_suffix
+    elif ndim == 2:
+        if domain == "time":
+            return r"$t_{\text{coh}}$ [fs]", r"$t_{\text{det}}$ [fs]", signal_label, title_suffix
+        else:
+            return (
+                r"$\omega_{\text{coh}}$ [$10^4$ cm$^{-1}$]",
+                r"$\omega_{\text{det}}$ [$10^4$ cm$^{-1}$]",
+                signal_label,
+                title_suffix,
+            )
+    else:
+        raise ValueError("ndim must be 1 or 2")
 
 
 def add_custom_contour_lines(
