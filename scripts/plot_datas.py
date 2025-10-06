@@ -12,7 +12,6 @@ Examples:
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 from pathlib import Path
 import numpy as np
 import argparse
