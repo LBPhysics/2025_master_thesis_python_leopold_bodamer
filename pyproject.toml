@@ -7,22 +7,6 @@ src = [
     "scripts"
 ]
 
-[tool.ruff.lint]
-select = [
-    "E",
-    "F",
-    "W",
-    "B",
-    "I",
-    "UP",
-    "S",
-    "C4"
-]
-ignore = [
-    "E203",
-    "E501"
-]
-
 [tool.black]
 line-length = 100
 preview = true
