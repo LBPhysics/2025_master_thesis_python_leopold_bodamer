@@ -57,6 +57,7 @@ def _render_slurm_script(
     cpus: int,
     mem: str,
     time_limit: str,
+    skip_if_exists: bool = False,
 ) -> str:
     """Return the plotting SLURM script content."""
 
@@ -87,6 +88,11 @@ def _render_slurm_script(
     if time_limit:
         lines.append(f"#SBATCH --time={time_limit}")
 
+    # Build the process_datas command
+    process_cmd = f'python {process_py} --abs_path "{artifact_path}"'
+    if skip_if_exists:
+        process_cmd += " --skip_if_exists"
+
     lines.extend(
         [
             "",
@@ -95,7 +101,7 @@ def _render_slurm_script(
             f"mkdir -p {logs_abs}",
             f"cd {job_dir_posix}",
             "echo 'Launching process_datas.py'",
-            f'final_path=$(python {process_py} --abs_path "{artifact_path}" 2>&1 | grep "Final processed artifact:" | sed "s/.*: //" | tr -d "\\n")',
+            f'final_path=$({process_cmd} 2>&1 | grep "Final processed artifact:" | sed "s/.*: //" | tr -d "\\n")',
             "echo 'Launching plot_datas.py'",
             f'python {plot_py} --abs_path "$final_path"',
         ]
@@ -113,6 +119,11 @@ def main() -> None:
         type=str,
         required=True,
         help="Path to batch_jobs/<job_label> (contains job_metadata.json)",
+    )
+    parser.add_argument(
+        "--skip_if_exists",
+        action="store_true",
+        help="Skip processing if the final artifact already exists",
     )
     parser.add_argument(
         "--no_submit",
@@ -153,6 +164,7 @@ def main() -> None:
         cpus=SLURM_CPUS,
         mem=SLURM_MEM,
         time_limit=SLURM_TIME,
+        skip_if_exists=args.skip_if_exists,
     )
     script_path = job_dir / f"{JOB_NAME}.slurm"
     script_path.write_text(script_content, encoding="utf-8")
