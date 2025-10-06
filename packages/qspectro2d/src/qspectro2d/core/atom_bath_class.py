@@ -102,7 +102,8 @@ class AtomBathCoupling:
                 c_ops.append(sys.to_eigenbasis(L_down) * np.sqrt(down_rate))
 
         # Double-state dephasing if manifold present
-        if sys.max_excitation == 2:
+        max_exc = sys.max_excitation
+        if max_exc == 2:
             for i in range(1, n_atoms):
                 for j in range(i + 1, n_atoms + 1):
                     from qspectro2d.core.atomic_system.system_class import pair_to_index
@@ -113,6 +114,11 @@ class AtomBathCoupling:
                     c_ops.append(
                         sys.to_eigenbasis(deph_op_ij) * np.sqrt(deph_rate)
                     )  # each double excited state gets one contribution from each site
+            if n_atoms == 2:  # to match the paper
+                return c_ops
+            for i_atom in range(1, n_atoms):  # otherwise add decay channels
+                for j_atom in range(i_atom + 1, n_atoms + 1):
+                    idx = pair_to_index(i_atom, j_atom, n_atoms)
 
                     # Double -> single lowering
                     L_idx_i = sys.basis[i] * sys.basis[idx].dag()  # |i><i,j|
