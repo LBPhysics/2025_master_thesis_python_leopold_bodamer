@@ -112,7 +112,7 @@ def main() -> None:
         "--job_dir",
         type=str,
         required=True,
-        help="Path to batch_jobs/<job_label> (contains metadata.json)",
+        help="Path to batch_jobs/<job_label> (contains job_metadata.json)",
     )
     parser.add_argument(
         "--no_submit",
@@ -122,7 +122,7 @@ def main() -> None:
     args = parser.parse_args()
 
     job_dir = Path(args.job_dir).resolve()
-    metadata_path = job_dir / "metadata.json"
+    metadata_path = job_dir / "job_metadata.json"
     if not metadata_path.exists():
         print(f"Metadata file not found: {metadata_path}")
         raise SystemExit("Metadata file missing.")
