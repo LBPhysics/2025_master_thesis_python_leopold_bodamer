@@ -41,9 +41,10 @@ class AtomBathCoupling:
             add_op(projector(i_atom))
 
             # Radiative-like decay (lowering + raising) operators from singles to ground: |0><i| + |i><0|
-            Li = sys.basis[0] * sys.basis[i_atom].dag()
-            decay_op = Li + Li.dag()
-            add_op(decay_op)
+            if n_atoms != 2: # TO match the paper, no radiative decay in the dimer
+                Li = sys.basis[0] * sys.basis[i_atom].dag()
+                decay_op = Li + Li.dag()
+                add_op(decay_op)
 
         # Double manifold projectors only if available
         max_exc = sys.max_excitation
@@ -78,7 +79,6 @@ class AtomBathCoupling:
     def me_decay_channels(self) -> list[Qobj]:
         """Generate c_ops for Lindblad solver respecting max_excitation.
 
-        Strategy:
           - Pure dephasing: projectors on each populated basis state (singles; doubles if present)
           - Population relaxation/excitation: per-site lowering/raising (|0><i|, |i><0|) with rates from bath
             (double-manifold relaxation: |i,j><i| and |i,j><j| with rates from bath)
@@ -97,8 +97,9 @@ class AtomBathCoupling:
             c_ops.append(sys.to_eigenbasis(deph_op) * np.sqrt(deph_rate))
 
             # Radiative-like single-site relaxation (singles -> ground) and thermal excitation
-            L_down = sys.basis[0] * sys.basis[i_atom].dag()  # |0><i|
-            c_ops.append(sys.to_eigenbasis(L_down) * np.sqrt(down_rate))
+            if n_atoms != 2: # TO match the paper, no radiative decay in the dimer
+                L_down = sys.basis[0] * sys.basis[i_atom].dag()  # |0><i|
+                c_ops.append(sys.to_eigenbasis(L_down) * np.sqrt(down_rate))
 
         # Double-state dephasing if manifold present
         if sys.max_excitation == 2:
