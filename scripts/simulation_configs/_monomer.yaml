@@ -22,6 +22,6 @@ config:
   signal_types: [rephasing]
 
 window:
-  t_det_max: 20.0
+  t_det_max: 300.0
   t_wait: 10.0
-  dt: 0.1
+  dt: 0.2
