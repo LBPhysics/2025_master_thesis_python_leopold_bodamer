@@ -84,6 +84,7 @@ Simulation outputs remain under `data/` and plots under `figures/`.
 
 ### HPC Batching Workflow (Run on a Cluster)
 For large-scale runs (e.g., full sweeps with many inhomogeneous samples and coherence times). Supports all combinations with parallel batching. Processing and plotting are automated.
+Is structured similar to the local workflow but splits the simulation into batches that are atomically executed on the cluster:
 
 1. **Dispatch batches** — Run `python scripts/hpc_batch_dispatch.py --sim_type {1d,2d} --n_batches N [--rng_seed S] [--no_submit]`. Generates SLURM jobs that split work across combinations. Validates locally first.
 
