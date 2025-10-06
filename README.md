@@ -46,10 +46,13 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    - Outputs raw `.npz` files per combination.
    - For a 2D simulation the `t_coh` value in the config will be ignored and instead all t_coh values (same as the detection times `t_det`) will be used.
 
-   *Example*:
-   input:
-   (m_env) path/to/scripts$ python calc_datas.py  --sim_type 1d
-   output:
+   **Example:**
+
+   ```bash
+   (m_env) path/to/scripts$ python calc_datas.py --sim_type 1d
+   ```
+
+   ```
    ================================================================================
    LOCAL ALL-COMBINATIONS RUNNER
    Config path: /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/scripts/simulation_configs/_monomer.yaml
@@ -62,23 +65,30 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
       python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ================================================================================
    DONE
+   ```
 3. **Process** — Run `python scripts/process_datas.py --abs_path /path/to/any/artifact.npz` to stack (if multiple `t_coh`) and average across samples in one efficient step.
 
-   *Example*:
-   input:
+   **Example:**
+
+   ```bash
    (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
-   output:
+   ```
+
+   ```
    ...
    🎯 Plot with:
    python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   ```
 
 4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `EXTEND` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
 
-   *Example*:
-   input:
+   **Example:**
+
+   ```bash
    (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
-   
--> find the figures under `figures/...`
+   ```
+
+   -> find the figures under `figures/...`
 
 Simulation outputs remain under `data/` and plots under `figures/`.
 
