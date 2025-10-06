@@ -30,7 +30,7 @@ conda env create -f environment.yml
 conda activate m_env
 ```
 
-The environment file already performs the editable installs for `plotstyle` and `qspectro2d`, so no additional pip commands are required after activation.
+The environment file already performs the editable installs for my custom made `plotstyle` and `qspectro2d`.
 
 ## Workflow overview
 
@@ -39,17 +39,48 @@ There are two main workflows: **local execution** (for small tests) and **HPC ba
 ### Local Workflow (Run on Your Machine)
 For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates all combinations of coherence times and inhomogeneous samples, then processes them into final averaged spectra.
 
-1. **Configure simulation** — Duplicate a template in `scripts/simulation_configs/` and adjust physical parameters. `_monomer.yaml` is the default that `calc_datas.py` auto-selects.
+1. **Configure simulation** — Duplicate the template in `scripts/simulation_configs/` and adjust physical parameters. `_monomer.yaml` is the default that `calc_datas.py` auto-selects.
 
 2. **Simulate** — Run `python scripts/calc_datas.py --sim_type {1d,2d}` locally.
    - Generates all combinations of `t_coh` points and inhomogeneous samples.
    - Outputs raw `.npz` files per combination.
+   - For a 2D simulation the `t_coh` value in the config will be ignored and instead all t_coh values (same as the detection times `t_det`) will be used.
 
+   *Example*:
+   input:
+   (m_env) path/to/scripts$ python calc_datas.py  --sim_type 1d
+   output:
+   ================================================================================
+   LOCAL ALL-COMBINATIONS RUNNER
+   Config path: /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/scripts/simulation_configs/_monomer.yaml
+   ...
+   Completed 1 combination(s) in 3.26 s
+   Latest artifact:
+   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
+
+   🎯 Next step:
+      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+   ================================================================================
+   DONE
 3. **Process** — Run `python scripts/process_datas.py --abs_path /path/to/any/artifact.npz` to stack (if multiple `t_coh`) and average across samples in one efficient step.
 
-4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). Options: `--extend` for zero-padding, `--section` for frequency windows, `--no_time`/`--no_freq` to skip domains.
+   *Example*:
+   input:
+   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+   output:
+   ...
+   🎯 Plot with:
+   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
 
-Simulation outputs remain under `data/` and plots under `figures/figures_from_python/`.
+4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `EXTEND` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
+
+   *Example*:
+   input:
+   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   
+-> find the figures under `figures/...`
+
+Simulation outputs remain under `data/` and plots under `figures/`.
 
 ### HPC Batching Workflow (Run on a Cluster)
 For large-scale runs (e.g., full sweeps with many inhomogeneous samples and coherence times). Supports all combinations with parallel batching. Processing and plotting are automated.
