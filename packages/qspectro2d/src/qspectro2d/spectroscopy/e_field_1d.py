@@ -92,6 +92,7 @@ def compute_evolution(
                 tlist=tlist,
                 a_ops=sim_oqs.decay_channels,
                 options=options,
+                sec_cutoff=-1,
             )
         else:
             return mesolve(

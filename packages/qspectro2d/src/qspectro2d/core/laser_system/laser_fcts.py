@@ -112,9 +112,8 @@ def epsilon_pulses(
         raise TypeError("pulse_seq must be a LaserPulseSequence instance.")
 
     t_array = np.asarray(t, dtype=float)
-    is_scalar = t_array.ndim == 0
 
     carrier = np.zeros_like(t_array, dtype=complex)
     omega = pulse_seq.carrier_freq_fs
     carrier = np.exp(-1j * (omega * t_array)) * e_pulses(t_array, pulse_seq)
-    return complex(carrier[0]) if is_scalar else carrier
+    return carrier
