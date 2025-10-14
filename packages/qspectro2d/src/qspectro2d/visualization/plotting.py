@@ -453,7 +453,10 @@ def crop_nd_data_along_axis(
             f"does not match coordinate array length ({len(coord_array)})"
         )
 
-    coord_min, coord_max = section
+    if isinstance(section, list):
+        coord_min, coord_max = section[axis]
+    else:
+        coord_min, coord_max = section
 
     ### Validate coordinates are within data range
     coord_min = max(coord_min, np.min(coord_array))

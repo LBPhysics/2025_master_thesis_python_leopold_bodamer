@@ -127,11 +127,11 @@ def compute_spectra(
     Based on the paper: https://doi.org/10.1063/5.0214023
 
     For each input data array:
-    - Along detection time, always use -i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
+    - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
       (implemented via IFFT, no normalization scaling applied).
     - If coherence axis is present:
-        - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (IFFT)
-        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT))
+        - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (IFFT)
+        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (FFT))
 
     Returns:
         (nu_cohs, nu_dets, datas_nu, signal_types_out)
@@ -191,10 +191,10 @@ def compute_spectra(
 
         # Coherence axis sign depends on signal type
         if st_norm == "nonrephasing":
-            spec_2d = np.fft.fft(spec_2d, axis=0)
+            spec_2d = np.fft.ifft(spec_2d, axis=0)
             out_types.append("nonrephasing")
         else:
-            spec_2d = np.fft.ifft(spec_2d, axis=0)
+            spec_2d = np.fft.fft(spec_2d, axis=0)
             out_types.append("rephasing")
 
         spec_2d = np.fft.fftshift(spec_2d, axes=(0, 1))
