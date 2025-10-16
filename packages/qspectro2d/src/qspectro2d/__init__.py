@@ -56,7 +56,7 @@ from .utils.data_io import (
 from .utils import generate_unique_plot_filename
 
 # Spectroscopy exports (imported after data I/O to avoid partial init race)
-from .spectroscopy import extend_time_domain_data, compute_spectra
+from .spectroscopy import compute_spectra
 
 # PUBLIC API - MOST COMMONLY USED
 __all__ = [
@@ -75,7 +75,6 @@ __all__ = [
     # High-level simulation functions
     "complex_polarization",
     # Post-processing
-    "extend_time_domain_data",
     "compute_spectra",
     # Data management
     "save_run_artifact",

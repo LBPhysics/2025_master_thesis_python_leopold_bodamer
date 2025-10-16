@@ -1,8 +1,8 @@
 from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Literal, Union, Tuple, Optional
-from matplotlib.axes import Axes
+from typing import Literal, Tuple, Optional
+import scipy.sparse as sp
 
 from ..core.laser_system import (
     LaserPulseSequence,
@@ -371,12 +371,15 @@ def plot_el_field(
     if component not in ("real", "img", "abs", "phase"):
         raise ValueError("Invalid component. Must be 'real', 'img', 'abs', or 'phase'.")
 
+    # Convert sparse to dense if needed
+    if isinstance(data, sp.spmatrix):
+        data = data.toarray()
+
     # Crop data if section provided
-    if data.ndim == 1:
-        if section is not None:
-            axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
-    elif data.ndim == 2:
-        if section is not None:
+    if section is not None:
+        if data.ndim == 1:
+                axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
+        elif data.ndim == 2:
             axis_coh, data = crop_nd_data_along_axis(axis_coh, data, section, axis=0)
             axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=1)
 

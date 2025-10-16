@@ -1,219 +1,166 @@
 """Concise post-processing utilities for extending time-domain data."""
 
 from __future__ import annotations
-
-from typing import List, Optional, Tuple
-
+from typing import List, Optional, Tuple, Union
+import scipy.sparse as sp
 import numpy as np
 
 __all__ = [
-    "extend_time_domain_data",
     "compute_spectra",
 ]
 
 
-def _etend_axis(axis: np.ndarray, new_len: int) -> np.ndarray:
-    """Extend a strictly increasing 1D axis to ``new_len`` in + direction."""
-    if axis.ndim != 1:
-        raise ValueError("axis must be 1D")
-    n_old = int(axis.size)
-    n_new = int(new_len)
-    if n_new <= n_old:
-        return axis.copy()
-    if n_old == 0:
-        raise ValueError("axis must have at least one element")
 
-    if n_old == 1:
-        last = float(axis[-1])
-        extra = np.full(n_new - n_old, last, dtype=float)
-        return np.concatenate([axis.astype(float, copy=True), extra])
-
-    diffs = np.diff(axis)
-    if not np.all(diffs > 0):
-        raise ValueError("axis must be strictly increasing")
-    dt = float(np.median(diffs))
-    last = float(axis[-1])
-    extra_n = n_new - n_old
-    cont = last + dt * np.arange(1, extra_n + 1, dtype=float)
-    return np.concatenate([axis.astype(float, copy=True), cont])
-
-
-def extend_time_domain_data(
-    datas: List[np.ndarray],
-    t_det: np.ndarray,
-    t_coh: Optional[np.ndarray] = None,
-    *,
-    pad: float = 1.0,
-) -> Tuple[List[np.ndarray], np.ndarray, Optional[np.ndarray]]:
-    """Extend axes by ceil(pad * N) and zero-pad data on the positive side.
-
-    - 1D (t_coh is None): data shape (N_det,), extend det-axis only.
-    - 2D (t_coh provided): data shape (N_coh, N_det), extend both axes.
-    """
-    if pad < 1.0:
-        raise ValueError("pad must be >= 1.0 for extension-only padding")
-    if not datas:
-        raise ValueError("datas must be a non-empty list of arrays")
-    if t_det.ndim != 1:
-        raise ValueError("t_det must be a 1D array")
-
-    n_det = int(t_det.size)
-    n_det_ext = int(np.ceil(pad * n_det))
-
-    if t_coh is None:
-        extended_t_det = _etend_axis(t_det, n_det_ext)
-        extended_datas = []
-        for idx, arr in enumerate(datas):
-            if arr.ndim != 1:
-                raise ValueError(f"datas[{idx}] must be 1D when t_coh is None")
-            if arr.shape[0] != n_det:
-                raise ValueError(
-                    f"datas[{idx}] length {arr.shape[0]} does not match t_det length {n_det}"
-                )
-            extra = n_det_ext - n_det
-            if extra <= 0:
-                extended_datas.append(arr.copy())
-                continue
-            pad_width = (0, extra)
-            padded = np.pad(arr, pad_width, mode="constant", constant_values=0)
-            extended_datas.append(padded)
-
-        return extended_datas, extended_t_det, None
-
-    if t_coh.ndim != 1:
-        raise ValueError("t_coh must be a 1D array when provided")
-
-    # Ensure t_coh is sorted
-    if not np.all(np.diff(t_coh) >= 0):
-        sort_idx = np.argsort(t_coh)
-        t_coh = t_coh[sort_idx]
-        for idx, arr in enumerate(datas):
-            if arr.ndim == 2:
-                datas[idx] = arr[sort_idx, :]
-
-    n_coh = int(t_coh.size)
-    n_coh_ext = int(np.ceil(pad * n_coh))
-
-    extended_t_det = _etend_axis(t_det, n_det_ext)
-    extended_t_coh = _etend_axis(t_coh, n_coh_ext)
-
-    extended_datas: List[np.ndarray] = []
-    for idx, arr in enumerate(datas):
-        if arr.ndim != 2:
-            raise ValueError(f"datas[{idx}] must be 2D when t_coh is provided")
-        if arr.shape != (n_coh, n_det):
-            raise ValueError(
-                f"datas[{idx}] shape {arr.shape} does not match (len(t_coh), len(t_det)) = {(n_coh, n_det)}"
-            )
-        extra_c = n_coh_ext - n_coh
-        extra_d = n_det_ext - n_det
-        if extra_c <= 0 and extra_d <= 0:
-            extended_datas.append(arr.copy())
-            continue
-        pad_width = ((0, max(0, extra_c)), (0, max(0, extra_d)))
-        padded = np.pad(arr, pad_width, mode="constant", constant_values=0)
-        extended_datas.append(padded)
-
-    return extended_datas, extended_t_det, extended_t_coh
-
+ArrayOrSparse = Union[np.ndarray, sp.spmatrix]
 
 def compute_spectra(
     datas: List[np.ndarray],
     signal_types: List[str] = ["rephasing"],
     t_det: np.ndarray = None,
     t_coh: Optional[np.ndarray] = None,
-) -> Tuple[Optional[np.ndarray], np.ndarray, List[np.ndarray], List[str]]:
+    pad: float = 1.0,
+    *,
+    # ---- rectangular band settings in 10^4 cm^-1 ----
+    nu_win_det: float = 2.0,
+    nu_win_coh: Optional[float] = 2.0,   # ignored if t_coh is None
+    # ---- outputs / memory tuning ----
+    return_sparse: bool = True,
+    force_dense: bool = False,
+) -> Tuple[Optional[np.ndarray], np.ndarray, List[ArrayOrSparse], List[str]]:
     """Compute spectra along detection (and optional coherence) axes.
     Based on the paper: https://doi.org/10.1063/5.0214023
 
     For each input data array:
     - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
-      (implemented via IFFT, no normalization scaling applied).
+      (implemented via IFFT with virtual padding, no normalization scaling applied).
     - If coherence axis is present:
         - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (IFFT)
         (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (FFT))
 
+    Args:
+        datas: List of time-domain data arrays (original size, not extended).
+        signal_types: List of signal type strings.
+        t_det: Detection time axis (1D array).
+        t_coh: Coherence time axis (1D array, optional).
+        pad: Padding factor (>=1.0) for virtual zero-padding in FFTs.
+
     Returns:
         (nu_cohs, nu_dets, datas_nu, signal_types_out)
-        - frequency axes (10^4 cm^-1)
-        - datas_nu: list of spectra arrays in frequency domain
-        - signal_types_out: list of signal labels, aligned with datas_nu
+        - nu_cohs: Coherence frequency axis (10^4 cm^-1), extended if t_coh provided.
+        - nu_dets: Detection frequency axis (10^4 cm^-1), extended.
+        - datas_nu: List of spectra arrays in frequency domain (virtually padded).
+        - signal_types_out: List of signal labels, aligned with datas_nu.
     """
-    # Normalize signal types to length of datas.
+    if pad < 1.0:
+        raise ValueError("pad must be >= 1.0")
+    if t_det is None or t_det.ndim != 1:
+        raise ValueError("t_det must be 1D")
+    if t_coh is not None and t_coh.ndim != 1:
+        raise ValueError("t_coh must be 1D when provided")
+    if not datas:
+        raise ValueError("datas must be non-empty")
+
+    # Normalize signal types
     if len(signal_types) == 1 and len(datas) > 1:
         sig_types = [signal_types[0]] * len(datas)
     else:
         if len(signal_types) != len(datas):
-            raise ValueError("signal_types must have same length as datas or be a single entry")
+            raise ValueError("signal_types length must match datas or be a single entry")
         sig_types = list(signal_types)
 
-    # Detection axis frequency and wavenumber
+    # Sizes and extended sizes
     n_det = int(t_det.size)
-    dt_det = t_det[1] - t_det[0]
-    freq_dets = np.fft.fftfreq(n_det, d=dt_det)
-    nu_dets = freq_dets / 2.998 * 10
-    nu_dets = np.fft.fftshift(nu_dets)
+    n_det_ext = int(np.ceil(pad * n_det))
+    dt_det = float(t_det[1] - t_det[0])
 
-    # Coherence axis frequency and wavenumber (optional)
+    # Detection frequency axes
+    freq_dets = np.fft.fftfreq(n_det_ext, d=dt_det)
+    nu_det_unshifted = freq_dets / 2.998 * 10                 # for masking (no shift)
+    nu_dets = np.fft.fftshift(nu_det_unshifted)               # for user ergonomics
+
+    # Coherence axes
     if t_coh is None:
+        n_coh = None
+        n_coh_ext = None
         nu_cohs = None
+        nu_coh_unshifted = None
     else:
-        if t_coh.ndim != 1:
-            raise ValueError("t_coh must be 1D when provided")
         n_coh = int(t_coh.size)
-        dt_coh = t_coh[1] - t_coh[0]
-        freq_cohs = np.fft.fftfreq(n_coh, d=dt_coh)
-        nu_cohs = freq_cohs / 2.998 * 10
-        nu_cohs = np.fft.fftshift(nu_cohs)
+        n_coh_ext = int(np.ceil(pad * n_coh))
+        dt_coh = float(t_coh[1] - t_coh[0])
+        freq_cohs = np.fft.fftfreq(n_coh_ext, d=dt_coh)
+        nu_coh_unshifted = freq_cohs / 2.998 * 10             # for masking (no shift)
+        nu_cohs = np.fft.fftshift(nu_coh_unshifted)           # for convenience
 
-    # Build spectra
-    datas_nu: List[np.ndarray] = []
+    datas_nu: List[ArrayOrSparse] = []
     out_types: List[str] = []
+
+    # Precompute 2D rectangular mask (unshifted) if 2D & sparse/dense-ROI requested
+    rect_mask_2d = None
+    if (t_coh is not None) and not force_dense and return_sparse:
+        if nu_win_coh is None:
+            raise ValueError("nu_win_coh must be set for 2D rectangular ROI")
+        # Build outer-product mask in shifted coordinates
+        det_mask = (np.abs(nu_dets) < float(nu_win_det))[None, :]   # shape (1, n_det_ext)
+        coh_mask = (np.abs(nu_cohs) < float(nu_win_coh))[:, None]   # shape (n_coh_ext, 1)
+        rect_mask_2d = coh_mask & det_mask                                   # shape (n_coh_ext, n_det_ext)
+
     for idx, (arr, stype) in enumerate(zip(datas, sig_types)):
         st_norm = str(stype).strip().lower()
+
+        # 1D case
         if t_coh is None:
             if arr.ndim != 1 or arr.shape[0] != n_det:
-                raise ValueError(
-                    f"datas[{idx}] must be 1D with length len(t_det) when t_coh is None"
-                )
-            spec_det = np.fft.fftshift(np.fft.ifft(arr, axis=0))
-            datas_nu.append(spec_det)
+                raise ValueError(f"datas[{idx}] must be 1D with length len(t_det)")
+
+            # Detection axis (+i): IFFT with virtual padding
+            spec_det = np.fft.ifft(arr, n=n_det_ext, axis=0)
+
+            if force_dense or not return_sparse:
+                # Keep dense; shift for user-facing axis
+                datas_nu.append(np.fft.fftshift(spec_det))
+            else:
+                # Sparse ROI: keep |nu_det| < nu_win_det (shifted)
+                spec_det_shifted = np.fft.fftshift(spec_det)
+                keep = np.abs(nu_dets) < float(nu_win_det)
+                idxs = np.nonzero(keep)[0]
+                vals = spec_det_shifted[idxs]
+                rows = idxs
+                cols = np.zeros_like(rows)  # store as column vector
+                spvec = sp.coo_matrix((vals, (rows, cols)), shape=(n_det_ext, 1))
+                datas_nu.append(spvec)
+
             out_types.append(stype)
             continue
 
-        # 2D case: (N_coh, N_det)
-        n_coh = int(t_coh.size)
+        # 2D case
         if arr.ndim != 2 or arr.shape != (n_coh, n_det):
             raise ValueError(f"datas[{idx}] must be 2D with shape (len(t_coh), len(t_det))")
 
-        # Detection axis (+i) via IFFT along det axis
-        spec_2d = np.fft.ifft(arr, axis=1)
+        # Detection axis (+i): IFFT along det axis (virtual padding)
+        spec_2d = np.fft.ifft(arr, n=n_det_ext, axis=1)
 
-        # Coherence axis sign depends on signal type
+        # Coherence axis depends on signal type (virtual padding)
         if st_norm == "nonrephasing":
-            spec_2d = np.fft.ifft(spec_2d, axis=0)
+            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("nonrephasing")
         else:
-            spec_2d = np.fft.fft(spec_2d, axis=0)
+            spec_2d = np.fft.fft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("rephasing")
 
-        spec_2d = np.fft.fftshift(spec_2d, axes=(0, 1))
-        datas_nu.append(spec_2d)
-
-    # NOTE Optional absorptive combination (commented per request)
-    # if t_coh is not None:
-    #     have_r  = any(t.lower().startswith("rephasing") for t in out_types)
-    #     have_nr = any(t.lower().startswith("nonrephasing") for t in out_types)
-    #     if have_r and have_nr:
-    #         # Example: match by index or by separate provided lists;
-    #         # here we simply combine the first found pair.
-    #         try:
-    #             r_idx = next(i for i, t in enumerate(out_types) if t.startswith("rephasing"))
-    #             nr_idx = next(i for i, t in enumerate(out_types) if t.startswith("nonrephasing"))
-    #             absorptive = np.real(datas_nu[r_idx] + datas_nu[nr_idx])
-    #             datas_nu.append(absorptive)
-    #             out_types.append("absorptive")
-    #         except StopIteration:
-    #             pass
+        if force_dense or not return_sparse:
+            # Dense output; shift for convenient axes as before
+            datas_nu.append(np.fft.fftshift(spec_2d, axes=(0, 1)))
+        else:
+            # Sparse rectangular ROI in *shifted* coordinates
+            spec_2d_shifted = np.fft.fftshift(spec_2d, axes=(0, 1))
+            if rect_mask_2d is None:
+                # Fallback: keep everything but in sparse form
+                rows, cols = np.nonzero(np.ones((n_coh_ext, n_det_ext), dtype=bool))
+            else:
+                rows, cols = np.nonzero(rect_mask_2d)
+            vals = spec_2d_shifted[rows, cols]
+            spmat = sp.coo_matrix((vals, (rows, cols)), shape=(n_coh_ext, n_det_ext))
+            datas_nu.append(spmat)
 
     return nu_cohs, nu_dets, datas_nu, out_types
