@@ -104,14 +104,12 @@ def compute_evolution(
             )
 
     # Helper to get active pulses at time t
-    EPS = 1e-12
-
     def get_active_pulse_at_interval(i):
         t0 = event_times[i]
         t1 = event_times[i + 1]
-        t_mid = 0.5 * (t0 + t1)
         for p in pulses:
-            if (p.active_time_range[0] - EPS) <= t_mid < (p.active_time_range[1] + EPS):
+            p_start, p_end = p.active_time_range
+            if p_start <= t1 and p_end >= t0:
                 return True
         return False
 
@@ -190,7 +188,7 @@ def compute_polarization_over_window(
 
     # Analytical polarization using positive-frequency part of dipole operator
     mu_op = sim.system.to_eigenbasis(sim.system.dipole_op)
-    P_t = complex_polarization(mu_op, window_states)  # np.ndarray[complex]
+    P_t = complex_polarization(mu_op, window_states)
     return window, P_t
 
 
@@ -227,14 +225,17 @@ def _compute_P_phi1_phi2(
     t_det = sim_work.t_det
     t_det_a, P_total = compute_polarization_over_window(sim_work, t_det)
 
-    # Linear signals: only pulse i active
-    P_linear_sum = np.zeros_like(P_total, dtype=np.complex128)
-    for i in range(len(sim_work.laser.pulses)):
-        sim_i = sim_with_only_pulses(sim_work, [i])
-        _, P_i = compute_polarization_over_window(sim_i, t_det)
-        P_linear_sum += P_i
+    # Subtract signals from all subsets of size 1 and 2 pulses active
+    P_sub_sum = np.zeros_like(P_total, dtype=np.complex128)
+    n_pulses = len(sim_work.laser.pulses)
+    import itertools
+    for k in range(1, 3):  # subsets of size 1 and 2
+        for combo in itertools.combinations(range(n_pulses), k):
+            sim_sub = sim_with_only_pulses(sim_work, list(combo))
+            _, P_sub = compute_polarization_over_window(sim_sub, t_det)
+            P_sub_sum += P_sub
 
-    P_phi = P_total - P_linear_sum
+    P_phi = P_total - P_sub_sum
     return t_det_a, P_phi
 
 

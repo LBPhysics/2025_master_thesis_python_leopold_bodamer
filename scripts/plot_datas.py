@@ -18,7 +18,7 @@ import argparse
 
 from qspectro2d import load_simulation_data, generate_unique_plot_filename
 from qspectro2d.visualization.plotting import plot_el_field
-from qspectro2d.spectroscopy.post_processing import extend_time_domain_data, compute_spectra
+from qspectro2d.spectroscopy.post_processing import compute_spectra
 from qspectro2d.utils.file_naming import _generate_unique_filename
 from plotstyle import save_fig
 
@@ -99,15 +99,8 @@ def main() -> None:
     # Frequency domain
     print("Plotting frequency domain...")
     pad_factor = EXTEND
-    ext_datas, ext_t_det, ext_t_coh = extend_time_domain_data(
-        list(signals.values()),
-        np.asarray(t_det),
-        np.asarray(t_coh) if t_coh is not None else None,
-        pad=pad_factor,
-    )
-
     nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
-        ext_datas, list(signals.keys()), ext_t_det, ext_t_coh
+        list(signals.values()), list(signals.keys()), np.asarray(t_det), np.asarray(t_coh) if t_coh is not None else None, pad=pad_factor
     )
 
     for idx, st in enumerate(out_types):

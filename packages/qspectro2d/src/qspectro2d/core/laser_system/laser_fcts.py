@@ -47,8 +47,16 @@ def single_pulse_envelope(t_array: np.ndarray, pulse: LaserPulse) -> np.ndarray:
         gauss = np.exp(-((t_act - t_peak) ** 2) / (2 * sigma**2))
         # subtract boundary baseline (ensures ~0 at stored window edges) then clamp
         out[active] = np.maximum(gauss - boundary_val, 0.0)
+    elif env == "delta":
+        # Delta function: envelope such that integral envelope dt = 1
+        # Assuming uniform spacing in t_array
+        if len(t_array) > 1:
+            dt = t_array[1] - t_array[0]
+            out[active] = 1.0 / dt
+        else:
+            out[active] = 1.0  # fallback if single point
     else:
-        raise ValueError(f"Unknown envelope_type: {env}. Use 'cos2' or 'gaussian'.")
+        raise ValueError(f"Unknown envelope_type: {env}. Use 'cos2', 'gaussian', or 'delta'.")
     return out
 
 
@@ -63,6 +71,7 @@ def pulse_envelopes(
        and a constant baseline equal to the Gaussian value at that EXTENDED edge is subtracted, then
        negative values clamped to zero. This preserves smooth Gaussian tails between ±FWHM and the
        extended edge while forcing the envelope ≈ 0 at the window boundaries.
+    - 'delta': Dirac delta at t_peak, normalized such that integral of envelope over time is 1.
 
     Args:
         t (Union[float, np.ndarray]): Time value or array of time values
