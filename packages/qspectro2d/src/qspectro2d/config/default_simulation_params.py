@@ -13,14 +13,15 @@ import warnings
 
 # === signal processing / phase cycling ===
 # PHASE_CYCLING_PHASES = [0, np.pi / 2, np.pi, 3 * np.pi / 2]
-PHASE_CYCLING_PHASES = np.linspace(0, 2 * np.pi, 10)
-DETECTION_PHASE = 0.0  # Fixed phase for detection pulse
+N_PHASES = 4  # Number of phase cycles for the simulation
+DPHI = 2 * np.pi / N_PHASES
+PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES + 1)
 SIGNAL_TYPES = ["rephasing"]  # Default signal == photon echo to simulate
-COMPONENT_MAP: dict[str, tuple[int, int, int]] = {
-    "average": (0, 0, 0),  # special case for just averaging all phases
-    "rephasing": (-1, 1, 1),  # photon echo is extracted here
-    "nonrephasing": (1, -1, 1),
-}  # represents the (k1, k2, k3) phase factors for each signal type
+COMPONENT_MAP: dict[str, tuple[int, int]] = {
+    "average": (0, 0),  # special case for just averaging all phases
+    "rephasing": (-1, 1),  # photon echo is extracted here
+    "nonrephasing": (1, -1),
+}  # represents the (k1, k2) phase factors for each signal type [k3 doenst matter]
 # last pulse is 10% of the first two to ensure probing character
 RELATIVE_E0S = [1.0, 1.0, 0.1]
 
@@ -57,7 +58,6 @@ RWA_SL = True
 
 # === SIMULATION DEFAULTS ===
 ODE_SOLVER = "BR"  # ODE solver to use
-N_PHASES = 4  # Number of phase cycles for the simulation
 SIM_TYPE = "1d"
 SOLVER_OPTIONS = {
     #    "nsteps": 200000,
