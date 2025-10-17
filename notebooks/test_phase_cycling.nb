@@ -10,14 +10,1711 @@
 NotebookFileLineBreakTest
 NotebookFileLineBreakTest
 NotebookDataPosition[       158,          7]
-NotebookDataLength[       755,         33]
-NotebookOptionsPosition[       561,         21]
-NotebookOutlinePosition[       895,         36]
-CellTagsIndexPosition[       852,         33]
+NotebookDataLength[     60944,       1794]
+NotebookOptionsPosition[     57155,       1718]
+NotebookOutlinePosition[     57489,       1733]
+CellTagsIndexPosition[     57446,       1730]
 WindowFrame->Normal*)
 
 (* Beginning of Notebook Content *)
 Notebook[{
+
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{"Analytical", " ", "Phase", " ", "Cycling", " ", "Component"}], 
+   "*)"}], 
+  RowBox[{
+   RowBox[{
+    RowBox[{
+     RowBox[{"phaseCycleComponentAnalytical", "[", 
+      RowBox[{"Pfunc_", ",", "lm_"}], "]"}], ":=", 
+     RowBox[{"Module", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"l", ",", "m"}], "}"}], ",", 
+       RowBox[{
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{"l", ",", "m"}], "}"}], "=", "lm"}], ";", 
+        "\[IndentingNewLine]", 
+        RowBox[{
+         RowBox[{"Integrate", "[", 
+          RowBox[{
+           RowBox[{"Pfunc", "*", 
+            RowBox[{"Exp", "[", 
+             RowBox[{
+              RowBox[{"-", "I"}], " ", 
+              RowBox[{"(", 
+               RowBox[{
+                RowBox[{"l", " ", "phi1"}], "+", 
+                RowBox[{"m", " ", "phi2"}]}], ")"}]}], "]"}]}], ",", 
+           RowBox[{"{", 
+            RowBox[{"phi1", ",", "0", ",", 
+             RowBox[{"2", " ", "Pi"}]}], "}"}], ",", 
+           RowBox[{"{", 
+            RowBox[{"phi2", ",", "0", ",", 
+             RowBox[{"2", " ", "Pi"}]}], "}"}]}], "]"}], "/", 
+         RowBox[{
+          RowBox[{"(", 
+           RowBox[{"2", " ", "Pi"}], ")"}], "^", "2"}]}]}]}], "]"}]}], ";"}], 
+   "\[IndentingNewLine]", "\n", 
+   RowBox[{"(*", "Parameters", "*)"}], "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"w", "=", "1.0"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"gamma", "=", "0.1"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"lmList", "=", 
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"0", ",", "0"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"1", ",", "0"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"0", ",", "1"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"1", ",", "1"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"-", "1"}], ",", "1"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"1", ",", 
+         RowBox[{"-", "1"}]}], "}"}]}], "}"}]}], ";"}], "\[IndentingNewLine]",
+    "\n", 
+   RowBox[{"(*", 
+    RowBox[{
+     RowBox[{"Test", " ", "1"}], ":", 
+     RowBox[{"Constant", " ", "Function"}]}], "*)"}], "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"Pfunc", "=", "1"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", "\"\<Constant Function Results:\>\"", "]"}], ";"}], 
+   "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{"\"\<Constant: Phase-cycled component \>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", 
+     "\"\<Plots for Constant Function: Use front-end to view.\>\"", "]"}], 
+    ";"}]}]}]], "Input",
+ CellLabel->"In[52]:=",ExpressionUUID->"7e1e34e3-e868-4ef2-9d08-482b37abd5a2"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"Constant Function Results:\"\>"], "Print",
+ CellChangeTimes->{3.96970240427627*^9},
+ CellLabel->
+  "During evaluation of \
+In[52]:=",ExpressionUUID->"2d013995-3e22-485d-b173-4271f9255e29"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "1"},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, 1}, {{1, 0}, 0}, {{0, 1}, 0}, {{1, 1}, 0}, {{-1, 1}, 
+     0}, {{1, -1}, 0}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.969702404306456*^9},
+ CellLabel->
+  "During evaluation of \
+In[52]:=",ExpressionUUID->"b11fea69-f269-4feb-ab4f-6fb39ff197fd"],
+
+Cell[BoxData["\<\"Plots for Constant Function: Use front-end to view.\"\>"], \
+"Print",
+ CellChangeTimes->{3.969702404880612*^9},
+ CellLabel->
+  "During evaluation of \
+In[52]:=",ExpressionUUID->"ba80dfd6-4b19-4c60-a81e-9463b1a3880b"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "2"}], ":", 
+    RowBox[{"Linear", " ", "in", " ", "phi1"}]}], "*)"}], 
+  "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", "phi1"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", "\"\<Linear in phi1 Results:\>\"", "]"}], ";"}], 
+   "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{"\"\<Linear phi1: Phase-cycled component \>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", "\"\<Plots for Linear phi1: Use front-end to view.\>\"", 
+     "]"}], ";"}], "\[IndentingNewLine]"}]}]], "Input",
+ CellLabel->"In[62]:=",ExpressionUUID->"0562c4f9-6433-4d27-93ef-5b9b692aeb3f"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"Linear in phi1 Results:\"\>"], "Print",
+ CellChangeTimes->{3.969702415458332*^9},
+ CellLabel->
+  "During evaluation of \
+In[62]:=",ExpressionUUID->"3dee49a7-ac7b-4bd2-8c87-8e351aa2e180"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "\[Pi]"},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "\[ImaginaryI]"},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, Pi}, {{1, 0}, 
+     Complex[0, 1]}, {{0, 1}, 0}, {{1, 1}, 0}, {{-1, 1}, 0}, {{1, -1}, 0}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.969702415490655*^9},
+ CellLabel->
+  "During evaluation of \
+In[62]:=",ExpressionUUID->"4cdd6bb1-8516-46a1-8e74-b114dc79cc87"],
+
+Cell[BoxData["\<\"Plots for Linear phi1: Use front-end to view.\"\>"], "Print",
+ CellChangeTimes->{3.9697024160544662`*^9},
+ CellLabel->
+  "During evaluation of \
+In[62]:=",ExpressionUUID->"9286c5e5-fab0-4168-a42e-64c91197f7af"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "3"}], ":", 
+    RowBox[{"Product", " ", "phi1", "*", "phi2"}]}], "*)"}], 
+  "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", 
+     RowBox[{"phi1", "*", "phi2"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", "\"\<Product phi1 * phi2 Results:\>\"", "]"}], 
+    ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{"\"\<Product phi1*phi2: Phase-cycled component \>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", 
+     "\"\<Plots for Product phi1*phi2: Use front-end to view.\>\"", "]"}], 
+    ";"}], "\n"}]}]], "Input",
+ CellLabel->"In[68]:=",ExpressionUUID->"68ed2116-c4f3-4f8f-bf0a-bedfed13e358"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"Product phi1 * phi2 Results:\"\>"], "Print",
+ CellChangeTimes->{3.969702422396451*^9},
+ CellLabel->
+  "During evaluation of \
+In[68]:=",ExpressionUUID->"6b15d6cd-bf63-4f41-bb38-463a2bd68522"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     SuperscriptBox["\[Pi]", "2"]},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"\[ImaginaryI]", " ", "\[Pi]"}]},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"\[ImaginaryI]", " ", "\[Pi]"}]},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"-", "1"}]},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "1"},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "1"}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, Pi^2}, {{1, 0}, Complex[0, 1] Pi}, {{0, 1}, 
+     Complex[0, 1] Pi}, {{1, 1}, -1}, {{-1, 1}, 1}, {{1, -1}, 1}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.969702422431275*^9},
+ CellLabel->
+  "During evaluation of \
+In[68]:=",ExpressionUUID->"549a2801-7dbc-4c19-9b51-aebfb3e80d21"],
+
+Cell[BoxData["\<\"Plots for Product phi1*phi2: Use front-end to view.\"\>"], \
+"Print",
+ CellChangeTimes->{3.9697024233159313`*^9},
+ CellLabel->
+  "During evaluation of \
+In[68]:=",ExpressionUUID->"ade6f1da-e657-42b0-a96f-5ffa18637244"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "4"}], ":", 
+    RowBox[{"cos", 
+     RowBox[{"(", 
+      RowBox[{"phi1", "-", 
+       RowBox[{"w", " ", "t"}]}], ")"}]}]}], "*)"}], "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", 
+     RowBox[{"Cos", "[", 
+      RowBox[{"phi1", "-", 
+       RowBox[{"w", " ", "t"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", "\"\<cos(phi1 - w t) Results:\>\"", "]"}], ";"}], 
+   "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{"\"\<cos(phi1 - w t): Phase-cycled component \>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", "\"\<Plots for cos(phi1 - w t): Use front-end to view.\>\"",
+      "]"}], ";"}]}]}]], "Input",
+ CellLabel->"In[74]:=",ExpressionUUID->"d33fbfd5-dd9b-4d75-9d73-74ce542de0fa"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"cos(phi1 - w t) Results:\"\>"], "Print",
+ CellChangeTimes->{3.969702431702375*^9},
+ CellLabel->
+  "During evaluation of \
+In[74]:=",ExpressionUUID->"a576c438-b24f-435f-865b-2e235ba7d130"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     FractionBox[
+      RowBox[{
+       SuperscriptBox["\[ExponentialE]", 
+        RowBox[{
+         RowBox[{"(", 
+          RowBox[{"0.`", "\[VeryThinSpace]", "-", 
+           RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]], " ", 
+       RowBox[{"(", 
+        RowBox[{"19.739208802178716`", "\[VeryThinSpace]", "-", 
+         RowBox[{"7.694682774887159`*^-16", " ", 
+          SuperscriptBox["\[ExponentialE]", 
+           RowBox[{
+            RowBox[{"(", 
+             RowBox[{"0.`", "\[VeryThinSpace]", "+", 
+              RowBox[{"2.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]}],
+         ")"}]}], 
+      RowBox[{"4", " ", 
+       SuperscriptBox["\[Pi]", "2"]}]]},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, 0.}, {{1, 0}, Rational[1, 4] 
+     E^(Complex[0., -1.] $CellContext`t) (19.739208802178716` - 
+      7.694682774887159*^-16 E^(Complex[0., 2.] $CellContext`t)) Pi^(-2)}, {{
+     0, 1}, 0}, {{1, 1}, 0}, {{-1, 1}, 0}, {{1, -1}, 0}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.969702431737859*^9},
+ CellLabel->
+  "During evaluation of \
+In[74]:=",ExpressionUUID->"4c067b7f-ba9c-4f99-ae61-3c8a3eaf1325"],
+
+Cell[BoxData["\<\"Plots for cos(phi1 - w t): Use front-end to view.\"\>"], \
+"Print",
+ CellChangeTimes->{3.969702432465333*^9},
+ CellLabel->
+  "During evaluation of \
+In[74]:=",ExpressionUUID->"95d60791-341b-49c2-a222-b702a9b787a5"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "5"}], ":", 
+    RowBox[{"exp", 
+     RowBox[{"(", 
+      RowBox[{"phi1", "-", 
+       RowBox[{"w", " ", "t"}]}], ")"}]}]}], "*)"}], "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", 
+     RowBox[{"Exp", "[", 
+      RowBox[{"I", " ", 
+       RowBox[{"(", 
+        RowBox[{"phi1", "-", 
+         RowBox[{"w", " ", "t"}]}], ")"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", "\"\<exp(I (phi1 - w t)) Results:\>\"", "]"}], 
+    ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{"\"\<exp(I (phi1 - w t)): Phase-cycled component \>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", 
+     "\"\<Plots for exp(I (phi1 - w t)): Use front-end to view.\>\"", "]"}], 
+    ";"}], "\[IndentingNewLine]", "\[IndentingNewLine]"}]}]], "Input",
+ CellLabel->"In[80]:=",ExpressionUUID->"72258983-a322-4fd0-a471-a982043ed398"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"exp(I (phi1 - w t)) Results:\"\>"], "Print",
+ CellChangeTimes->{3.969702438128306*^9},
+ CellLabel->
+  "During evaluation of \
+In[80]:=",ExpressionUUID->"2e92b37d-7fed-4f97-8d8d-686868288d57"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{
+      RowBox[{"-", "3.8981718325193755`*^-17"}], " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{"0.`", "\[VeryThinSpace]", "-", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     SuperscriptBox["\[ExponentialE]", 
+      RowBox[{
+       RowBox[{"(", 
+        RowBox[{"0.`", "\[VeryThinSpace]", "-", 
+         RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"1.5195743635847466`*^-33", " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{"0.`", "\[VeryThinSpace]", "-", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, (-3.8981718325193755`*^-17) 
+     E^(Complex[0., -1.] $CellContext`t)}, {{1, 0}, 
+     E^(Complex[0., -1.] $CellContext`t)}, {{0, 1}, 0}, {{1, 1}, 0}, {{-1, 1},
+      1.5195743635847466`*^-33 E^(Complex[0., -1.] $CellContext`t)}, {{1, -1},
+      0}}, TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.9697024381607723`*^9},
+ CellLabel->
+  "During evaluation of \
+In[80]:=",ExpressionUUID->"ca4b3282-ac5e-48b2-a060-3860b63c459d"],
+
+Cell[BoxData["\<\"Plots for exp(I (phi1 - w t)): Use front-end to \
+view.\"\>"], "Print",
+ CellChangeTimes->{3.9697024389627743`*^9},
+ CellLabel->
+  "During evaluation of \
+In[80]:=",ExpressionUUID->"81029d3e-e592-46e4-9369-53cfbe674754"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "6"}], ":", 
+    RowBox[{"cos", 
+     RowBox[{"(", 
+      RowBox[{"|", 
+       RowBox[{"phi1", "-", "phi2"}], "|"}], ")"}], "*", "exp", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"-", "gamma"}], " ", "t"}], ")"}]}]}], "*)"}], "\n", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", 
+     RowBox[{
+      RowBox[{"Cos", "[", 
+       RowBox[{"Abs", "[", 
+        RowBox[{"phi1", "-", "phi2"}], "]"}], "]"}], "*", 
+      RowBox[{"Exp", "[", 
+       RowBox[{
+        RowBox[{"-", "gamma"}], " ", "t"}], "]"}]}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", "\"\<cos(|phi1 - phi2|) * exp(-gamma t) Results:\>\"", 
+     "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{
+           "\"\<cos(|phi1-phi2|)*exp(-gamma t): Phase-cycled component \>\"", 
+            "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", 
+     "\"\<Plots for cos(|phi1-phi2|)*exp(-gamma t): Use front-end to \
+view.\>\"", "]"}], ";"}], "\[IndentingNewLine]", "\n"}]}]], "Input",
+ CellLabel->"In[86]:=",ExpressionUUID->"8d5101b1-00c5-4664-b0b8-e66674a30ce6"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"cos(|phi1 - phi2|) * exp(-gamma t) Results:\"\>"], "Print",
+ CellChangeTimes->{3.969702446192252*^9},
+ CellLabel->
+  "During evaluation of \
+In[86]:=",ExpressionUUID->"63b27508-183c-4808-9515-fc8737068331"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.5`", " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"-", "0.1`"}], " ", "t"}]]}]},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.5`", " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"-", "0.1`"}], " ", "t"}]]}]}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, 0.}, {{1, 0}, 0.}, {{0, 1}, 0.}, {{1, 1}, 0.}, {{-1, 1},
+      0.5 E^((-0.1) $CellContext`t)}, {{1, -1}, 0.5 
+     E^((-0.1) $CellContext`t)}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.969702446215599*^9},
+ CellLabel->
+  "During evaluation of \
+In[86]:=",ExpressionUUID->"631ae166-7646-460f-879f-f09f0c59a9b9"],
+
+Cell[BoxData["\<\"Plots for cos(|phi1-phi2|)*exp(-gamma t): Use front-end to \
+view.\"\>"], "Print",
+ CellChangeTimes->{3.969702448325906*^9},
+ CellLabel->
+  "During evaluation of \
+In[86]:=",ExpressionUUID->"31cb926b-1f83-457d-a9ea-06fc5a1dec92"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "7"}], ":", 
+    RowBox[{"cos", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"w", " ", "t"}], "-", 
+       RowBox[{"(", 
+        RowBox[{"phi2", "-", "phi1"}], ")"}]}], ")"}], "*", "exp", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"-", "gamma"}], " ", "t"}], ")"}]}]}], "*)"}], 
+  "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", 
+     RowBox[{
+      RowBox[{"Cos", "[", 
+       RowBox[{
+        RowBox[{"w", " ", "t"}], "-", 
+        RowBox[{"(", 
+         RowBox[{"phi2", "-", "phi1"}], ")"}]}], "]"}], "*", 
+      RowBox[{"Exp", "[", 
+       RowBox[{
+        RowBox[{"-", "gamma"}], " ", "t"}], "]"}]}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", "\"\<cos(w t - (phi2 - phi1)) * exp(-gamma t) Results:\>\"",
+      "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{
+           "\"\<cos(w t - (phi2-phi1))*exp(-gamma t): Phase-cycled component \
+\>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", 
+     "\"\<Plots for cos(w t - (phi2-phi1))*exp(-gamma t): Use front-end to \
+view.\>\"", "]"}], ";"}], "\n", "\[IndentingNewLine]"}]}]], "Input",
+ CellLabel->"In[92]:=",ExpressionUUID->"2e9ba85b-5f29-4dc0-82c7-350cf1b4a5a0"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"cos(w t - (phi2 - phi1)) * exp(-gamma t) Results:\"\>"], \
+"Print",
+ CellChangeTimes->{3.969702455139908*^9},
+ CellLabel->
+  "During evaluation of \
+In[92]:=",ExpressionUUID->"7af44b88-2b27-4263-9240-2e61b3a71421"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0"},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.`", "\[VeryThinSpace]", "+", 
+      RowBox[{"0.`", " ", "\[ImaginaryI]"}]}]},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{
+      RowBox[{"-", "1.9490859162596877`*^-17"}], " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"-", "0.1`"}], "-", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.5`", " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"-", "0.1`"}], "-", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.5`", " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"-", "0.1`"}], "+", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, 0}, {{1, 0}, 0.}, {{0, 1}, 
+     Complex[0., 0.]}, {{1, 1}, (-1.9490859162596877`*^-17) 
+     E^(Complex[-0.1, -1.] $CellContext`t)}, {{-1, 1}, 0.5 
+     E^(Complex[-0.1, -1.] $CellContext`t)}, {{1, -1}, 0.5 
+     E^(Complex[-0.1, 1.] $CellContext`t)}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{3.9697024551584997`*^9},
+ CellLabel->
+  "During evaluation of \
+In[92]:=",ExpressionUUID->"04c353d1-b980-43a9-8614-deef76d273f3"],
+
+Cell[BoxData["\<\"Plots for cos(w t - (phi2-phi1))*exp(-gamma t): Use \
+front-end to view.\"\>"], "Print",
+ CellChangeTimes->{3.9697024602776957`*^9},
+ CellLabel->
+  "During evaluation of \
+In[92]:=",ExpressionUUID->"eefa90ee-b690-4e7f-9808-fd46868bc772"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"\n", "\[IndentingNewLine]", 
+  RowBox[{"(*", 
+   RowBox[{
+    RowBox[{"Test", " ", "8"}], ":", 
+    RowBox[{"cos", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"w", " ", "t"}], "-", 
+       RowBox[{"(", 
+        RowBox[{"phi2", "+", "phi1"}], ")"}]}], ")"}], "*", "exp", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"-", "gamma"}], " ", "t"}], ")"}]}]}], "*)"}], 
+  "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"Pfunc", "=", 
+     RowBox[{
+      RowBox[{"Cos", "[", 
+       RowBox[{
+        RowBox[{"w", " ", "t"}], "-", 
+        RowBox[{"(", 
+         RowBox[{"phi2", "+", "phi1"}], ")"}]}], "]"}], "*", 
+      RowBox[{"Exp", "[", 
+       RowBox[{
+        RowBox[{"-", "gamma"}], " ", "t"}], "]"}]}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"results", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"lm", ",", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", "\"\<cos(w t - (phi2 + phi1)) * exp(-gamma t) Results:\>\"",
+      "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"Print", "[", 
+     RowBox[{"TableForm", "[", 
+      RowBox[{"results", ",", 
+       RowBox[{"TableHeadings", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"None", ",", 
+          RowBox[{"{", 
+           RowBox[{"\"\<lm\>\"", ",", "\"\<Analytical Result\>\""}], "}"}]}], 
+         "}"}]}]}], "]"}], "]"}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{"plots", "=", 
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"analytical", "=", 
+         RowBox[{"phaseCycleComponentAnalytical", "[", 
+          RowBox[{"Pfunc", ",", "lm"}], "]"}]}], ";", "\[IndentingNewLine]", 
+        RowBox[{"Plot", "[", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Re", "[", "analytical", "]"}], ",", 
+            RowBox[{"Im", "[", "analytical", "]"}]}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "10"}], "}"}], ",", 
+          RowBox[{"PlotLegends", "\[Rule]", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"\"\<Re \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}], ",", 
+             RowBox[{"\"\<Im \>\"", "<>", 
+              RowBox[{"ToString", "[", "lm", "]"}]}]}], "}"}]}], ",", 
+          RowBox[{"PlotLabel", "\[Rule]", 
+           RowBox[{
+           "\"\<cos(w t - (phi2+phi1))*exp(-gamma t): Phase-cycled component \
+\>\"", "<>", 
+            RowBox[{"ToString", "[", "lm", "]"}]}]}], ",", 
+          RowBox[{"PlotRange", "\[Rule]", "All"}]}], "]"}]}], ",", 
+       RowBox[{"{", 
+        RowBox[{"lm", ",", "lmList"}], "}"}]}], "]"}]}], ";"}], "\n", 
+   RowBox[{
+    RowBox[{
+    "Print", "[", 
+     "\"\<Plots for cos(w t - (phi2+phi1))*exp(-gamma t): Use front-end to \
+view.\>\"", "]"}], ";"}]}]}]], "Input",
+ CellChangeTimes->{{3.969702397968869*^9, 3.9697024618576527`*^9}},
+ CellLabel->
+  "In[105]:=",ExpressionUUID->"5886c0c1-635c-4c12-8b70-8c578e30886a"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"cos(w t - (phi2 + phi1)) * exp(-gamma t) Results:\"\>"], \
+"Print",
+ CellChangeTimes->{{3.969702464733925*^9, 3.969702474366872*^9}},
+ CellLabel->
+  "During evaluation of \
+In[105]:=",ExpressionUUID->"7b0a74f6-5b5f-4a79-b8e8-846e92bbf7b9"],
+
+Cell[BoxData[
+ InterpretationBox[GridBox[{
+    {"\<\"lm\"\>", "\<\"Analytical Result\"\>"},
+    {GridBox[{
+       {"0"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], "0.`"},
+    {GridBox[{
+       {"1"},
+       {"0"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.`", "\[VeryThinSpace]", "+", 
+      RowBox[{"0.`", " ", "\[ImaginaryI]"}]}]},
+    {GridBox[{
+       {"0"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.`", "\[VeryThinSpace]", "+", 
+      RowBox[{"0.`", " ", "\[ImaginaryI]"}]}]},
+    {GridBox[{
+       {"1"},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{"0.5`", " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"-", "0.1`"}], "-", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]},
+    {GridBox[{
+       {
+        RowBox[{"-", "1"}]},
+       {"1"}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{
+      RowBox[{"-", "1.9490859162596877`*^-17"}], " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"-", "0.1`"}], "-", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]},
+    {GridBox[{
+       {"1"},
+       {
+        RowBox[{"-", "1"}]}
+      },
+      GridBoxAlignment->{"Columns" -> {{Left}}, "Rows" -> {{Baseline}}},
+      GridBoxSpacings->{"Columns" -> {
+          Offset[0.27999999999999997`], {
+           Offset[0.7]}, 
+          Offset[0.27999999999999997`]}, "Rows" -> {
+          Offset[0.2], {
+           Offset[0.1]}, 
+          Offset[0.2]}}], 
+     RowBox[{
+      RowBox[{"-", "1.9490859162596877`*^-17"}], " ", 
+      SuperscriptBox["\[ExponentialE]", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"-", "0.1`"}], "+", 
+          RowBox[{"1.`", " ", "\[ImaginaryI]"}]}], ")"}], " ", "t"}]]}]}
+   },
+   GridBoxAlignment->{"Columns" -> {{Center}}, "Rows" -> {{Baseline}}},
+   GridBoxSpacings->{"Columns" -> {
+       Offset[0.27999999999999997`], {
+        Offset[2.0999999999999996`]}, 
+       Offset[0.27999999999999997`]}, "Rows" -> {
+       Offset[0.2], {
+        Offset[0.4]}, 
+       Offset[0.2]}}],
+  TableForm[{{{0, 0}, 0.}, {{1, 0}, 
+     Complex[0., 0.]}, {{0, 1}, 
+     Complex[0., 0.]}, {{1, 1}, 0.5 
+     E^(Complex[-0.1, -1.] $CellContext`t)}, {{-1, 
+     1}, (-1.9490859162596877`*^-17) 
+     E^(Complex[-0.1, -1.] $CellContext`t)}, {{
+     1, -1}, (-1.9490859162596877`*^-17) 
+     E^(Complex[-0.1, 1.] $CellContext`t)}}, 
+   TableHeadings -> {None, {"lm", "Analytical Result"}}]]], "Print",
+ CellChangeTimes->{{3.969702464733925*^9, 3.969702474369565*^9}},
+ CellLabel->
+  "During evaluation of \
+In[105]:=",ExpressionUUID->"fb4c1a81-f32f-48fd-989c-d7162295ddd7"],
+
+Cell[BoxData["\<\"Plots for cos(w t - (phi2+phi1))*exp(-gamma t): Use \
+front-end to view.\"\>"], "Print",
+ CellChangeTimes->{{3.969702464733925*^9, 3.969702480727504*^9}},
+ CellLabel->
+  "During evaluation of \
+In[105]:=",ExpressionUUID->"8fcdb081-05dc-428b-a574-b8f72f8ba659"]
+}, Open  ]]
+}, Open  ]]
 },
 WindowSize->{1080, 1854},
 WindowMargins->{{0, Automatic}, {0, Automatic}},
@@ -35,6 +1732,70 @@ CellTagsIndex->{}
 *)
 (*NotebookFileOutline
 Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 4499, 127, 400, "Input",ExpressionUUID->"7e1e34e3-e868-4ef2-9d08-482b37abd5a2"],
+Cell[CellGroupData[{
+Cell[5104, 153, 206, 4, 25, "Print",ExpressionUUID->"2d013995-3e22-485d-b173-4271f9255e29"],
+Cell[5313, 159, 2967, 92, 215, "Print",ExpressionUUID->"b11fea69-f269-4feb-ab4f-6fb39ff197fd"],
+Cell[8283, 253, 234, 5, 25, "Print",ExpressionUUID->"ba80dfd6-4b19-4c60-a81e-9463b1a3880b"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[8566, 264, 2489, 66, 239, "Input",ExpressionUUID->"0562c4f9-6433-4d27-93ef-5b9b692aeb3f"],
+Cell[CellGroupData[{
+Cell[11080, 334, 204, 4, 25, "Print",ExpressionUUID->"3dee49a7-ac7b-4bd2-8c87-8e351aa2e180"],
+Cell[11287, 340, 2996, 92, 215, "Print",ExpressionUUID->"4cdd6bb1-8516-46a1-8e74-b114dc79cc87"],
+Cell[14286, 434, 228, 4, 25, "Print",ExpressionUUID->"9286c5e5-fab0-4168-a42e-64c91197f7af"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[14563, 444, 2527, 68, 239, "Input",ExpressionUUID->"68ed2116-c4f3-4f8f-bf0a-bedfed13e358"],
+Cell[CellGroupData[{
+Cell[17115, 516, 209, 4, 25, "Print",ExpressionUUID->"6b15d6cd-bf63-4f41-bb38-463a2bd68522"],
+Cell[17327, 522, 3137, 96, 215, "Print",ExpressionUUID->"549a2801-7dbc-4c19-9b51-aebfb3e80d21"],
+Cell[20467, 620, 236, 5, 25, "Print",ExpressionUUID->"ade6f1da-e657-42b0-a96f-5ffa18637244"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[20752, 631, 2622, 71, 216, "Input",ExpressionUUID->"d33fbfd5-dd9b-4d75-9d73-74ce542de0fa"],
+Cell[CellGroupData[{
+Cell[23399, 706, 205, 4, 25, "Print",ExpressionUUID->"a576c438-b24f-435f-865b-2e235ba7d130"],
+Cell[23607, 712, 3806, 112, 219, "Print",ExpressionUUID->"4c067b7f-ba9c-4f99-ae61-3c8a3eaf1325"],
+Cell[27416, 826, 232, 5, 25, "Print",ExpressionUUID->"95d60791-341b-49c2-a222-b702a9b787a5"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[27697, 837, 2745, 74, 262, "Input",ExpressionUUID->"72258983-a322-4fd0-a471-a982043ed398"],
+Cell[CellGroupData[{
+Cell[30467, 915, 209, 4, 25, "Print",ExpressionUUID->"2e92b37d-7fed-4f97-8d8d-686868288d57"],
+Cell[30679, 921, 3841, 112, 215, "Print",ExpressionUUID->"ca4b3282-ac5e-48b2-a060-3860b63c459d"],
+Cell[34523, 1035, 238, 5, 25, "Print",ExpressionUUID->"81029d3e-e592-46e4-9369-53cfbe674754"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[34810, 1046, 2946, 82, 286, "Input",ExpressionUUID->"8d5101b1-00c5-4664-b0b8-e66674a30ce6"],
+Cell[CellGroupData[{
+Cell[37781, 1132, 224, 4, 25, "Print",ExpressionUUID->"63b27508-183c-4808-9515-fc8737068331"],
+Cell[38008, 1138, 3293, 101, 215, "Print",ExpressionUUID->"631ae166-7646-460f-879f-f09f0c59a9b9"],
+Cell[41304, 1241, 247, 5, 25, "Print",ExpressionUUID->"31cb926b-1f83-457d-a9ea-06fc5a1dec92"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[41600, 1252, 3082, 87, 285, "Input",ExpressionUUID->"2e9ba85b-5f29-4dc0-82c7-350cf1b4a5a0"],
+Cell[CellGroupData[{
+Cell[44707, 1343, 232, 5, 25, "Print",ExpressionUUID->"7af44b88-2b27-4263-9240-2e61b3a71421"],
+Cell[44942, 1350, 3974, 119, 215, "Print",ExpressionUUID->"04c353d1-b980-43a9-8614-deef76d273f3"],
+Cell[48919, 1471, 255, 5, 25, "Print",ExpressionUUID->"eefa90ee-b690-4e7f-9808-fd46868bc772"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[49223, 1482, 3154, 89, 285, "Input",ExpressionUUID->"5886c0c1-635c-4c12-8b70-8c578e30886a"],
+Cell[CellGroupData[{
+Cell[52402, 1575, 257, 5, 25, "Print",ExpressionUUID->"7b0a74f6-5b5f-4a79-b8e8-846e92bbf7b9"],
+Cell[52662, 1582, 4184, 125, 215, "Print",ExpressionUUID->"fb4c1a81-f32f-48fd-989c-d7162295ddd7"],
+Cell[56849, 1709, 278, 5, 25, "Print",ExpressionUUID->"8fcdb081-05dc-428b-a574-b8f72f8ba659"]
+}, Open  ]]
+}, Open  ]]
 }
 ]
 *)
