@@ -229,7 +229,8 @@ def _compute_P_phi1_phi2(
     P_sub_sum = np.zeros_like(P_total, dtype=np.complex128)
     n_pulses = len(sim_work.laser.pulses)
     import itertools
-    for k in range(1, 3):  # subsets of size 1 and 2
+
+    for k in range(1, 2):  # subsets of size 1 only
         for combo in itertools.combinations(range(n_pulses), k):
             sim_sub = sim_with_only_pulses(sim_work, list(combo))
             _, P_sub = compute_polarization_over_window(sim_sub, t_det)
@@ -262,10 +263,12 @@ def phase_cycle_component(
     l, m, n = lmn
     L, M, T = P_grid.shape
     phi = np.asarray(phases, float)
-    phase_mat = np.exp(-1j * (l * phi[:, None] + m * phi[None, :] + n * phi_det))
-    P_out = (P_grid * phase_mat[..., None]).sum(axis=(0, 1))
-    P_out /= L * M
-    return P_out
+    P_out = np.zeros(T, dtype=complex)
+    for i, phi1 in enumerate(phi):
+        for k, phi2 in enumerate(phi):
+            P_out += P_grid[i, k, :] * np.exp(-1j * (l * phi1 + m * phi2 + n * phi_det))
+
+    return P_out / len(phases) ** 2 * (phases[-1] - phases[0]) ** 2
 
 
 # --------------------------------------------------------------------------------------
