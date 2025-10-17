@@ -24,7 +24,6 @@ from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..config.default_simulation_params import (
     PHASE_CYCLING_PHASES,
     COMPONENT_MAP,
-    DETECTION_PHASE,
 )
 from qspectro2d.utils.rwa_utils import from_rotating_frame_list
 
@@ -249,26 +248,30 @@ def _worker_P_phi_pair(
     return phi1, phi2, t_det_a, P_phi
 
 
-def phase_cycle_component(
-    phases: Sequence[float],
-    P_grid: np.ndarray,
-    *,
-    lmn: Tuple[int, int, int] = (0, 0, 0),
-    phi_det: float = 0.0,
-) -> np.ndarray:
-    """Extract P_{l,m,n}(t) from a grid P^3[phi1,phi2,t].
-
-    P_{l,m,n}(t) = Σ_{phi1} Σ_{phi2} P^3_{phi1,phi2}(t) exp(-i(l phi1 + m phi2 + n phi_det))
+def phase_cycle_component(phases, P_grid, lm) -> np.ndarray:
     """
-    l, m, n = lmn
+    phases: length N+1, uniform on [0, 2π] (includes 2π)
+    P_grid: (N+1, N+1, T) with P(t; φ1_i, φ2_k)
+    lm    : (l, m)
+    returns: (T,) ≈ ∬ e^{-i(l φ1 + m φ2)} P(t; φ1, φ2) dφ1 dφ2
+    """
+    l, m = lm
+    phases = np.asarray(phases)
     L, M, T = P_grid.shape
-    phi = np.asarray(phases, float)
-    P_out = np.zeros(T, dtype=complex)
-    for i, phi1 in enumerate(phi):
-        for k, phi2 in enumerate(phi):
-            P_out += P_grid[i, k, :] * np.exp(-1j * (l * phi1 + m * phi2 + n * phi_det))
+    assert L == M == len(phases)
 
-    return P_out / len(phases) ** 2 * (phases[-1] - phases[0]) ** 2
+    N = len(phases) - 1
+    dphi = (phases[-1] - phases[0]) / N          # = 2π/N
+
+    # trapezoid weights: 1/2 at 0 and 2π, 1 elsewhere
+    w = np.ones(len(phases), float)
+    w[0] = w[-1] = 0.5
+
+    u1 = w * np.exp(-1j * l * phases)            # (N+1,)
+    u2 = w * np.exp(-1j * m * phases)            # (N+1,)
+    P_out = np.einsum('i,k,ikt->t', u1, u2, P_grid)  # sum over φ1, φ2
+
+    return P_out * dphi * dphi
 
 
 # --------------------------------------------------------------------------------------
@@ -278,8 +281,7 @@ def parallel_compute_1d_e_comps(
     sim_oqs: SimulationModuleOQS,
     *,
     phases: Optional[Sequence[float]] = None,
-    lmn: Optional[Tuple[int, int, int]] = None,
-    phi_det: Optional[float] = None,
+    lm: Optional[Tuple[int, int]] = None,
     time_cut: Optional[float] = None,
     parallel: bool = True,  # NOTE good for debugging: False
 ) -> List[np.ndarray]:
@@ -295,10 +297,8 @@ def parallel_compute_1d_e_comps(
         Prepared simulation (system, laser sequence, solver config).
     phases : Optional[Sequence[float]]
         Phase grid for (phi1, phi2). If None, use PHASE_CYCLING_PHASES truncated to n_phases.
-    lmn : Optional[Tuple[int,int,int]]
+    lm : Optional[Tuple[int,int]]
         Component to extract; if None, derive from signal types via COMPONENT_MAP.
-    phi_det : Optional[float]
-        Detection phase; if None, use DETECTION_PHASE.
     time_cut : Optional[float]
         Truncate detection times after this value [fs] (soft mask applied).
 
@@ -316,7 +316,6 @@ def parallel_compute_1d_e_comps(
     # Prepare grid and helpers
     n_t = len(sim_oqs.t_det)
     sig_types = sim_oqs.simulation_config.signal_types
-    phi_det_val = phi_det if phi_det is not None else float(DETECTION_PHASE)
     if len(sim_oqs.laser.pulses) < 3:
         raise ValueError("3 pulses (pump, pump, probe) are required.")
 
@@ -351,12 +350,11 @@ def parallel_compute_1d_e_comps(
     # Extract components for this realization
     E_list: List[np.ndarray] = []
     for sig in sig_types:
-        lmn_tuple = COMPONENT_MAP[sig] if lmn is None else lmn
+        lm_tuple = COMPONENT_MAP[sig] if lm is None else lm
         P_comp = phase_cycle_component(
             phases_eff,
             P_grid,
-            lmn=lmn_tuple,
-            phi_det=phi_det_val,
+            lm=lm_tuple,
         )
         E_comp = 1j * P_comp
         if t_mask is not None:
