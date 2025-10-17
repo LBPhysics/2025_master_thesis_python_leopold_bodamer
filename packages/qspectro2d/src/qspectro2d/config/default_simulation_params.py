@@ -12,7 +12,8 @@ import warnings
 # from ..utils.constants import BOLTZMANN, convert_cm_to_fs
 
 # === signal processing / phase cycling ===
-PHASE_CYCLING_PHASES = [0, np.pi / 2, np.pi, 3 * np.pi / 2]
+# PHASE_CYCLING_PHASES = [0, np.pi / 2, np.pi, 3 * np.pi / 2]
+PHASE_CYCLING_PHASES = np.linspace(0, 2 * np.pi, 10)
 DETECTION_PHASE = 0.0  # Fixed phase for detection pulse
 SIGNAL_TYPES = ["rephasing"]  # Default signal == photon echo to simulate
 COMPONENT_MAP: dict[str, tuple[int, int, int]] = {
