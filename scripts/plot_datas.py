@@ -61,6 +61,7 @@ def main() -> None:
     saved_files = []
 
     for st, sig_data in signals.items():
+        combined_dict["signal_type"] = st
         print(f"Plotting signal: {st}")
         for comp in components:
             fig = plot_el_field(
@@ -100,7 +101,11 @@ def main() -> None:
     print("Plotting frequency domain...")
     pad_factor = EXTEND
     nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
-        list(signals.values()), list(signals.keys()), np.asarray(t_det), np.asarray(t_coh) if t_coh is not None else None, pad=pad_factor
+        list(signals.values()),
+        list(signals.keys()),
+        np.asarray(t_det),
+        np.asarray(t_coh) if t_coh is not None else None,
+        pad=pad_factor,
     )
 
     for idx, st in enumerate(out_types):

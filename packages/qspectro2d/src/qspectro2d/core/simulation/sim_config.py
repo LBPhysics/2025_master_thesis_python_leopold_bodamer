@@ -73,7 +73,6 @@ class SimulationConfig:
             "rwa_sl": self.rwa_sl,
             "sim_type": self.sim_type,
             "max_workers": self.max_workers,
-            "signal_types": self.signal_types,
             "t_det_max": self.t_det_max,
             "dt": self.dt,
             "t_wait": self.t_wait,
