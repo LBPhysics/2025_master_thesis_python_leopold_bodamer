@@ -15,7 +15,7 @@ import warnings
 # PHASE_CYCLING_PHASES = [0, np.pi / 2, np.pi, 3 * np.pi / 2]
 N_PHASES = 4  # Number of phase cycles for the simulation
 DPHI = 2 * np.pi / N_PHASES
-PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES + 1)
+PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES)
 SIGNAL_TYPES = ["rephasing"]  # Default signal == photon echo to simulate
 COMPONENT_MAP: dict[str, tuple[int, int]] = {
     "average": (0, 0),  # special case for just averaging all phases
