@@ -19,10 +19,9 @@ bath:
 
 config:
   solver: ME
-  signal_types: [rephasing]
+  signal_types: [rephasing, nonrephasing]
 
 window:
   t_det_max: 10.0
-  t_coh: 10.0
-  t_wait: 10.0
-  dt: 0.1
+  t_wait: 0.0
+  dt: 0.2

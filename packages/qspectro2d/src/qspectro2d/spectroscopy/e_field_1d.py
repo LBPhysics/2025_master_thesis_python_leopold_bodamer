@@ -252,7 +252,7 @@ def phase_cycle_component(phases, P_grid, lm) -> np.ndarray:
     """
     phases: length N+1, uniform on [0, 2π] (includes 2π)
     P_grid: (N+1, N+1, T) with P(t; φ1_i, φ2_k)
-    lm    : (l, m)
+    lm    : (l, m) -> the component to extract
     returns: (T,) ≈ ∬ e^{-i(l φ1 + m φ2)} P(t; φ1, φ2) dφ1 dφ2
     """
     l, m = lm
@@ -261,15 +261,15 @@ def phase_cycle_component(phases, P_grid, lm) -> np.ndarray:
     assert L == M == len(phases)
 
     N = len(phases) - 1
-    dphi = (phases[-1] - phases[0]) / N          # = 2π/N
+    dphi = (phases[-1] - phases[0]) / N  # = 2π/N
 
     # trapezoid weights: 1/2 at 0 and 2π, 1 elsewhere
     w = np.ones(len(phases), float)
     w[0] = w[-1] = 0.5
 
-    u1 = w * np.exp(-1j * l * phases)            # (N+1,)
-    u2 = w * np.exp(-1j * m * phases)            # (N+1,)
-    P_out = np.einsum('i,k,ikt->t', u1, u2, P_grid)  # sum over φ1, φ2
+    u1 = w * np.exp(-1j * l * phases)  # (N+1,)
+    u2 = w * np.exp(-1j * m * phases)  # (N+1,)
+    P_out = np.einsum("i,k,ikt->t", u1, u2, P_grid)  # sum over φ1, φ2
 
     return P_out * dphi * dphi
 
