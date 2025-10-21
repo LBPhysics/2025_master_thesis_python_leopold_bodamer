@@ -28,7 +28,7 @@ FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
 FIGURES_DIR.mkdir(exist_ok=True)
 
 # Section for cropping data
-SECTION = (1.1, 2)
+SECTION = None  # (1.1, 2) # or None #for no cropping
 
 # Extend factor for zero-padding
 EXTEND = 20.0
@@ -109,6 +109,7 @@ def main() -> None:
     )
 
     for idx, st in enumerate(out_types):
+        combined_dict["signal_type"] = st
         sig_data_freq = datas_nu[idx]
         for comp in components:
             fig = plot_el_field(

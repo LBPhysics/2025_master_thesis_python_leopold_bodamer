@@ -180,7 +180,7 @@ def compute_polarization_over_window(
         # States are stored in the rotating frame; convert back to lab for polarization
         # Use RELATIVE times w.r.t. the start of the simulation window to avoid
         # imprinting a t_coh-dependent global phase across traces.
-        window_rel = np.asarray(window) - float(res.times[0])
+        window_rel = np.asarray(window) - float(sim.times_local[0])
         window_states = from_rotating_frame_list(
             window_states, window_rel, sim.system.n_atoms, sim.laser.carrier_freq_fs
         )
@@ -218,6 +218,7 @@ def _compute_P_phi1_phi2(
     sim_work.laser.pulse_phases = [
         phi1,
         phi2,
+        0.0,
     ]  # NOTE: last pulse phase fixed to the DETECTION_PHASE (0)
 
     # Total signal with all pulses
@@ -251,7 +252,7 @@ def _worker_P_phi_pair(
 def phase_cycle_component(phases, P_grid, lm):
     """
     phases: uniform grid on [0, 2π)
-    P_grid: (len(phases), len(phases), T)
+    P_grid: (len(phases)~[phi1], len(phases)~[phi2], T)
     lm    : (l, m)
     returns: (T,) ≈ ∬ e^{-i(l φ1 + m φ2)} P(t; φ1, φ2) dφ1 dφ2
     """
@@ -261,8 +262,8 @@ def phase_cycle_component(phases, P_grid, lm):
     assert L == M == len(phases)
 
     dphi = np.diff(phases).mean()
-    u1 = np.exp(-1j * l * phases)  # depends on φ1_i
-    u2 = np.exp(-1j * m * phases)  # depends on φ2_i
+    u1 = np.exp(-1j * l * phases)  # corresponds to φ1
+    u2 = np.exp(-1j * m * phases)  # corresponds to φ2
 
     # start with zeros
     P_out = np.zeros(T, dtype=complex)
