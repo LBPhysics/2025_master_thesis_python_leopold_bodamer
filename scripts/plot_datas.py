@@ -28,7 +28,7 @@ FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
 FIGURES_DIR.mkdir(exist_ok=True)
 
 # Section for cropping data
-SECTION = None  # (1.1, 2) # or None #for no cropping
+SECTION = (1.1, 2)  # or None #for no cropping
 
 # Extend factor for zero-padding
 EXTEND = 20.0
