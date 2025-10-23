@@ -7,7 +7,7 @@ atomic:
 
 laser:
   base_amplitude: 0.05
-  pulse_fwhm_fs: 15.0
+  pulse_fwhm_fs: 5.0
   carrier_freq_cm: 16000.0
   rwa_sl: true
 
