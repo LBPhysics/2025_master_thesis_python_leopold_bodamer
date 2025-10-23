@@ -35,8 +35,12 @@ __all__ = [
 # --------------------------------------------------------------------------------------
 # Internal helpers
 # --------------------------------------------------------------------------------------
-def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
-    """Slice the list of states in `res` to only keep the detection window portion."""
+def slice_states_to_window(res: Result, window: np.ndarray) -> Tuple[List[Qobj], np.ndarray]:
+    """Slice the list of states in `res` to only keep the detection window portion.
+
+    Returns:
+        Tuple of (states, times) where times are the corresponding time points.
+    """
     # Assuming res_times is sorted and equally spaced
     times = np.asarray(res.times)
     window = np.asarray(window)
@@ -49,7 +53,8 @@ def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
         (idxs > 0) & (np.abs(window - times[left]) <= np.abs(times[idxs] - window))
     )
     idxs = np.where(choose_left, left, idxs)
-    return [res.states[int(i)] for i in idxs]
+    selected_times = times[idxs]
+    return [res.states[int(i)] for i in idxs], selected_times
 
 
 def compute_evolution(
@@ -167,6 +172,7 @@ def compute_polarization_over_window(
     store_states: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Evolve the system once (with current laser settings) and return (t_det, P(t_det)).
+    usually window = t_det
 
     - Uses `compute_seq_evolution` which dispatches ME/BR according to sim.simulation_config.
     - Extracts complex/analytical polarization over the detection window only.
@@ -174,15 +180,14 @@ def compute_polarization_over_window(
     # Ensure we store states to extract polarization
     res: Result = compute_evolution(sim, store_states=store_states)
 
-    window_states = slice_states_to_window(res, window)
+    window_states, window_times = slice_states_to_window(res, window)
 
     if sim.simulation_config.rwa_sl:
         # States are stored in the rotating frame; convert back to lab for polarization
-        # Use RELATIVE times w.r.t. the start of the simulation window to avoid
-        # imprinting a t_coh-dependent global phase across traces.
-        window_rel = np.asarray(window) - float(sim.times_local[0])
+        # Use times relative to the start of the simulation to preserve phase accumulation
+        window_rel_times = window_times - float(res.times[0])
         window_states = from_rotating_frame_list(
-            window_states, window_rel, sim.system.n_atoms, sim.laser.carrier_freq_fs
+            window_states, window_rel_times, sim.system.n_atoms, sim.laser.carrier_freq_fs
         )
 
     # Analytical polarization using positive-frequency part of dipole operator
