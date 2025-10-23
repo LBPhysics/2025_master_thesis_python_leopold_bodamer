@@ -54,7 +54,13 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
         If state is not a ket or density matrix.
     """
     rho = ket2dm(state) if state.isket else state
-    pol = expect(dipole_op, rho)
+    # Positive-frequency part for this codebase's basis ordering corresponds to
+    # the strictly UPPER-triangular portion (i < j) in the energy eigenbasis.
+    # ~ sigma^- e^[+iwt]
+    dipole_op_pos = Qobj(np.triu(dipole_op.full(), k=1), dims=dipole_op.dims)
+
+    pol = expect(dipole_op_pos, rho)
+    # pol = expect(dipole_op, rho)
 
     return complex(pol)
 
