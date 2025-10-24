@@ -57,6 +57,12 @@ class SimulationModuleOQS:
         """Return diagonal Hamiltonian (optionally shifted by laser frequency under RWA)."""
         Es, _ = self.system.eigenstates
         H_diag = Qobj(np.diag(Es), dims=self.system.hamiltonian.dims)
+        if self.simulation_config.rwa_sl:
+            omega_L = self.laser.carrier_freq_fs
+            # Determine excitation number for each eigenstate
+            # Based on index: 0 -> 0 excitations, 1..N -> 1, N+1..end -> 2
+            N_eig = self.system.to_eigenbasis(self.system.number_op)
+            H_diag -= omega_L * N_eig
         return H_diag
 
     def paper_eqs_evo(self, t: float) -> Qobj:
@@ -81,32 +87,13 @@ class SimulationModuleOQS:
         Without RWA (full field):
             H_int(t) = -[E⁺(t) + E⁻(t)] ⊗ (σ⁺ + σ⁻)
                     = -E(t) (σ⁺ + σ⁻)
-        With RWA (rotating frame transformation):
-            Compute the full H_int(t), then transform to rotating frame:
-            H_rot = W†(t) H_int(t) W(t) - iℏ W†(t) W˙(t)
-            Since ℏ=1, and W˙ = i ω N W, so -i W† W˙ = ω N
-            Thus H_rot = W† H_int W + ω N
         """
-        lowering_op = self.system.lowering_op  # rotates with exp(+iwt) in RWA
-        lowering_op = self.system.to_eigenbasis(lowering_op)  # rotates with exp(-iwt) in RWA
-
+        lowering_op = self.system.lowering_op
+        lowering_op = self.system.to_eigenbasis(lowering_op)
         if self.simulation_config.rwa_sl:
-            # Compute full H_int(t)
-            dipole_op = lowering_op + lowering_op.dag()
-            E_plus = epsilon_pulses(t, self.laser)
-            H_full = -dipole_op * (E_plus + np.conj(E_plus))
-
-            # Transform to rotating frame
-            from qspectro2d.utils.rwa_utils import rotating_frame_unitary, _excitation_number_vector
-
-            omega_L = self.laser.carrier_freq_fs
-            n_atoms = self.system.n_atoms
-            W = rotating_frame_unitary(H_full, t, n_atoms, omega_L)
-            N_vec = _excitation_number_vector(H_full.shape[0], n_atoms)
-            N = Qobj(np.diag(N_vec), dims=H_full.dims)
-            H_int = W.dag() * H_full * W + omega_L * N
+            E_plus_RWA = e_pulses(t, self.laser)
+            H_int = -(lowering_op * E_plus_RWA + lowering_op.dag() * np.conj(E_plus_RWA))
             return H_int
-
         dipole_op = lowering_op + lowering_op.dag()
         E_plus = epsilon_pulses(t, self.laser)
         H_int = -dipole_op * (E_plus + np.conj(E_plus))
