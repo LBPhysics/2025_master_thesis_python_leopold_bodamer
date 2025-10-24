@@ -230,7 +230,7 @@ def main() -> None:
         sim.system.update_frequencies_cm(freq_vector.tolist())
 
         print(
-            f"\n--- combo {global_idx} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
+            f"\n--- combo {global_idx + 1} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
         )
 

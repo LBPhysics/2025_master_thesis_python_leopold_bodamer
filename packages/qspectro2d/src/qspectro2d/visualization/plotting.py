@@ -375,6 +375,10 @@ def plot_el_field(
     if isinstance(data, sp.spmatrix):
         data = data.toarray()
 
+    # Handle 1D data stored as (n, 1)
+    if axis_coh is None and data.ndim == 2 and data.shape[1] == 1:
+        data = data.squeeze(axis=1)
+
     # Crop data if section provided
     if section is not None:
         if data.ndim == 1:

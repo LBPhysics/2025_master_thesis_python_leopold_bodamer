@@ -174,12 +174,12 @@ class SimulationModuleOQS:
             t_wait = self.simulation_config.t_wait
 
         self.laser.pulse_delays = [t_coh, t_wait]
-        self.reset_times_local()
+        self.reset_times_global()
 
     @property
-    def times_local(self):
-        if hasattr(self, "_times_local_manual"):
-            return self._times_local_manual
+    def times_global(self):
+        if hasattr(self, "_times_global_manual"):
+            return self._times_global_manual
 
         cfg = self.simulation_config
         t0 = -2 * self.laser.carrier_fwhm_fs - cfg.t_coh - cfg.t_wait
@@ -190,22 +190,33 @@ class SimulationModuleOQS:
         times = t0 + dt * np.arange(n_steps, dtype=float)
         return times
 
-    @times_local.setter
-    def times_local(self, times: np.ndarray):
-        self._times_local_manual = np.asarray(times, dtype=float).reshape(-1)
+    @times_global.setter
+    def times_global(self, times: np.ndarray):
+        self._times_global_manual = np.asarray(times, dtype=float).reshape(-1)
 
-    def reset_times_local(self):
-        if hasattr(self, "_times_local_manual"):
-            delattr(self, "_times_local_manual")
-        self.times_local  # Recompute based on config
+    def reset_times_global(self):
+        if hasattr(self, "_times_global_manual"):
+            delattr(self, "_times_global_manual")
+        self.times_global  # Recompute based on config
 
     @cached_property
     def t_det(self):
-        # Detection time grid with exact spacing dt starting at 0.
+        # Detection time grid starting from the smallest time in times_global >= 0, with spacing dt up to t_det_max.
         dt = self.simulation_config.dt
         t_det_max = self.simulation_config.t_det_max
-        n_steps = int(np.floor(t_det_max / dt)) + 1
-        t_det = dt * np.arange(n_steps, dtype=float)
-        # Ensure it doesn't exceed t_det_max
-        t_det = t_det[t_det <= t_det_max]
+        times_global = self.times_global
+        
+        # Find the smallest time in times_global that is >= 0
+        t0 = times_global[0]
+        k = int(np.ceil(-t0 / dt))
+        x = t0 + k * dt
+        
+        # Ensure x is within times_global bounds
+        if x > t_det_max:
+            # If x > t_det_max, perhaps no detection times, but unlikely
+            return np.array([])
+        
+        # Generate t_det starting from x with step dt, up to <= t_det_max
+        n_steps = int(np.floor((t_det_max - x) / dt)) + 1
+        t_det = x + dt * np.arange(n_steps, dtype=float)
         return t_det

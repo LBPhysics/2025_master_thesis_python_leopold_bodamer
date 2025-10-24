@@ -253,7 +253,7 @@ def create_base_sim_oqs(
     # SOLVER VALIDATION
     # -----------------
     time_cut = -np.inf
-    t_max = sim.times_local[-1]
+    t_max = sim.times_global[-1]
     print("🔍 Validating solver...")
     try:
         from qspectro2d.spectroscopy.solver_check import check_the_solver

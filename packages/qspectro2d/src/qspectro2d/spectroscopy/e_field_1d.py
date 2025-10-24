@@ -35,11 +35,11 @@ __all__ = [
 # --------------------------------------------------------------------------------------
 # Internal helpers
 # --------------------------------------------------------------------------------------
-def slice_states_to_window(res: Result, window: np.ndarray) -> Tuple[List[Qobj], np.ndarray]:
+def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
     """Slice the list of states in `res` to only keep the detection window portion.
 
     Returns:
-        Tuple of (states, times) where times are the corresponding time points.
+        List of states corresponding to the window time points.
     """
     # Assuming res_times is sorted and equally spaced
     times = np.asarray(res.times)
@@ -47,14 +47,23 @@ def slice_states_to_window(res: Result, window: np.ndarray) -> Tuple[List[Qobj],
     # nearest index for each window time
     idxs = np.searchsorted(times, window, side="left")
     idxs = np.clip(idxs, 0, len(times) - 1)
-    # choose nearer of left/right neighbors
-    left = np.maximum(idxs - 1, 0)
-    choose_left = (idxs == len(times)) | (
-        (idxs > 0) & (np.abs(window - times[left]) <= np.abs(times[idxs] - window))
-    )
-    idxs = np.where(choose_left, left, idxs)
-    selected_times = times[idxs]
-    return [res.states[int(i)] for i in idxs], selected_times
+    
+    # For each window time, find the best matching time index
+    selected_idxs = np.zeros_like(idxs)
+    for k, (idx, w) in enumerate(zip(idxs, window)):
+        # Candidates: idx-1, idx, idx+1 (if within bounds)
+        candidates = []
+        if idx > 0:
+            candidates.append(idx - 1)
+        candidates.append(idx)
+        if idx < len(times) - 1:
+            candidates.append(idx + 1)
+        
+        # Choose the candidate with minimal absolute difference
+        best_idx = min(candidates, key=lambda i: abs(times[i] - w))
+        selected_idxs[k] = best_idx
+    
+    return [res.states[int(i)] for i in selected_idxs]
 
 
 def compute_evolution(
@@ -82,7 +91,7 @@ def compute_evolution(
     options.update(solver_options)
     options.setdefault("store_states", True)
 
-    times_array = np.asarray(sim_oqs.times_local)
+    times_array = np.asarray(sim_oqs.times_global)
     pulses = sim_oqs.laser.pulses
     ode_solver = sim_oqs.simulation_config.ode_solver
 
@@ -180,14 +189,13 @@ def compute_polarization_over_window(
     # Ensure we store states to extract polarization
     res: Result = compute_evolution(sim, store_states=store_states)
 
-    window_states, window_times = slice_states_to_window(res, window)
+    window_states = slice_states_to_window(res, window)
 
     if sim.simulation_config.rwa_sl:
         # States are stored in the rotating frame; convert back to lab for polarization
         # Use times relative to the start of the simulation to preserve phase accumulation
-        window_rel_times = window_times - float(res.times[0])
         window_states = from_rotating_frame_list(
-            window_states, window_rel_times, sim.system.n_atoms, sim.laser.carrier_freq_fs
+            window_states, window, sim.system.n_atoms, sim.laser.carrier_freq_fs
         )
 
     # Analytical polarization using positive-frequency part of dipole operator
@@ -281,6 +289,8 @@ def phase_cycle_component(phases, P_grid, lm):
     return P_out * dphi * dphi
 
 
+
+
 # --------------------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------------------
@@ -363,7 +373,7 @@ def parallel_compute_1d_e_comps(
             P_grid,
             lm=lm_tuple,
         )
-        E_comp = 1j * P_comp
+        E_comp = P_comp
         if t_mask is not None:
             E_comp = E_comp * t_mask
         E_list.append(E_comp)
