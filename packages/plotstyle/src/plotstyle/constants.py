@@ -24,7 +24,7 @@ LATEX_FONT_SIZE: int = 11
 FONT_SIZE: int = 11
 FIG_SIZE: Tuple[float, float] = (8, 6)
 DPI: int = 300
-FIG_FORMAT: str = "png"  # change to "svg" if desired
+FIG_FORMAT: str = "svg"  # change to "svg" if desired
 TRANSPARENCY: bool = True
 
 # Palettes
