@@ -162,5 +162,19 @@ def compute_spectra(
             vals = spec_2d_shifted[rows, cols]
             spmat = sp.coo_matrix((vals, (rows, cols)), shape=(n_coh_ext, n_det_ext))
             datas_nu.append(spmat)
-
+            
+    if t_coh is not None:
+        have_r  = any(t.lower().startswith("rephasing") for t in out_types)
+        have_nr = any(t.lower().startswith("nonrephasing") for t in out_types)
+        if have_r and have_nr:
+            # Example: match by index or by separate provided lists;
+            # here we simply combine the first found pair.
+            try:
+                r_idx = next(i for i, t in enumerate(out_types) if t.startswith("rephasing"))
+                nr_idx = next(i for i, t in enumerate(out_types) if t.startswith("nonrephasing"))
+                absorptive = np.real(datas_nu[r_idx] + datas_nu[nr_idx])
+                datas_nu.append(absorptive)
+                out_types.append("absorptive")
+            except StopIteration:
+                pass
     return nu_cohs, nu_dets, datas_nu, out_types
