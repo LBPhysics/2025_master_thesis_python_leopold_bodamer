@@ -7,7 +7,6 @@ component ('real', 'img', 'abs', 'phase').
 
 Examples:
     python plot_datas.py --abs_path '/path/to/final_averaged.npz'
-    python plot_datas.py --abs_path '/path/to/final_averaged.npz' --extend 5
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
 FIGURES_DIR.mkdir(exist_ok=True)
 
 # Section for cropping data
-SECTION = (-3, 3)  # or None #for no cropping
+SECTION = (1.5, 1.7)  # or None #for no cropping
 
 # Extend factor for zero-padding
 EXTEND = 20.0
