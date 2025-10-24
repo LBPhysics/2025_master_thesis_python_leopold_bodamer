@@ -28,7 +28,7 @@ FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
 FIGURES_DIR.mkdir(exist_ok=True)
 
 # Section for cropping data
-SECTION = None  # (1.1, 2)  # or None #for no cropping
+SECTION = (-3, 3)  # or None #for no cropping
 
 # Extend factor for zero-padding
 EXTEND = 20.0
@@ -106,10 +106,13 @@ def main() -> None:
         np.asarray(t_det),
         np.asarray(t_coh) if t_coh is not None else None,
         pad=pad_factor,
+        nu_win_coh=SECTION[1] if SECTION is not None and t_coh is not None else None,
+        nu_win_det=SECTION[1] if SECTION is not None else None,
     )
 
     for idx, st in enumerate(out_types):
         combined_dict["signal_type"] = st
+
         sig_data_freq = datas_nu[idx]
         for comp in components:
             fig = plot_el_field(

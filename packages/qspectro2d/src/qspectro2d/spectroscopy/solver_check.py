@@ -28,14 +28,14 @@ def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
     """Validate simulation input parameters."""
     if not isinstance(sim_oqs.system.psi_ini, Qobj):
         raise TypeError("psi_ini must be a Qobj")
-    if not isinstance(sim_oqs.times_local, np.ndarray):
-        raise TypeError("times_local must be a numpy.ndarray")
+    if not isinstance(sim_oqs.times_global, np.ndarray):
+        raise TypeError("times_global must be a numpy.ndarray")
     if not isinstance(sim_oqs.observable_ops, list) or not all(
         isinstance(op, Qobj) for op in sim_oqs.observable_ops
     ):
         raise TypeError("observable_ops must be a list of Qobj")
-    if len(sim_oqs.times_local) < 2:
-        raise ValueError("times_local must have at least two elements")
+    if len(sim_oqs.times_global) < 2:
+        raise ValueError("times_global must have at least two elements")
 
 
 def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
@@ -186,10 +186,10 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     """
     # print(f"Checking '{sim_oqs.simulation_config.ode_solver}' solver")
     copy_sim_oqs = deepcopy(sim_oqs)
-    t0 = sim_oqs.times_local[0]
-    dt = sim_oqs.times_local[1] - sim_oqs.times_local[0]
-    times = copy_sim_oqs.times_local
-    copy_sim_oqs.times_local = times
+    t0 = sim_oqs.times_global[0]
+    dt = sim_oqs.times_global[1] - sim_oqs.times_global[0]
+    times = copy_sim_oqs.times_global
+    copy_sim_oqs.times_global = times
     copy_sim_oqs.laser.pulse_phases = [1.0] * len(copy_sim_oqs.laser.pulses)
 
     # DETAILED SYSTEM DIAGNOSTICS
