@@ -39,29 +39,29 @@ def _excitation_number_vector(dim: int, n_atoms: int) -> np.ndarray:
 
 # --- Simple unitary-based API -------------------------------------------------------
 def rotating_frame_unitary(ref: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
-    """Return U(t) = exp(+i * omega_laser * N * t) matching the dims of `ref`.
+    """Return U(t) = exp(-i * omega_laser * N * t) matching the dims of `ref`.
 
     - Basis ordering: [0-ex], [1-ex (n_atoms states)], [2-ex (remainder)].
-    - ρ_RWA(t) = U†(t) ρ_lab(t) U(t)
-    - ρ_lab(t) = U(t) ρ_RWA(t) U†(t)
+    - ρ_RWA(t) = U(t) ρ_lab(t) U†(t)
+    - ρ_lab(t) = U†(t) ρ_RWA(t) U(t)
     """
     dim = ref.shape[0]
     n = _excitation_number_vector(dim, n_atoms)
-    phases = np.exp(+1j * omega_laser * t * n)
+    phases = np.exp(-1j * omega_laser * t * n)
     U_full = np.diag(phases)
     return Qobj(U_full, dims=ref.dims)
 
 
 def to_rotating_frame_op(rho_lab: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
-    """Compute ρ_RWA(t) = U†(t) ρ_lab(t) U(t)."""
+    """Compute ρ_RWA(t) = U(t) ρ_lab(t) U†(t)."""
     U = rotating_frame_unitary(rho_lab, t, n_atoms, omega_laser)
-    return U.dag() * rho_lab * U
+    return U * rho_lab * U.dag()
 
 
 def from_rotating_frame_op(rho_rot: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
-    """Compute ρ_lab(t) = U(t) ρ_RWA(t) U†(t)."""
+    """Compute ρ_lab(t) = U†(t) ρ_RWA(t) U(t)."""
     U = rotating_frame_unitary(rho_rot, t, n_atoms, omega_laser)
-    return U * rho_rot * U.dag()
+    return U.dag() * rho_rot * U
 
 
 def to_rotating_frame_list(

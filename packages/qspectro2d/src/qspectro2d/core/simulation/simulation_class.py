@@ -205,17 +205,17 @@ class SimulationModuleOQS:
         dt = self.simulation_config.dt
         t_det_max = self.simulation_config.t_det_max
         times_global = self.times_global
-        
+
         # Find the smallest time in times_global that is >= 0
         t0 = times_global[0]
         k = int(np.ceil(-t0 / dt))
         x = t0 + k * dt
-        
+
         # Ensure x is within times_global bounds
         if x > t_det_max:
             # If x > t_det_max, perhaps no detection times, but unlikely
             return np.array([])
-        
+
         # Generate t_det starting from x with step dt, up to <= t_det_max
         n_steps = int(np.floor((t_det_max - x) / dt)) + 1
         t_det = x + dt * np.arange(n_steps, dtype=float)

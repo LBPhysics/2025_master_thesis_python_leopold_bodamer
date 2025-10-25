@@ -17,6 +17,7 @@ dependencies:
   # Conda packages (when available, prefer conda over pip)
   - numpy>=1.20,<3.0  # Compatible with matplotlib 3.10+
   - matplotlib>=3.10    # Required for NumPy 2.x compatibility
+  - scipy
   - qutip>=5.2
   - mpmath
   - psutil>=5.8
