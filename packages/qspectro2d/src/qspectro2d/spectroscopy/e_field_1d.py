@@ -47,7 +47,7 @@ def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
     # nearest index for each window time
     idxs = np.searchsorted(times, window, side="left")
     idxs = np.clip(idxs, 0, len(times) - 1)
-    
+
     # For each window time, find the best matching time index
     selected_idxs = np.zeros_like(idxs)
     for k, (idx, w) in enumerate(zip(idxs, window)):
@@ -58,11 +58,11 @@ def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
         candidates.append(idx)
         if idx < len(times) - 1:
             candidates.append(idx + 1)
-        
+
         # Choose the candidate with minimal absolute difference
         best_idx = min(candidates, key=lambda i: abs(times[i] - w))
         selected_idxs[k] = best_idx
-    
+
     return [res.states[int(i)] for i in selected_idxs]
 
 
@@ -289,8 +289,6 @@ def phase_cycle_component(phases, P_grid, lm):
     return P_out * dphi * dphi
 
 
-
-
 # --------------------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------------------
@@ -373,7 +371,7 @@ def parallel_compute_1d_e_comps(
             P_grid,
             lm=lm_tuple,
         )
-        E_comp = P_comp
+        E_comp = 1j * P_comp
         if t_mask is not None:
             E_comp = E_comp * t_mask
         E_list.append(E_comp)
