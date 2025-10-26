@@ -25,9 +25,9 @@ def complex_polarization(
         return _single_qobj__complex_pol(dipole_op, state)
     if isinstance(state, list):
         if len(state) == 0:
-            return np.array([], dtype=np.complex64)
+            return np.array([], dtype=np.complex128)
         return np.array(
-            [_single_qobj__complex_pol(dipole_op, s) for s in state], dtype=np.complex64
+            [_single_qobj__complex_pol(dipole_op, s) for s in state], dtype=np.complex128
         )
     raise TypeError(f"State must be Qobj or list[Qobj], got {type(state)}")
 
