@@ -18,7 +18,6 @@ from typing import Any, Iterable
 import numpy as np
 
 from calc_datas import pick_config_yaml
-from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import (
     save_run_artifact,
@@ -111,10 +110,6 @@ def main() -> None:
     data_dir = data_base_path.parent
     prefix = data_base_path.name
 
-    sim = load_simulation(
-        config_path, validate=True
-    )  # To really get the new max_workers on the hpc
-
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")
     print(f"Config: {config_path}")
@@ -136,14 +131,6 @@ def main() -> None:
         )
     n_inhom, n_atoms = samples.shape
 
-    base_freqs = np.asarray(sim.system.frequencies_cm, dtype=float)
-    if base_freqs.size != n_atoms:
-        raise ValueError(
-            "Mismatch between sampled frequencies and system frequencies: "
-            f"sample columns = {n_atoms}, system sites = {base_freqs.size}"
-        )
-
-    # OKE UP TO HERE
     samples_target = data_dir / f"{prefix}_samples.npy"
     if not samples_target.exists():
         shutil.copy2(samples_path, samples_target)
@@ -153,7 +140,7 @@ def main() -> None:
     if not combos_target.exists():
         shutil.copy2(combos_path, combos_target)
 
-    signal_types = sim.simulation_config.signal_types
+    signal_types = job_metadata["signal_types"]
 
     t_start = time.time()
     saved_paths: list[str] = []

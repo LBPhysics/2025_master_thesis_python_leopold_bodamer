@@ -111,6 +111,7 @@ def main() -> None:
 
     for idx, st in enumerate(out_types):
         combined_dict["signal_type"] = st
+        print(f"Plotting signal: {st}")
 
         sig_data_freq = datas_nu[idx]
         for comp in components:

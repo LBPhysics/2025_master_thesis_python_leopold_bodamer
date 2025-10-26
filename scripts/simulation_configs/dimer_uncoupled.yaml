@@ -19,9 +19,8 @@ bath:
 
 config:
   solver: Paper_eqs
-  signal_types: [rephasing]
+  signal_types: [rephasing, nonrephasing]
 
-window:
   t_det_max: 50.0
   t_wait: 0.0
   t_coh_max: 30.0

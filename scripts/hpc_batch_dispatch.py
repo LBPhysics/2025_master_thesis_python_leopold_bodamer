@@ -23,7 +23,11 @@ from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.file_naming import generate_unique_data_base
-from qspectro2d.core.simulation.time_axes import compute_times_global, compute_t_coh, compute_t_det
+from qspectro2d.core.simulation.time_axes import (
+    compute_times_global,
+    compute_t_coh,
+    compute_t_det,
+)
 
 from calc_datas import (
     SCRIPTS_DIR,
@@ -43,17 +47,18 @@ def _set_random_seed(seed: int | None) -> None:
 
 
 def estimate_slurm_resources(
+    n_times: int,  # number of global times -> how many time steps
     n_inhom: int,
-    n_times: int,
+    n_t_coh: int,  # number of coherence times -> how many combinations
     n_batches: int,
     *,
     workers: int = 1,
     N_dim: int,
     solver: str = "ME",
     mem_safety: float = 100.0,
-    base_mb: int = 10,
-    time_safety: float = 2.2,
-    base_time: float = 0.1,
+    base_mb: int = 100,
+    time_safety: float = 1,
+    base_time: float = 60.0,
 ) -> tuple[str, str]:
     """
     Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
@@ -66,19 +71,23 @@ def estimate_slurm_resources(
 
     # ---------------------- TIME ------------------------
     # Number of total independent simulations
-    combos_total = n_inhom * n_times
+    combos_total = n_inhom * n_t_coh
     combos_per_batch = max(1, combos_total // max(1, n_batches))
 
     # Empirical baseline: base_time s per combo for ME, 1 atom, n_times=1000, N=2
-    base_t = base_time
+    t0 = 0.015
     if solver == "BR":
-        base_t *= 4.0  # slower solver
+        t0 *= 5.0  # slower solver
+    base_t = t0
 
     # scaling ~ n_times * N^2  (sparse regime)
-    time_per_combo = base_t * (n_times / 1000) * ((N_dim) ** 2)
+    time_per_combo = base_t * (n_t_coh / 1000) * ((N_dim) ** 2)
 
     # total time for one batch (divide by workers)
     total_seconds = time_per_combo * combos_per_batch * time_safety
+
+    # Ensure minimum time of 1 minute to avoid SLURM rejection
+    total_seconds = max(total_seconds, base_time)
 
     # convert to HH:MM:SS, clip to max 24h if needed
     h = int(total_seconds // 3600)
@@ -230,6 +239,8 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     # Use SimulationModuleOQS.t_coh for coherence axis (handles 0d/1d/2d)
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
+    times_global = np.asarray(compute_times_global(sim.simulation_config), dtype=float)
+
     combinations = build_combinations(t_coh_values, n_inhom)
 
     print(
@@ -238,13 +249,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
 
     # Estimate RAM and TIME based on batch size
-    len_coh_times = len(t_coh_values)
-    # Set sim to max t_coh for accurate time estimation
     requested_mem, requested_time = estimate_slurm_resources(
-        n_inhom,
-        len_coh_times,
-        args.n_batches,
-        workers=sim.simulation_config.max_workers,
+        n_times=len(times_global),
+        n_inhom=n_inhom,
+        n_t_coh=t_coh_values.size,
+        n_batches=args.n_batches,
+        workers=16,  # BECAUSE I set every batch to use 16 CPUs
         N_dim=sim.system.dimension,
         solver=sim.simulation_config.ode_solver,
     )

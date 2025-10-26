@@ -59,142 +59,6 @@ def _get_section(cfg: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     return sec if isinstance(sec, Mapping) else {}
 
 
-def load_simulation(
-    path: Optional[str | Path] = None,
-    validate: bool = True,
-) -> SimulationModuleOQS:
-    """Create a `SimulationModuleOQS` directly from a YAML file or defaults.
-
-    Overrides (if provided) take precedence over YAML/defaults and are applied
-    BEFORE constructing the laser sequence & simulation config so that all
-    derived internal time arrays are consistent. This avoids the need to
-    rebuild the `SimulationModuleOQS` later and prevents mismatches (e.g.
-    insufficient evolution states) when large coherence pulse_delays were first
-    baked in and then changed afterwards.
-
-    Parameters
-    ----------
-    path: str | Path | None
-        YAML configuration file. If None, defaults from
-        `default_simulation_params` are used.
-    validate: bool
-        If True (default) run physics validation via `default_simulation_params.validate`.
-    t_coh_override, t_wait_override, t_det_max_override, dt_override, ode_solver_override:
-        Optional scalar overrides for timing / solver settings.
-    """
-    # Load components
-    sim_config = load_simulation_config(path)
-    atomic_system = load_simulation_atomic_system(path)
-    bath_env = load_simulation_bath(path)
-
-    # For laser, use t_coh_max from config
-    laser_sequence = load_simulation_laser(path, sim_config.t_coh_max)
-
-    # -----------------
-    # VALIDATION (physics-level) BEFORE FINAL ASSEMBLY
-    # -----------------
-    if validate:
-        # Extract values for validation
-        cfg_root = {} if path is None else _read_yaml(Path(path))
-        atomic_cfg = _get_section(cfg_root, "atomic")
-        laser_cfg = _get_section(cfg_root, "laser")
-        pulses_cfg = _get_section(cfg_root, "pulses")
-        window_cfg = _get_section(cfg_root, "window")
-        bath_cfg = _get_section(cfg_root, "bath")
-        config_cfg = _get_section(cfg_root, "config")
-
-        params = {
-            "solver": sim_config.ode_solver,
-            "bath_type": str(bath_cfg.get("bath_type", dflt.BATH_TYPE)),
-            "frequencies_cm": atomic_system.frequencies_cm,
-            "n_atoms": atomic_system.n_atoms,
-            "dip_moments": atomic_system.dip_moments,
-            "temperature": float(bath_cfg.get("temperature", dflt.BATH_TEMP)),
-            "cutoff": float(bath_cfg.get("cutoff", dflt.BATH_CUTOFF)),
-            "coupling": float(bath_cfg.get("coupling", dflt.BATH_COUPLING)),
-            "n_phases": sim_config.n_phases,
-            "max_excitation": atomic_system.max_excitation,
-            "n_chains": atomic_system.n_chains,
-            "relative_e0s": list(pulses_cfg.get("relative_e0s", dflt.RELATIVE_E0S)),
-            "rwa_sl": sim_config.rwa_sl,
-            "carrier_freq_cm": float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM)),
-            "signal_types": sim_config.signal_types,
-            "t_det_max": sim_config.t_det_max,
-            "dt": sim_config.dt,
-            "t_coh_max": sim_config.t_coh_max,
-            "t_wait": sim_config.t_wait,
-            "n_inhomogen": sim_config.n_inhomogen,
-            # Newly added for extended validation
-            "pulse_fwhm_fs": sim_config.pulse_fwhm_fs,
-            "base_amplitude": float(laser_cfg.get("base_amplitude", dflt.BASE_AMPLITUDE)),
-            "envelope_type": str(laser_cfg.get("envelope_type", dflt.ENVELOPE_TYPE)),
-            "coupling_cm": atomic_system.coupling_cm,
-            "delta_inhomogen_cm": atomic_system.delta_inhomogen_cm,
-            "sim_type": sim_config.sim_type,
-            "max_workers": sim_config.max_workers,
-        }
-        dflt.validate(params)
-
-    # -----------------
-    # ASSEMBLE
-    # -----------------
-    simulation = SimulationModuleOQS(
-        simulation_config=sim_config,
-        system=atomic_system,
-        laser=laser_sequence,
-        bath=bath_env,
-    )
-
-    return simulation
-
-
-def create_base_sim_oqs(
-    config_path: Path | None = None,
-) -> tuple[SimulationModuleOQS, float]:
-    """Create base simulation instance and perform solver validation once.
-
-    Parameters:
-        config_path: Optional path to YAML config (None -> defaults)
-
-    Returns:
-        tuple: (SimulationModuleOQS instance, time_cut from solver validation)
-    """
-    # Gather overrides from args once and pass into loader (done earlier now)
-    sim = load_simulation(
-        config_path,
-        validate=True,
-    )
-
-    print("🔧 Base simulation created from config (overrides applied early).")
-
-    # -----------------
-    # SOLVER VALIDATION
-    # -----------------
-    time_cut = -np.inf
-    t_max = sim.simulation_config.t_det_max
-    print("🔍 Validating solver...")
-    try:
-        from qspectro2d.spectroscopy.solver_check import check_the_solver
-
-        _, time_cut = check_the_solver(sim)
-        print("#" * 60)
-        print(
-            f"✅ Solver validation worked: Evolution becomes unphysical at "
-            f"({time_cut / t_max:.2f} × t_max)"
-        )
-    except Exception as e:
-        print(f"⚠️  WARNING: Solver validation failed: {e}")
-
-    if time_cut < t_max:
-        print(
-            f"⚠️  WARNING: Time cut {time_cut} is less than the last time point "
-            f"{t_max}. This may affect the simulation results.",
-            flush=True,
-        )
-
-    return sim, time_cut
-
-
 def load_simulation_config(
     path: Optional[str | Path] = None,
 ) -> SimulationConfig:
@@ -208,15 +72,14 @@ def load_simulation_config(
     # Extract sections
     atomic_cfg = _get_section(cfg_root, "atomic")
     laser_cfg = _get_section(cfg_root, "laser")
-    window_cfg = _get_section(cfg_root, "window")
     config_cfg = _get_section(cfg_root, "config")
 
     # Extract values
     pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
-    t_det_max = float(window_cfg.get("t_det_max", dflt.T_DET_MAX))
-    t_coh_max = float(window_cfg.get("t_coh_max", dflt.T_COH_MAX))
-    t_wait = float(window_cfg.get("t_wait", dflt.T_WAIT))
-    dt = float(window_cfg.get("dt", dflt.DT))
+    t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
+    t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
+    t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
+    dt = float(config_cfg.get("dt", dflt.DT))
     n_phases = int(config_cfg.get("n_phases", dflt.N_PHASES))
     n_inhomogen = int(atomic_cfg.get("n_inhomogen", dflt.N_INHOMOGEN))
     ode_solver = str(config_cfg.get("solver", dflt.ODE_SOLVER))
@@ -243,9 +106,8 @@ def load_simulation_config(
 
 def load_simulation_laser(
     path: Optional[str | Path] = None,
-    t_coh: float = 0.0,
 ) -> LaserPulseSequence:
-    """Load LaserPulseSequence from a YAML file or defaults, with delays set to t_coh."""
+    """Load LaserPulseSequence from a YAML file or defaults, with delays set to t_coh_max."""
     # LOAD / FALLBACK
     if path is None:
         cfg_root = {}
@@ -254,19 +116,19 @@ def load_simulation_laser(
 
     # Extract sections
     laser_cfg = _get_section(cfg_root, "laser")
-    pulses_cfg = _get_section(cfg_root, "pulses")
-    window_cfg = _get_section(cfg_root, "window")
+    config_cfg = _get_section(cfg_root, "config")
 
     # Extract values
     pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
     base_amp = float(laser_cfg.get("base_amplitude", dflt.BASE_AMPLITUDE))
     envelope = str(laser_cfg.get("envelope_type", dflt.ENVELOPE_TYPE))
     carrier_cm = float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM))
-    relative_e0s = list(pulses_cfg.get("relative_e0s", dflt.RELATIVE_E0S))
-    t_wait = float(window_cfg.get("t_wait", dflt.T_WAIT))
+    relative_e0s = dflt.RELATIVE_E0S
+    t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
+    t_coh_max = float(config_cfg.get("t_coh_max", dflt.T_COH_MAX))
 
     # Create laser with initial delays
-    pulse_delays = [t_coh, t_wait]  # -> 3 pulses
+    pulse_delays = [t_coh_max, t_wait]  # -> 3 pulses
     phases = [0.0, 0.0, 0.0]  # last phase is detection phase
 
     laser = LaserPulseSequence.from_pulse_delays(
@@ -343,6 +205,131 @@ def load_simulation_bath(
     )
 
     return bath_env
+
+
+def load_simulation(
+    path: Optional[str | Path] = None,
+    validate: bool = False,
+) -> SimulationModuleOQS:
+    """Create a `SimulationModuleOQS` directly from a YAML file or defaults.
+
+    Overrides (if provided) take precedence over YAML/defaults and are applied
+    BEFORE constructing the laser sequence & simulation config so that all
+    derived internal time arrays are consistent. This avoids the need to
+    rebuild the `SimulationModuleOQS` later and prevents mismatches (e.g.
+    insufficient evolution states) when large coherence pulse_delays were first
+    baked in and then changed afterwards.
+
+    Parameters
+    ----------
+    path: str | Path | None
+        YAML configuration file. If None, defaults from
+        `default_simulation_params` are used.
+    validate: bool
+        If True (default) run physics validation via `default_simulation_params.validate`.
+    t_coh_override, t_wait_override, t_det_max_override, dt_override, ode_solver_override:
+        Optional scalar overrides for timing / solver settings.
+    """
+    # Load components
+    sim_config = load_simulation_config(path)
+    atomic_system = load_simulation_atomic_system(path)
+    bath_env = load_simulation_bath(path)
+    laser_sequence = load_simulation_laser(path)
+
+    # -----------------
+    # VALIDATION (physics-level) BEFORE FINAL ASSEMBLY
+    # -----------------
+    if validate:
+        params = {
+            "solver": sim_config.ode_solver,
+            "bath_type": bath_env.tag,
+            "frequencies_cm": atomic_system.frequencies_cm,
+            "n_atoms": atomic_system.n_atoms,
+            "dip_moments": atomic_system.dip_moments,
+            "temperature": bath_env.T,
+            "cutoff": bath_env.wc,
+            "coupling": bath_env.alpha,
+            "n_phases": sim_config.n_phases,
+            "max_excitation": atomic_system.max_excitation,
+            "n_chains": atomic_system.n_chains,
+            "relative_e0s": dflt.RELATIVE_E0S,
+            "rwa_sl": sim_config.rwa_sl,
+            "carrier_freq_cm": laser_sequence.carrier_freq_cm,
+            "signal_types": sim_config.signal_types,
+            "t_det_max": sim_config.t_det_max,
+            "dt": sim_config.dt,
+            "t_coh_max": sim_config.t_coh_max,
+            "t_wait": sim_config.t_wait,
+            "n_inhomogen": sim_config.n_inhomogen,
+            # Newly added for extended validation
+            "pulse_fwhm_fs": sim_config.pulse_fwhm_fs,
+            "base_amplitude": laser_sequence.E0,
+            "envelope_type": laser_sequence.carrier_type,
+            "coupling_cm": atomic_system.coupling_cm,
+            "delta_inhomogen_cm": atomic_system.delta_inhomogen_cm,
+            "sim_type": sim_config.sim_type,
+            "max_workers": sim_config.max_workers,
+        }
+        dflt.validate(params)
+
+    # -----------------
+    # ASSEMBLE
+    # -----------------
+    simulation = SimulationModuleOQS(
+        simulation_config=sim_config,
+        system=atomic_system,
+        laser=laser_sequence,
+        bath=bath_env,
+    )
+
+    return simulation
+
+
+def create_base_sim_oqs(
+    config_path: Path | None = None,
+) -> tuple[SimulationModuleOQS, float]:
+    """Create base simulation instance and perform solver validation once.
+
+    Parameters:
+        config_path: Optional path to YAML config (None -> defaults)
+
+    Returns:
+        tuple: (SimulationModuleOQS instance, time_cut from solver validation)
+    """
+    # Gather overrides from args once and pass into loader (done earlier now)
+    sim = load_simulation(
+        config_path,
+        validate=True,
+    )
+
+    print("🔧 Base simulation created from config (overrides applied early).")
+
+    # -----------------
+    # SOLVER VALIDATION
+    # -----------------
+    time_cut = -np.inf
+    t_max = sim.simulation_config.t_det_max
+    print("🔍 Validating solver...")
+    try:
+        from qspectro2d.spectroscopy.solver_check import check_the_solver
+
+        _, time_cut = check_the_solver(sim)
+        print("#" * 60)
+        print(
+            f"✅ Solver validation worked: Evolution becomes unphysical at "
+            f"({time_cut / t_max:.2f} × t_max)"
+        )
+    except Exception as e:
+        print(f"⚠️  WARNING: Solver validation failed: {e}")
+
+    if time_cut < t_max:
+        print(
+            f"⚠️  WARNING: Time cut {time_cut} is less than the last time point "
+            f"{t_max}. This may affect the simulation results.",
+            flush=True,
+        )
+
+    return sim, time_cut
 
 
 def get_max_workers() -> int:
