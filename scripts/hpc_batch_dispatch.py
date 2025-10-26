@@ -23,12 +23,12 @@ from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.file_naming import generate_unique_data_base
+from qspectro2d.core.simulation.time_axes import compute_times_global, compute_t_coh, compute_t_det
 
 from calc_datas import (
     SCRIPTS_DIR,
     DATA_DIR,
     pick_config_yaml,
-    coherence_axis,
     build_combinations,
     write_json,
 )
@@ -42,41 +42,52 @@ def _set_random_seed(seed: int | None) -> None:
         np.random.seed(seed)
 
 
-def estimate_slurm_resources(sim, n_inhom: int, n_times: int, n_batches: int) -> tuple[str, str]:
-    """Estimate SLURM memory and time requirements based on workload."""
-    combos = n_times * n_inhom
-    num_combos_per_batch = combos // n_batches
-    workers = sim.simulation_config.max_workers  # should be 16
-    # Estimate memory: base 1G + factor for data size (complex64 = 8 bytes)
-    len_t = len(
-        sim.times_global
-    )  # NOTE actually it saves only a portion of this len: t_det up to time_cut
-    mem_mb = 2000 + 10 * (workers * len_t * 8) / (1024**2)  # 10 is a safety factor
-    requested_mem_mb = int(math.ceil(mem_mb))
-    requested_mem = f"{requested_mem_mb}M"
+def estimate_slurm_resources(
+    n_inhom: int,
+    n_times: int,
+    n_batches: int,
+    *,
+    workers: int = 1,
+    N_dim: int,
+    solver: str = "ME",
+    mem_safety: float = 100.0,
+    base_mb: int = 10,
+    time_safety: float = 2.2,
+    base_time: float = 0.1,
+) -> tuple[str, str]:
+    """
+    Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
+    """
+    # ---------------------- MEMORY ----------------------
+    bytes_per_solver = n_times * (N_dim**2) * 16
+    total_bytes = mem_safety * workers * bytes_per_solver
+    mem_mb = base_mb + total_bytes / (1024**2)
+    requested_mem = f"{int(math.ceil(mem_mb))}M"
 
-    # Estimate time: scale based on solver, n_atoms, len_coh_times
-    solver = sim.simulation_config.ode_solver
-    n_atoms = sim.system.n_atoms
-    base_time_per_combo_seconds = 1  # normalized from example: 1 combo in 3s for ME with 1 atom, 1 t_coh value for len_t = 1000
+    # ---------------------- TIME ------------------------
+    # Number of total independent simulations
+    combos_total = n_inhom * n_times
+    combos_per_batch = max(1, combos_total // max(1, n_batches))
+
+    # Empirical baseline: base_time s per combo for ME, 1 atom, n_times=1000, N=2
+    base_t = base_time
     if solver == "BR":
-        base_time_per_combo_seconds = 2.5  # for len_t=1000, 1 combo, 1 atom, 1 t_coh
-    base_time_per_combo_seconds *= (
-        n_atoms**2
-    )  # quadratic scaling with n_atoms (matrix diagonalization)
-    base_time_per_combo_seconds *= len_t / 1000  # scaling with detection time length
-    time_seconds = num_combos_per_batch * base_time_per_combo_seconds
-    time_hours = max(0.1, time_seconds / 3600)  # minimum ~36 seconds for safety
-    if time_hours < 1:
-        minutes = int(time_hours * 60)
-        requested_time = f"00:{minutes:02d}:00"
-    else:
-        days = int(time_hours) // 24
-        hours = int(time_hours) % 24
-        if days > 0:
-            requested_time = f"{days}-{hours:02d}:00:00"
-        else:
-            requested_time = f"{hours:02d}:00:00"
+        base_t *= 4.0  # slower solver
+
+    # scaling ~ n_times * N^2  (sparse regime)
+    time_per_combo = base_t * (n_times / 1000) * ((N_dim) ** 2)
+
+    # total time for one batch (divide by workers)
+    total_seconds = time_per_combo * combos_per_batch * time_safety
+
+    # convert to HH:MM:SS, clip to max 24h if needed
+    h = int(total_seconds // 3600)
+    m = int((total_seconds % 3600) // 60)
+    s = int(total_seconds % 60)
+    # Cap at 3 days (72 hours) to fit GPGPU partition limit
+    if h >= 72:
+        h, m, s = 72, 0, 0
+    requested_time = f"{h:02d}:{m:02d}:{s:02d}"
 
     return requested_mem, requested_time
 
@@ -112,7 +123,7 @@ def _render_slurm_script(
 #SBATCH --cpus-per-task=16
 #SBATCH --mem={requested_mem}
 #SBATCH --time={requested_time}
-#SBATCH --partition=GPGPU
+#SBATCH --partition=GPGPU,metis
 
 set -euo pipefail
 
@@ -159,7 +170,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--sim_type",
-        choices=["1d", "2d"],
+        choices=["0d", "1d", "2d"],
         default="2d",
         help="Simulation dimensionality",
     )
@@ -198,6 +209,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     _, time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
+    sim.simulation_config.sim_type = args.sim_type  # to ensure t_coh_axis has the right behavior
+
     data_base_path = generate_unique_data_base(
         sim.system, sim.simulation_config, data_root=DATA_DIR
     )
@@ -215,7 +228,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         mu=base_freqs,
     )
 
-    t_coh_values = coherence_axis(sim, args.sim_type)
+    # Use SimulationModuleOQS.t_coh for coherence axis (handles 0d/1d/2d)
+    t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
     combinations = build_combinations(t_coh_values, n_inhom)
 
     print(
@@ -226,9 +240,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     # Estimate RAM and TIME based on batch size
     len_coh_times = len(t_coh_values)
     # Set sim to max t_coh for accurate time estimation
-    sim.update_delays(t_coh=max(t_coh_values))
     requested_mem, requested_time = estimate_slurm_resources(
-        sim, n_inhom, len_coh_times, args.n_batches
+        n_inhom,
+        len_coh_times,
+        args.n_batches,
+        workers=sim.simulation_config.max_workers,
+        N_dim=sim.system.dimension,
+        solver=sim.simulation_config.ode_solver,
     )
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -243,6 +261,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     job_metadata = {
         "sim_type": args.sim_type,
+        "signal_types": sim.simulation_config.signal_types,
+        "t_det": compute_t_det(sim.simulation_config).tolist(),
+        "t_coh": t_coh_values.tolist(),
         "n_inhom": n_inhom,
         "n_t_coh": int(t_coh_values.size),
         "n_combinations": len(combinations),

@@ -34,7 +34,7 @@ TRACE_TOLERANCE = 1e-6
 SUPPORTED_SOLVERS = ["ME", "BR", "Paper_eqs"]
 SUPPORTED_BATHS = ["ohmic"]  # , "dl" NOTE: not yet implemented
 SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
-SUPPORTED_SIM_TYPES = ["1d", "2d"]
+SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
 
 
 # === ATOMIC SYSTEM DEFAULTS ===
@@ -76,9 +76,9 @@ BATH_COUPLING = 1e-4  # * frequencies[0]
 
 # === 2D SIMULATION DEFAULTS ===
 T_DET_MAX = 20.0  # Maximum detection time in fs
+T_COH_MAX = T_DET_MAX  # Coherence time in fs
 DT = 0.1  # Spacing between t_coh, and of also t_det values in fs
 # -> very good resolution
-T_COH = 0.0  # Coherence time in fs
 T_WAIT = 0.0  # Waiting time in fs
 
 
@@ -112,7 +112,7 @@ def validate(params: dict) -> None:
     # Time/grid parameters
     t_det_max = params.get("t_det_max", T_DET_MAX)
     dt = params.get("dt", DT)
-    t_coh = params.get("t_coh", T_COH)
+    t_coh_max = params.get("t_coh_max", T_COH_MAX)
     t_wait = params.get("t_wait", T_WAIT)
 
     # Sampling and signal types
@@ -136,8 +136,8 @@ def validate(params: dict) -> None:
     # Basic time parameter checks
     if dt <= 0:
         raise ValueError("dt must be > 0")
-    if t_coh < 0:
-        raise ValueError("t_coh must be >= 0")
+    if t_coh_max < 0:
+        raise ValueError("t_coh_max must be >= 0")
     if t_wait < 0:
         raise ValueError("t_wait must be >= 0")
     if t_det_max <= 0:

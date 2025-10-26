@@ -47,7 +47,7 @@ def main() -> None:
     signals = data["signals"]
     t_det = data["t_det"]
     t_coh = data.get("t_coh")
-    if t_coh is not None and t_coh.ndim == 0:
+    if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
         t_coh = None
     system = data["system"]
     sim_config = data["simulation_config"]

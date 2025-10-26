@@ -19,6 +19,7 @@ from qutip import Qobj, Result
 
 # LOCAL IMPORTS
 from ..core.simulation import SimulationModuleOQS
+from ..core.simulation.time_axes import compute_times_global
 from .e_field_1d import compute_evolution
 
 __all__ = ["check_the_solver"]
@@ -28,13 +29,14 @@ def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
     """Validate simulation input parameters."""
     if not isinstance(sim_oqs.system.psi_ini, Qobj):
         raise TypeError("psi_ini must be a Qobj")
-    if not isinstance(sim_oqs.times_global, np.ndarray):
+    times_global = compute_times_global(sim_oqs.simulation_config)
+    if not isinstance(times_global, np.ndarray):
         raise TypeError("times_global must be a numpy.ndarray")
     if not isinstance(sim_oqs.observable_ops, list) or not all(
         isinstance(op, Qobj) for op in sim_oqs.observable_ops
     ):
         raise TypeError("observable_ops must be a list of Qobj")
-    if len(sim_oqs.times_global) < 2:
+    if len(times_global) < 2:
         raise ValueError("times_global must have at least two elements")
 
 
@@ -81,17 +83,8 @@ def _check_density_matrix_properties(
         TRACE_TOLERANCE,
     )
 
-    check_interval = max(1, len(states) // 10)  # Check every 10% of states
-
     for index, state in enumerate(states):
         time = times[index]
-
-        # Sample state analysis
-        # if index % check_interval == 0 or index < 5:
-        #    print(
-        #        f"State {index} (t={time:.3f}): trace={state.tr():.6f}, Hermitian={state.isherm}"
-        #    )
-
         # Check Hermiticity
         if not state.isherm:
             error_messages.append(f"Density matrix is not Hermitian after t = {time}")
@@ -186,10 +179,9 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     """
     # print(f"Checking '{sim_oqs.simulation_config.ode_solver}' solver")
     copy_sim_oqs = deepcopy(sim_oqs)
-    t0 = sim_oqs.times_global[0]
-    dt = sim_oqs.times_global[1] - sim_oqs.times_global[0]
-    times = copy_sim_oqs.times_global
-    copy_sim_oqs.times_global = times
+    times = compute_times_global(sim_oqs.simulation_config)
+    t0 = times[0]
+    dt = times[1] - times[0]
     copy_sim_oqs.laser.pulse_phases = [1.0] * len(copy_sim_oqs.laser.pulses)
 
     # DETAILED SYSTEM DIAGNOSTICS

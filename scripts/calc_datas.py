@@ -29,6 +29,7 @@ from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import save_run_artifact, save_info_file
 from qspectro2d.utils.file_naming import generate_unique_data_base
+from qspectro2d.core.simulation.time_axes import compute_t_det, compute_t_coh
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -89,12 +90,6 @@ class Combination:
         }
 
 
-def coherence_axis(sim, sim_type: str) -> np.ndarray:
-    if sim_type == "1d":
-        return np.array([float(sim.simulation_config.t_coh)], dtype=float)
-    return np.asarray(sim.t_det, dtype=float)
-
-
 def build_combinations(t_coh_values: np.ndarray, n_inhom: int) -> list[Combination]:
     combos: list[Combination] = []
     index = 0
@@ -126,7 +121,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--sim_type",
-        choices=["1d", "2d"],
+        choices=["0d", "1d", "2d"],
         default="2d",
         help="Simulation dimensionality",
     )
@@ -170,10 +165,8 @@ def main() -> None:
         mu=base_freqs,
     )
 
-    t_coh_values = coherence_axis(sim, args.sim_type)
-    # only take half of t_coh_values:
-    # t_coh_values = t_coh_values[: len(t_coh_values) // 2]
-
+    sim.simulation_config.sim_type = args.sim_type  # to ensure t_coh_axis has the right behavior
+    t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
     combinations = build_combinations(t_coh_values, n_inhom)
 
     print(
@@ -183,6 +176,9 @@ def main() -> None:
 
     job_metadata = {
         "sim_type": args.sim_type,
+        "signal_types": sim.simulation_config.signal_types,
+        "t_det": compute_t_det(sim.simulation_config).tolist(),
+        "t_coh": t_coh_values.tolist(),
         "n_inhom": n_inhom,
         "n_t_coh": int(t_coh_values.size),
         "n_combinations": len(combinations),
@@ -214,6 +210,8 @@ def main() -> None:
 
     print(f"Artifacts will be saved to {data_base_path.parent}")
 
+    signal_types = sim.simulation_config.signal_types
+
     t_start = time.time()
     saved_paths: list[str] = []
 
@@ -226,30 +224,29 @@ def main() -> None:
         # Update simulation configuration for this combination
         freq_vector = samples[inhom_idx, :].astype(float)
 
-        sim.update_delays(t_coh=t_coh_val)
-        sim.system.update_frequencies_cm(freq_vector.tolist())
-
         print(
             f"\n--- combo {global_idx + 1} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
         )
 
-        e_components = parallel_compute_1d_e_comps(sim_oqs=sim, time_cut=time_cut)
+        e_components = parallel_compute_1d_e_comps(
+            config_path=str(config_path),
+            t_coh=t_coh_val,
+            freq_vector=freq_vector.tolist(),
+            time_cut=time_cut,
+        )
 
         metadata_combo = {
-            "signal_types": sim.simulation_config.signal_types,
+            "signal_types": signal_types,
             "t_coh_value": t_coh_val,
             "t_index": t_idx,
             "combination_index": global_idx,
-            "sim_type": args.sim_type,
+            "sim_type": "1d" if args.sim_type == "2d" else args.sim_type,
             "sample_index": inhom_idx,
         }
 
-        t_det_axis = sim.t_det
-
         path = save_run_artifact(
             signal_arrays=e_components,
-            t_det=t_det_axis,
             metadata=metadata_combo,
             frequency_sample_cm=freq_vector,
             data_dir=data_base_path.parent,

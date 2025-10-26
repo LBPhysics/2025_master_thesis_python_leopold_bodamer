@@ -104,15 +104,6 @@ class SimulationModuleOQS:
         H_total = self.H0_diagonalized + self.H_int_sl(t)
         return H_total
 
-    def time_dep_eigenstates(self, t: float) -> Tuple[np.ndarray, np.ndarray]:
-        """Eigenvalues & eigenstates."""
-        return self.H_total_t(t).eigenstates()
-
-    def time_dep_omega_ij(self, i: int, j: int, t: float) -> float:
-        """Return energy difference (frequency) between instantaneous eigenstates i and j in fs^-1."""
-        Es, _ = self.time_dep_eigenstates(t)
-        return Es[i] - Es[j]
-
     # --- Observables ---------------------------------------------------------------
     @cached_property
     def observable_ops(self) -> List[Qobj]:
@@ -159,64 +150,19 @@ class SimulationModuleOQS:
         return strs
 
     # --- Time grids ----------------------------------------------------------------
-    def update_delays(self, t_coh: float = None, t_wait: float = None) -> None:
-        """Update laser pulse delays from current simulation config.
-        If t_coh or t_wait are not provided, keep existing values."""
+    def update_delays(self, t_coh: float, t_wait: float | None = None) -> None:
+        """Update laser pulse delays.
+        t_coh must be provided. Optionally provide a new t_wait;
+        """
+        # Enforce explicit t_coh (no None allowed)
+        if t_coh is None:
+            raise TypeError("t_coh must be provided to update_delays and cannot be None")
 
-        if t_coh is not None:
-            self.simulation_config.t_coh = t_coh
-        else:
-            t_coh = self.simulation_config.t_coh
-
+        # Update wait time if provided, otherwise keep current
         if t_wait is not None:
-            self.simulation_config.t_wait = t_wait
+            self.simulation_config.t_wait = float(t_wait)
         else:
-            t_wait = self.simulation_config.t_wait
+            t_wait = float(self.simulation_config.t_wait)
 
-        self.laser.pulse_delays = [t_coh, t_wait]
-        self.reset_times_global()
-
-    @property
-    def times_global(self):
-        if hasattr(self, "_times_global_manual"):
-            return self._times_global_manual
-
-        cfg = self.simulation_config
-        t0 = -2 * self.laser.carrier_fwhm_fs - cfg.t_coh - cfg.t_wait
-        dt = cfg.dt
-        # Compute number of steps to cover from t0 to t_det_max with step dt
-        n_steps = int(np.floor((cfg.t_det_max - t0) / dt)) + 1
-        # Generate time grid: [t0, t0 + dt, ..., t_det_max]
-        times = t0 + dt * np.arange(n_steps, dtype=float)
-        return times
-
-    @times_global.setter
-    def times_global(self, times: np.ndarray):
-        self._times_global_manual = np.asarray(times, dtype=float).reshape(-1)
-
-    def reset_times_global(self):
-        if hasattr(self, "_times_global_manual"):
-            delattr(self, "_times_global_manual")
-        self.times_global  # Recompute based on config
-
-    @cached_property
-    def t_det(self):
-        # Detection time grid starting from the smallest time in times_global >= 0, with spacing dt up to t_det_max.
-        dt = self.simulation_config.dt
-        t_det_max = self.simulation_config.t_det_max
-        times_global = self.times_global
-        
-        # Find the smallest time in times_global that is >= 0
-        t0 = times_global[0]
-        k = int(np.ceil(-t0 / dt))
-        x = t0 + k * dt
-        
-        # Ensure x is within times_global bounds
-        if x > t_det_max:
-            # If x > t_det_max, perhaps no detection times, but unlikely
-            return np.array([])
-        
-        # Generate t_det starting from x with step dt, up to <= t_det_max
-        n_steps = int(np.floor((t_det_max - x) / dt)) + 1
-        t_det = x + dt * np.arange(n_steps, dtype=float)
-        return t_det
+        # Apply to laser pulse delays and invalidate cached time properties
+        self.laser.pulse_delays = [float(t_coh), float(t_wait)]

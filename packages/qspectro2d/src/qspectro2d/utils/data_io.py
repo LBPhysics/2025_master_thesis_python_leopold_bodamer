@@ -21,8 +21,6 @@ if TYPE_CHECKING:
 
 _SIGNAL_PREFIX = "signal::"
 _META_KEY = "metadata_json"
-_T_DET_KEY = "t_det"
-_T_COH_KEY = "t_coh"
 _SAMPLE_KEY = "frequency_sample_cm"
 
 
@@ -55,12 +53,10 @@ def _info_path(directory: Path, prefix: str) -> Path:
 def save_run_artifact(
     *,
     signal_arrays: Sequence[np.ndarray],
-    t_det: np.ndarray,
     metadata: Mapping[str, Any],
     frequency_sample_cm: Sequence[float],
     data_dir: Path | str,
     filename: str,
-    t_coh: np.ndarray | None = None,
 ) -> Path:
     """Persist a single run (t_coh × sample) as a compressed ``.npz`` artifact."""
 
@@ -72,13 +68,9 @@ def save_run_artifact(
         raise ValueError("signal_types metadata must match number of signal arrays")
 
     payload: dict[str, Any] = {
-        _T_DET_KEY: np.asarray(t_det, dtype=float),
         _SAMPLE_KEY: np.asarray(frequency_sample_cm, dtype=float),
         _META_KEY: np.array(_json_dumps({**metadata}), dtype=np.str_),
     }
-
-    if t_coh is not None:
-        payload[_T_COH_KEY] = np.asarray(t_coh, dtype=float)
 
     for sig, data in zip(signal_types, signal_arrays):
         payload[f"{_SIGNAL_PREFIX}{sig}"] = np.asarray(data)
@@ -191,8 +183,8 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     return {
         "path": path,
         "signals": signals,
-        "t_det": contents.get(_T_DET_KEY),
-        "t_coh": contents.get(_T_COH_KEY),
+        "t_det": np.asarray(info.get("t_det", []), dtype=float),
+        "t_coh": np.asarray(info.get("t_coh", []), dtype=float),
         "frequency_sample_cm": contents.get(_SAMPLE_KEY),
         "metadata": metadata,
         "simulation_config": sim_cfg,
@@ -212,11 +204,6 @@ def load_simulation_data(abs_path: Path | str) -> dict:
 
     for name, array in signals.items():
         bundle[name] = array
-
-    t_det = bundle.get("t_det")
-    if t_det is None:
-        raise KeyError("Run artifact is missing the 't_det' axis")
-
     if bundle.get("frequency_sample_cm") is None:
         raise KeyError("Run artifact is missing the frequency sample axis")
 
