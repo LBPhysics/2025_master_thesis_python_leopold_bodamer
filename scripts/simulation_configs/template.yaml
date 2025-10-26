@@ -72,7 +72,6 @@ config:
   # Signal types to compute; common: ['nonrephasing', 'rephasing']
   signal_types: [rephasing]
 
-window:
   # Maximum detection-time span [fs] -> determines frequency resolution, also t_coh range for 2D mode
   t_det_max: 100.0
 

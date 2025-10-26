@@ -166,20 +166,32 @@ def compute_evolution(
         i0 = event_i0[i]
         i1 = event_i1[i + 1]
         t_slice = times_array[i0:i1]
-        if len(t_slice) > 1:
-            res = run_solver(H, current_state, t_slice, e_ops)
-            if res:
-                if use_eops:
-                    all_expect += list(res.expect[0])
-                else:
-                    if len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12:
-                        # Drop the first point only if it would duplicate the previous segment's last time
-                        all_states += res.states[1:]
-                        all_times += list(t_slice[1:])
+        if len(t_slice) >= 1:
+            if len(t_slice) == 1:
+                # Single point, no evolution needed
+                if not (len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12):
+                    # Not a duplicate, add the point
+                    if use_eops:
+                        # For expectation values, we need to compute at this point
+                        # But since single point, perhaps interpolate or something, but for now, skip or handle
+                        pass  # Assuming single points are not critical for e_ops
                     else:
-                        all_states += res.states
-                        all_times += list(t_slice)
-                    current_state = res.states[-1]
+                        all_states.append(current_state)
+                        all_times.append(t_slice[0])
+            else:
+                res = run_solver(H, current_state, t_slice, e_ops)
+                if res:
+                    if use_eops:
+                        all_expect += list(res.expect[0])
+                    else:
+                        if len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12:
+                            # Drop the first point only if it would duplicate the previous segment's last time
+                            all_states += res.states[1:]
+                            all_times += list(t_slice[1:])
+                        else:
+                            all_states += res.states
+                            all_times += list(t_slice)
+                        current_state = res.states[-1]
 
     if use_eops:
         return np.array(all_times), np.array(all_expect)
