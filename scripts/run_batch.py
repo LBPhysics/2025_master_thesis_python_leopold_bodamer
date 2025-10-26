@@ -23,7 +23,6 @@ from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import (
     save_run_artifact,
 )
-
 from calc_datas import DATA_DIR
 
 DATA_DIR.mkdir(exist_ok=True)
@@ -80,9 +79,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--sim_type",
-        choices=["1d", "2d"],
+        choices=["0d", "1d", "2d"],
         required=True,
-        help="Simulation dimensionality (affects metadata only)",
+        help="Simulation dimensionality (affects job_metadata only)",
     )
     parser.add_argument(
         "--batch_id",
@@ -94,7 +93,7 @@ def main() -> None:
         "--n_batches",
         type=int,
         default=1,
-        help="Total number of batches (metadata only)",
+        help="Total number of batches (job_metadata only)",
     )
     args = parser.parse_args()
 
@@ -154,6 +153,8 @@ def main() -> None:
     if not combos_target.exists():
         shutil.copy2(combos_path, combos_target)
 
+    signal_types = sim.simulation_config.signal_types
+
     t_start = time.time()
     saved_paths: list[str] = []
 
@@ -171,33 +172,31 @@ def main() -> None:
         # Update simulation configuration for this combination
         freq_vector = samples[inhom_idx, :].astype(float)
 
-        sim.update_delays(t_coh=t_coh_val)
-        sim.system.update_frequencies_cm(freq_vector.tolist())
-
         print(
             f"\n--- combo {global_idx} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
         )
 
-        e_components = parallel_compute_1d_e_comps(sim_oqs=sim, time_cut=args.time_cut)
+        e_components = parallel_compute_1d_e_comps(
+            config_path=str(config_path),
+            t_coh=t_coh_val,
+            freq_vector=freq_vector.tolist(),
+            time_cut=args.time_cut,
+        )
 
-        metadata = {
-            "signal_types": sim.simulation_config.signal_types,
+        metadata_combo = {
+            "signal_types": signal_types,
             "t_coh_value": t_coh_val,
             "t_index": t_idx,
             "combination_index": global_idx,
-            "sim_type": args.sim_type,
+            "sim_type": "1d" if args.sim_type == "2d" else args.sim_type,
             "batch_id": args.batch_id,
-            "n_batches": args.n_batches,
             "sample_index": inhom_idx,
         }
 
-        t_det_axis = sim.t_det
-
         path = save_run_artifact(
             signal_arrays=e_components,
-            t_det=t_det_axis,
-            metadata=metadata,
+            metadata=metadata_combo,
             frequency_sample_cm=freq_vector,
             data_dir=data_dir,
             filename=f"{prefix}_run_t{t_idx:03d}_s{inhom_idx:03d}.npz",

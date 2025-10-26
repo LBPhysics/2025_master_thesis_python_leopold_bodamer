@@ -63,6 +63,9 @@ def _load_entry(path: Path) -> RunEntry:
     if sim_cfg is None or system is None:
         raise ValueError(f"Artifact {path} is missing simulation context")
 
+    if sim_cfg.sim_type == "1d":
+        t_coh = None
+
     return RunEntry(
         path=path,
         metadata=metadata,
@@ -85,7 +88,7 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
     for candidate in sorted(directory.glob("*_run_t*_s*.npz")):
         entry = _load_entry(candidate)
         # Only process 1D artifacts, not already processed 2D
-        if entry.simulation_config.sim_type == "2d":
+        if entry.metadata.get("sim_type") == "2d":
             continue
         entries.append(entry)
 
@@ -116,8 +119,6 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
     freq_ref = reference.frequency_sample_cm
 
     for entry in group_sorted[1:]:
-        if entry.t_det.shape != t_det.shape or not np.allclose(entry.t_det, t_det):
-            raise ValueError(f"Inconsistent t_det for {entry.path}")
         if not np.allclose(entry.frequency_sample_cm, freq_ref):
             raise ValueError(f"Inconsistent frequency for {entry.path}")
         current_signals = list(entry.metadata.get("signal_types", entry.signals.keys()))
@@ -154,7 +155,6 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
     sim_cfg = replace(
         reference.simulation_config,
         sim_type="2d",
-        t_coh=None,
         inhom_averaged=bool(reference.metadata.get("inhom_averaged")),
     )
 
@@ -206,10 +206,6 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
         t_coh = reference.t_coh
         signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
 
-        for entry in entries[1:]:
-            if entry.t_coh.shape != t_coh.shape or not np.allclose(entry.t_coh, t_coh):
-                raise ValueError(f"Inconsistent t_coh for {entry.path}")
-
         # Average signals
         averaged_signals = {
             sig: np.mean(np.stack([entry.signals[sig] for entry in entries], axis=0), axis=0)
@@ -252,8 +248,6 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
         signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
 
         for entry in entries[1:]:
-            if entry.t_det.shape != t_det.shape or not np.allclose(entry.t_det, t_det):
-                raise ValueError(f"Inconsistent t_det for {entry.path}")
             current = list(entry.metadata.get("signal_types", entry.signals.keys()))
             if current != signal_types:
                 raise ValueError(f"Inconsistent signals for {entry.path}")
@@ -319,12 +313,11 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 
     # Save the final artifact
     directory, prefix = split_prefix(anchor.path)
-    if final_entry.simulation_config.sim_type == "2d":
+    sim_type = final_entry.simulation_config.sim_type
+    if sim_type == "2d":
         final_filename = f"2d_inhom_averaged.npz"
-        t_coh_for_save = final_entry.t_coh
     else:
-        final_filename = f"1d_inhom_averaged.npz"
-        t_coh_for_save = None
+        final_filename = f"{sim_type}_inhom_averaged.npz"
 
     final_path = directory / final_filename
 
@@ -341,16 +334,15 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
             final_entry.simulation_config,
             bath=final_entry.bath,
             laser=final_entry.laser,
+            extra_payload={"t_det": final_entry.t_det, "t_coh": final_entry.t_coh},
         )
 
     out_path = save_run_artifact(
         signal_arrays=[final_entry.signals[sig] for sig in final_entry.signals],
-        t_det=final_entry.t_det,
         metadata=final_entry.metadata,
         frequency_sample_cm=final_entry.frequency_sample_cm,
         data_dir=directory,
         filename=final_filename,
-        t_coh=t_coh_for_save,
     )
 
     # Get stacked points info

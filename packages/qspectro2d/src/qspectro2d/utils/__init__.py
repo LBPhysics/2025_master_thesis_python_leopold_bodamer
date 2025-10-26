@@ -27,6 +27,7 @@ from .rwa_utils import (
     from_rotating_frame_list,
     get_expect_vals_with_RWA,
 )
+from .phase_cycling import phase_cycle_component
 
 __all__ = [
     # constants
@@ -49,4 +50,6 @@ __all__ = [
     "to_rotating_frame_list",
     "from_rotating_frame_list",
     "get_expect_vals_with_RWA",
+    # phase cycling
+    "phase_cycle_component",
 ]

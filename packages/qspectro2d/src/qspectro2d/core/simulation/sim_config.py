@@ -18,10 +18,11 @@ class SimulationConfig:
     solver_options: dict[str, float | int] = field(default_factory=lambda: {})
     rwa_sl: bool = True
 
-    dt: float = 0.1
-    t_coh: float = 0.0
-    t_wait: float = 0.0
     t_det_max: float = 100.0
+    t_coh_max: float = 0.0
+    t_wait: float = 0.0
+    dt: float = 0.1
+    pulse_fwhm_fs: float = 10.0
 
     # potentially do 2d inhomogeneous broadened
     sim_type: str = "1d"
@@ -52,10 +53,11 @@ class SimulationConfig:
             f"{self.sim_type} ELECTRONIC SPECTROSCOPY SIMULATION\n"
             f"Signal Type        : {self.signal_types}\n"
             "Time Parameters:\n"
-            f"Coherence Time     : {self.t_coh} fs\n"
+            f"Coherence Time Max : {self.t_coh_max} fs\n"
             f"Wait Time          : {self.t_wait} fs\n"
             f"Max Det. Time      : {self.t_det_max} fs\n\n"
             f"Time Step (dt)     : {self.dt} fs\n"
+            f"Pulse FWHM         : {self.pulse_fwhm_fs} fs\n"
             "-------------------------------\n"
             f"Solver Type        : {self.ode_solver}\n"
             f"Use rwa_sl         : {self.rwa_sl}\n\n"
@@ -76,9 +78,9 @@ class SimulationConfig:
             "t_det_max": self.t_det_max,
             "dt": self.dt,
             "t_wait": self.t_wait,
+            "t_coh_max": self.t_coh_max,
+            "pulse_fwhm_fs": self.pulse_fwhm_fs,
         }
-        if self.t_coh is not None:
-            result["t_coh"] = self.t_coh
         if self.solver_options:
             result["solver_options"] = self.solver_options
         result["n_inhomogen"] = self.n_inhomogen

@@ -16,7 +16,6 @@ Main components:
 from .e_field_1d import (
     compute_evolution,
     parallel_compute_1d_e_comps,
-    phase_cycle_component,
 )
 from .polarization import complex_polarization
 
@@ -28,12 +27,10 @@ from .inhomogenity import (
     sample_from_gaussian,
 )
 
-
 # POST-PROCESSING FUNCTIONS
 from .post_processing import (
     compute_spectra,
 )
-
 
 __all__ = [
     # Core calculations

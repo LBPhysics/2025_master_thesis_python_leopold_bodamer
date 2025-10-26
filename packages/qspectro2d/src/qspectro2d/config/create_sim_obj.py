@@ -18,7 +18,6 @@ YAML Schema (example of all options):
 from __future__ import annotations
 
 import os
-from re import T
 import numpy as np
 import psutil
 from pathlib import Path
@@ -27,9 +26,19 @@ from qutip import OhmicEnvironment
 import yaml
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
+from ..core.simulation.sim_config import SimulationConfig
+from ..core.laser_system.laser_class import LaserPulseSequence
+from ..core.atomic_system.system_class import AtomicSystem
 from . import default_simulation_params as dflt
 
-__all__ = ["load_simulation", "create_base_sim_oqs"]
+__all__ = [
+    "load_simulation",
+    "create_base_sim_oqs",
+    "load_simulation_config",
+    "load_simulation_laser",
+    "load_simulation_atomic_system",
+    "load_simulation_bath",
+]
 
 
 # HELPERS
@@ -73,149 +82,58 @@ def load_simulation(
     t_coh_override, t_wait_override, t_det_max_override, dt_override, ode_solver_override:
         Optional scalar overrides for timing / solver settings.
     """
-    # Import here to avoid circular import
-    from qspectro2d.core.atomic_system.system_class import AtomicSystem
-    from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
-    from qspectro2d.core.simulation.simulation_class import SimulationModuleOQS
-    from qspectro2d.core.simulation.sim_config import SimulationConfig
+    # Load components
+    sim_config = load_simulation_config(path)
+    atomic_system = load_simulation_atomic_system(path)
+    bath_env = load_simulation_bath(path)
 
-    # LOAD / FALLBACK
-    # If no path is provided, use an empty config so all values fall back to defaults in `dflt`.
-    if path is None:
-        cfg_root = {}
-    else:
-        cfg_root = _read_yaml(Path(path))
-
-    # ATOMIC SYSTEM
-    atomic_cfg = _get_section(cfg_root, "atomic")
-    n_atoms = int(atomic_cfg.get("n_atoms", dflt.N_ATOMS))
-    n_chains = int(atomic_cfg.get("n_chains", dflt.N_CHAINS))
-    freqs_cm = list(atomic_cfg.get("frequencies_cm", dflt.FREQUENCIES_CM))
-    dip_moments = list(atomic_cfg.get("dip_moments", dflt.DIP_MOMENTS))
-    coupling_cm = float(atomic_cfg.get("coupling_cm", dflt.COUPLING_CM))
-    delta_inhomogen_cm = float(atomic_cfg.get("delta_inhomogen_cm", dflt.DELTA_INHOMOGEN_CM))
-    max_excitation = int(atomic_cfg.get("max_excitation", dflt.MAX_EXCITATION))
-
-    atomic_system = AtomicSystem(
-        n_atoms=n_atoms,
-        n_chains=n_chains,
-        frequencies_cm=freqs_cm,
-        dip_moments=dip_moments,
-        coupling_cm=coupling_cm,
-        delta_inhomogen_cm=delta_inhomogen_cm,
-        max_excitation=max_excitation,
-    )
-
-    # LASER / PULSES
-    laser_cfg = _get_section(cfg_root, "laser")
-    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
-    base_amp = float(laser_cfg.get("base_amplitude", dflt.BASE_AMPLITUDE))
-    envelope = str(laser_cfg.get("envelope_type", dflt.ENVELOPE_TYPE))
-    carrier_cm = float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM))
-    rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
-
-    pulses_cfg = _get_section(cfg_root, "pulses")
-    relative_e0s = list(pulses_cfg.get("relative_e0s", dflt.RELATIVE_E0S))
-
-    # synthesize 3-pulse sequence from time window
-    window_cfg = _get_section(cfg_root, "window")
-    t_coh = float(window_cfg.get("t_coh", dflt.T_COH))
-    t_wait = float(window_cfg.get("t_wait", dflt.T_WAIT))
-    dt = float(window_cfg.get("dt", dflt.DT))
-    t_det_max = float(window_cfg.get("t_det_max", dflt.T_DET_MAX))
-
-    # Apply early overrides (timing relevant for pulse pulse_delays)
-    pulse_delays = [t_coh, t_wait]  # -> 3 pulses
-    phases = [0.0, 0.0, 0.0]  # last phase is detection phase
-
-    laser_sequence = LaserPulseSequence.from_pulse_delays(
-        pulse_delays=pulse_delays,
-        base_amplitude=base_amp,
-        pulse_fwhm_fs=pulse_fwhm_fs,
-        carrier_freq_cm=carrier_cm,
-        envelope_type=envelope,
-        relative_E0s=relative_e0s,
-        phases=phases,
-    )
-
-    # BATH (qutip BosonicEnvironment)
-    bath_cfg = _get_section(cfg_root, "bath")
-    temperature = float(bath_cfg.get("temperature", dflt.BATH_TEMP))
-    cutoff = float(bath_cfg.get("cutoff", dflt.BATH_CUTOFF))
-    coupling = float(bath_cfg.get("coupling", dflt.BATH_COUPLING))
-    bath_type = str(bath_cfg.get("bath_type", dflt.BATH_TYPE))
-
-    # TODO extend to BsosonicEnvironment
-    bath_env = OhmicEnvironment(
-        T=temperature,
-        alpha=coupling,  # / cutoff,  # TODO make this is exactly the paper implementation
-        wc=cutoff,
-        s=1.0,
-        tag=bath_type,
-    )
-
-    # simulation config
-    config_cfg = _get_section(cfg_root, "config")
-    n_phases = int(config_cfg.get("n_phases", dflt.N_PHASES))
-    ode_solver = str(config_cfg.get("solver", dflt.ODE_SOLVER))
-    signal_types = list(config_cfg.get("signal_types", dflt.SIGNAL_TYPES))
-    sim_type = str(config_cfg.get("sim_type", dflt.SIM_TYPE))
-    n_inhomogen = int(atomic_cfg.get("n_inhomogen", dflt.N_INHOMOGEN))
-    max_workers = get_max_workers()
-    print(
-        f"🔧 Configured to use max_workers={max_workers} for parallel tasks.",
-        flush=True,
-    )
+    # For laser, use t_coh_max from config
+    laser_sequence = load_simulation_laser(path, sim_config.t_coh_max)
 
     # -----------------
     # VALIDATION (physics-level) BEFORE FINAL ASSEMBLY
     # -----------------
     if validate:
+        # Extract values for validation
+        cfg_root = {} if path is None else _read_yaml(Path(path))
+        atomic_cfg = _get_section(cfg_root, "atomic")
+        laser_cfg = _get_section(cfg_root, "laser")
+        pulses_cfg = _get_section(cfg_root, "pulses")
+        window_cfg = _get_section(cfg_root, "window")
+        bath_cfg = _get_section(cfg_root, "bath")
+        config_cfg = _get_section(cfg_root, "config")
+
         params = {
-            "solver": ode_solver,
-            "bath_type": bath_type,
-            "frequencies_cm": freqs_cm,
-            "n_atoms": n_atoms,
-            "dip_moments": dip_moments,
-            "temperature": temperature,
-            "cutoff": cutoff,
-            "coupling": coupling,
-            "n_phases": n_phases,
-            "max_excitation": max_excitation,
-            "n_chains": n_chains,
-            "relative_e0s": relative_e0s,
-            "rwa_sl": rwa_sl,
-            "carrier_freq_cm": carrier_cm,
-            "signal_types": signal_types,
-            "t_det_max": t_det_max,
-            "dt": dt,
-            "t_coh": t_coh,
-            "t_wait": t_wait,
-            "n_inhomogen": n_inhomogen,
+            "solver": sim_config.ode_solver,
+            "bath_type": str(bath_cfg.get("bath_type", dflt.BATH_TYPE)),
+            "frequencies_cm": atomic_system.frequencies_cm,
+            "n_atoms": atomic_system.n_atoms,
+            "dip_moments": atomic_system.dip_moments,
+            "temperature": float(bath_cfg.get("temperature", dflt.BATH_TEMP)),
+            "cutoff": float(bath_cfg.get("cutoff", dflt.BATH_CUTOFF)),
+            "coupling": float(bath_cfg.get("coupling", dflt.BATH_COUPLING)),
+            "n_phases": sim_config.n_phases,
+            "max_excitation": atomic_system.max_excitation,
+            "n_chains": atomic_system.n_chains,
+            "relative_e0s": list(pulses_cfg.get("relative_e0s", dflt.RELATIVE_E0S)),
+            "rwa_sl": sim_config.rwa_sl,
+            "carrier_freq_cm": float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM)),
+            "signal_types": sim_config.signal_types,
+            "t_det_max": sim_config.t_det_max,
+            "dt": sim_config.dt,
+            "t_coh_max": sim_config.t_coh_max,
+            "t_wait": sim_config.t_wait,
+            "n_inhomogen": sim_config.n_inhomogen,
             # Newly added for extended validation
-            "pulse_fwhm_fs": pulse_fwhm_fs,
-            "base_amplitude": base_amp,
-            "envelope_type": envelope,
-            "coupling_cm": coupling_cm,
-            "delta_inhomogen_cm": delta_inhomogen_cm,
-            "sim_type": sim_type,  # factory defaults (could expose later)
-            "max_workers": max_workers,
+            "pulse_fwhm_fs": sim_config.pulse_fwhm_fs,
+            "base_amplitude": float(laser_cfg.get("base_amplitude", dflt.BASE_AMPLITUDE)),
+            "envelope_type": str(laser_cfg.get("envelope_type", dflt.ENVELOPE_TYPE)),
+            "coupling_cm": atomic_system.coupling_cm,
+            "delta_inhomogen_cm": atomic_system.delta_inhomogen_cm,
+            "sim_type": sim_config.sim_type,
+            "max_workers": sim_config.max_workers,
         }
         dflt.validate(params)
-
-    sim_config = SimulationConfig(
-        ode_solver=ode_solver,
-        rwa_sl=rwa_sl,
-        dt=dt,
-        t_coh=t_coh,
-        t_wait=t_wait,
-        t_det_max=t_det_max,
-        n_phases=n_phases,
-        n_inhomogen=n_inhomogen,
-        signal_types=signal_types,
-        sim_type=sim_type,
-        max_workers=max_workers,
-    )
 
     # -----------------
     # ASSEMBLE
@@ -253,7 +171,7 @@ def create_base_sim_oqs(
     # SOLVER VALIDATION
     # -----------------
     time_cut = -np.inf
-    t_max = sim.times_global[-1]
+    t_max = sim.simulation_config.t_det_max
     print("🔍 Validating solver...")
     try:
         from qspectro2d.spectroscopy.solver_check import check_the_solver
@@ -275,6 +193,156 @@ def create_base_sim_oqs(
         )
 
     return sim, time_cut
+
+
+def load_simulation_config(
+    path: Optional[str | Path] = None,
+) -> SimulationConfig:
+    """Load only the SimulationConfig from a YAML file or defaults."""
+    # LOAD / FALLBACK
+    if path is None:
+        cfg_root = {}
+    else:
+        cfg_root = _read_yaml(Path(path))
+
+    # Extract sections
+    atomic_cfg = _get_section(cfg_root, "atomic")
+    laser_cfg = _get_section(cfg_root, "laser")
+    window_cfg = _get_section(cfg_root, "window")
+    config_cfg = _get_section(cfg_root, "config")
+
+    # Extract values
+    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
+    t_det_max = float(window_cfg.get("t_det_max", dflt.T_DET_MAX))
+    t_coh_max = float(window_cfg.get("t_coh_max", dflt.T_COH_MAX))
+    t_wait = float(window_cfg.get("t_wait", dflt.T_WAIT))
+    dt = float(window_cfg.get("dt", dflt.DT))
+    n_phases = int(config_cfg.get("n_phases", dflt.N_PHASES))
+    n_inhomogen = int(atomic_cfg.get("n_inhomogen", dflt.N_INHOMOGEN))
+    ode_solver = str(config_cfg.get("solver", dflt.ODE_SOLVER))
+    signal_types = list(config_cfg.get("signal_types", dflt.SIGNAL_TYPES))
+    sim_type = str(config_cfg.get("sim_type", dflt.SIM_TYPE))
+    rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
+    max_workers = get_max_workers()
+
+    return SimulationConfig(
+        ode_solver=ode_solver,
+        rwa_sl=rwa_sl,
+        dt=dt,
+        t_coh_max=t_coh_max,
+        t_wait=t_wait,
+        t_det_max=t_det_max,
+        pulse_fwhm_fs=pulse_fwhm_fs,
+        n_phases=n_phases,
+        n_inhomogen=n_inhomogen,
+        signal_types=signal_types,
+        sim_type=sim_type,
+        max_workers=max_workers,
+    )
+
+
+def load_simulation_laser(
+    path: Optional[str | Path] = None,
+    t_coh: float = 0.0,
+) -> LaserPulseSequence:
+    """Load LaserPulseSequence from a YAML file or defaults, with delays set to t_coh."""
+    # LOAD / FALLBACK
+    if path is None:
+        cfg_root = {}
+    else:
+        cfg_root = _read_yaml(Path(path))
+
+    # Extract sections
+    laser_cfg = _get_section(cfg_root, "laser")
+    pulses_cfg = _get_section(cfg_root, "pulses")
+    window_cfg = _get_section(cfg_root, "window")
+
+    # Extract values
+    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
+    base_amp = float(laser_cfg.get("base_amplitude", dflt.BASE_AMPLITUDE))
+    envelope = str(laser_cfg.get("envelope_type", dflt.ENVELOPE_TYPE))
+    carrier_cm = float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM))
+    relative_e0s = list(pulses_cfg.get("relative_e0s", dflt.RELATIVE_E0S))
+    t_wait = float(window_cfg.get("t_wait", dflt.T_WAIT))
+
+    # Create laser with initial delays
+    pulse_delays = [t_coh, t_wait]  # -> 3 pulses
+    phases = [0.0, 0.0, 0.0]  # last phase is detection phase
+
+    laser = LaserPulseSequence.from_pulse_delays(
+        pulse_delays=pulse_delays,
+        base_amplitude=base_amp,
+        pulse_fwhm_fs=pulse_fwhm_fs,
+        carrier_freq_cm=carrier_cm,
+        envelope_type=envelope,
+        relative_E0s=relative_e0s,
+        phases=phases,
+    )
+
+    return laser
+
+
+def load_simulation_atomic_system(
+    path: Optional[str | Path] = None,
+) -> AtomicSystem:
+    """Load AtomicSystem from a YAML file or defaults."""
+
+    # LOAD / FALLBACK
+    if path is None:
+        cfg_root = {}
+    else:
+        cfg_root = _read_yaml(Path(path))
+
+    # ATOMIC SYSTEM
+    atomic_cfg = _get_section(cfg_root, "atomic")
+    n_atoms = int(atomic_cfg.get("n_atoms", dflt.N_ATOMS))
+    n_chains = int(atomic_cfg.get("n_chains", dflt.N_CHAINS))
+    freqs_cm = list(atomic_cfg.get("frequencies_cm", dflt.FREQUENCIES_CM))
+    dip_moments = list(atomic_cfg.get("dip_moments", dflt.DIP_MOMENTS))
+    coupling_cm = float(atomic_cfg.get("coupling_cm", dflt.COUPLING_CM))
+    delta_inhomogen_cm = float(atomic_cfg.get("delta_inhomogen_cm", dflt.DELTA_INHOMOGEN_CM))
+    max_excitation = int(atomic_cfg.get("max_excitation", dflt.MAX_EXCITATION))
+
+    atomic_system = AtomicSystem(
+        n_atoms=n_atoms,
+        n_chains=n_chains,
+        frequencies_cm=freqs_cm,
+        dip_moments=dip_moments,
+        coupling_cm=coupling_cm,
+        delta_inhomogen_cm=delta_inhomogen_cm,
+        max_excitation=max_excitation,
+    )
+
+    return atomic_system
+
+
+def load_simulation_bath(
+    path: Optional[str | Path] = None,
+) -> OhmicEnvironment:
+    """Load BosonicEnvironment from a YAML file or defaults."""
+    # LOAD / FALLBACK
+    if path is None:
+        cfg_root = {}
+    else:
+        cfg_root = _read_yaml(Path(path))
+
+    # BATH (qutip BosonicEnvironment)
+    bath_cfg = _get_section(cfg_root, "bath")
+    temperature = float(bath_cfg.get("temperature", dflt.BATH_TEMP))
+    cutoff = float(bath_cfg.get("cutoff", dflt.BATH_CUTOFF))
+    coupling = float(bath_cfg.get("coupling", dflt.BATH_COUPLING))
+    bath_type = str(bath_cfg.get("bath_type", dflt.BATH_TYPE))
+
+    # TODO extend to BsosonicEnvironment
+    bath_env = OhmicEnvironment(
+        T=temperature,
+        alpha=coupling,  # / cutoff,  # TODO make this is exactly the paper implementation
+        wc=cutoff,
+        s=1.0,
+        tag=bath_type,
+    )
+
+    return bath_env
 
 
 def get_max_workers() -> int:

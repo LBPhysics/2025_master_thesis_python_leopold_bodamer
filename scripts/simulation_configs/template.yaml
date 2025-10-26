@@ -80,7 +80,7 @@ window:
   t_wait: 50.0
 
   # Coherence time between 1.& 2.pump[fs] (used directly in 1D mode; in 2D mode it is swept)
-  t_coh: 60.0
+  t_coh_max: 60.0
 
   # Time step [fs] < 0.2 to resolve fast dynamics /  spectral features around 16000 cm^-1
   dt: 0.1

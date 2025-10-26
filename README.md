@@ -41,7 +41,7 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
 
 1. **Configure simulation** — Duplicate the template in `scripts/simulation_configs/` and adjust physical parameters. `_monomer.yaml` is the default that `calc_datas.py` auto-selects.
 
-2. **Simulate** — Run `python scripts/calc_datas.py --sim_type {1d,2d}` locally.
+1. **Simulate** — Run `python scripts/calc_datas.py --sim_type {0d,1d,2d}` locally.
    - Generates all combinations of `t_coh` points and inhomogeneous samples.
    - Outputs raw `.npz` files per combination.
    - For a 2D simulation the `t_coh` value in the config will be ignored and instead all t_coh values (same as the detection times `t_det`) will be used.
@@ -96,7 +96,7 @@ Simulation outputs remain under `data/` and plots under `figures/`.
 For large-scale runs (e.g., full sweeps with many inhomogeneous samples and coherence times). Supports all combinations with parallel batching. Processing and plotting are automated.
 Is structured similar to the local workflow but splits the simulation into batches that are atomically executed on the cluster:
 
-1. **Dispatch batches** — Run `python scripts/hpc_batch_dispatch.py --sim_type {1d,2d} --n_batches N [--rng_seed S] [--no_submit]`. Generates SLURM jobs that split work across combinations. Validates locally first.
+1. **Dispatch batches** — Run `python scripts/hpc_batch_dispatch.py --sim_type {0d,1d,2d} --n_batches N [--rng_seed S] [--no_submit]`. Generates SLURM jobs that split work across combinations. Validates locally first.
 
 2. **Run batches** — Batches auto-submit via `sbatch` (unless `--no_submit`). Each runs `run_batch.py` on the cluster, producing partial artifacts in `data/...`.
 
