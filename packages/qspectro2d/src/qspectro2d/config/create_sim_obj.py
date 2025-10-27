@@ -125,10 +125,9 @@ def load_simulation_laser(
     carrier_cm = float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM))
     relative_e0s = dflt.RELATIVE_E0S
     t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
-    t_coh_max = float(config_cfg.get("t_coh_max", dflt.T_COH_MAX))
 
     # Create laser with initial delays
-    pulse_delays = [t_coh_max, t_wait]  # -> 3 pulses
+    pulse_delays = [0.0, t_wait]  # -> 3 pulses
     phases = [0.0, 0.0, 0.0]  # last phase is detection phase
 
     laser = LaserPulseSequence.from_pulse_delays(
@@ -313,7 +312,7 @@ def create_base_sim_oqs(
     try:
         from qspectro2d.spectroscopy.solver_check import check_the_solver
 
-        _, time_cut = check_the_solver(sim)
+        time_cut = check_the_solver(sim)
         print("#" * 60)
         print(
             f"✅ Solver validation worked: Evolution becomes unphysical at "

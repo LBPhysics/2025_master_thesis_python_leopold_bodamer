@@ -15,7 +15,7 @@ from typing import List
 
 # THIRD-PARTY IMPORTS
 import numpy as np
-from qutip import Qobj, Result
+from qutip import Qobj
 
 # LOCAL IMPORTS
 from ..core.simulation import SimulationModuleOQS
@@ -27,8 +27,8 @@ __all__ = ["check_the_solver"]
 
 def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
     """Validate simulation input parameters."""
-    if not isinstance(sim_oqs.system.psi_ini, Qobj):
-        raise TypeError("psi_ini must be a Qobj")
+    if not isinstance(sim_oqs.system.rho_ini, Qobj):
+        raise TypeError("rho_ini must be a Qobj")
     times_global = compute_times_global(sim_oqs.simulation_config)
     if not isinstance(times_global, np.ndarray):
         raise TypeError("times_global must be a numpy.ndarray")
@@ -43,13 +43,13 @@ def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
 def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
     """Log diagnostic information about the quantum system."""
     print("=== SYSTEM DIAGNOSTICS ===")
-    psi_ini = sim_oqs.system.psi_ini
+    rho_ini = sim_oqs.system.rho_ini
     print(
-        f"Initial state type, shape, is hermitian, trace: {type(psi_ini)}, {psi_ini.shape}, {psi_ini.isherm}, {psi_ini.tr():.6f}"
+        f"Initial state type, shape, is hermitian, trace: {type(rho_ini)}, {rho_ini.shape}, {rho_ini.isherm}, {rho_ini.tr():.6f}"
     )
 
-    if psi_ini.type == "oper":  # density matrix
-        ini_eigvals = psi_ini.eigenenergies()
+    if rho_ini.type == "oper":  # density matrix
+        ini_eigvals = rho_ini.eigenenergies()
         print(f"Initial eigenvalues range: [{ini_eigvals.min():.6f}, {ini_eigvals.max():.6f}]")
         print(f"Initial min eigenvalue: {ini_eigvals.min():.10f}")
 
@@ -142,15 +142,14 @@ def _check_density_matrix_properties(
     return error_messages, time_cut
 
 
-def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
+def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     """
     Validate the quantum solver by running a test evolution and checking density matrix properties.
 
     This function performs a comprehensive validation of the solver by:
     1. Running a test evolution with extended time range
     2. Checking density matrix properties (Hermiticity, trace preservation, positive semidefiniteness)
-    3. Applying RWA phase factors if needed
-    4. Logging detailed diagnostics throughout the process
+    3. Logging detailed diagnostics throughout the process
 
     Parameters
     ----------
@@ -160,11 +159,8 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
 
     Returns
     -------
-    tuple[Result, float]
-        result : Result
-            QuTiP Result object from the test evolution.
-        time_cut : float
-            Time after which numerical instabilities were detected, or np.inf if all checks passed.
+    float
+        Time after which numerical instabilities were detected, or np.inf if all checks passed.
 
     Notes
     -----
@@ -174,8 +170,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     - Negative eigenvalues (non-physical states)
     - Trace deviation from 1.0
 
-    If RWA (Rotating Wave Approximation) is enabled, phase factors are applied to the states
-    before validation to account for the rotating frame transformation.
+    RWA conversion is automatically applied in compute_evolution if enabled.
     """
     # print(f"Checking '{sim_oqs.simulation_config.ode_solver}' solver")
     copy_sim_oqs = deepcopy(sim_oqs)
@@ -197,36 +192,32 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> tuple[Result, float]:
     # INPUT VALIDATION
     _validate_simulation_input(copy_sim_oqs)
 
-    result = compute_evolution(copy_sim_oqs)
-    states = result.states
+    times_result, states = compute_evolution(copy_sim_oqs)
 
     # CHECK THE RESULT
-    if not isinstance(result, Result):
-        raise TypeError("Result must be a Result object")
-    if list(result.times) != list(times):
-        print(result.times, times)
-        raise ValueError("Result times do not match input times")
-    if len(result.states) != len(times):
-        raise ValueError("Number of output states does not match number of time points")
+    if not isinstance(times_result, np.ndarray):
+        raise TypeError("Times must be a numpy array")
+    if not isinstance(states, list):
+        raise TypeError("States must be a list")
+    if len(times_result) != len(times) or not np.allclose(times_result, times):
+        print("Warning: Result times do not match input times exactly")
+        print(f"Result times length: {len(times_result)}, input: {len(times)}")
+        #print(f"First few result times: {times_result[:10]}")
+        #print(f"First few input times: {times[:10]}")
+        # Don't raise, as the evolution may have boundary overlaps
+    if len(states) != len(times_result):
+        raise ValueError("Number of output states does not match number of result time points")
 
     # CHECK DENSITY MATRIX PROPERTIES
-    # Apply RWA phase factors if needed
-    if getattr(copy_sim_oqs.simulation_config, "rwa_sl", False):
-        n_atoms = copy_sim_oqs.system.n_atoms
-        omega_laser = copy_sim_oqs.laser.carrier_freq_fs
-        print(f"Applying RWA phase factors: n_atoms={n_atoms}, omega_laser={omega_laser} [fs^-1]")
-        # Lazy import here to avoid triggering package-level imports during module import
-        from ..utils.rwa_utils import from_rotating_frame_list
-
-        states = from_rotating_frame_list(states, times, n_atoms, omega_laser)
+    # RWA conversion is already done in compute_evolution if needed
 
     # Enhanced state checking with more diagnostics
     print("=== STATE-BY-STATE ANALYSIS ===")
-    error_messages, time_cut = _check_density_matrix_properties(states, times)
+    error_messages, time_cut = _check_density_matrix_properties(states, times_result)
 
     if not error_messages:
         print("✅ Checks passed. DM remains Hermitian and positive.")
         print(f"Final state trace: {states[-1].tr():.6f}")
         print(f"Final state min eigenvalue: {states[-1].eigenenergies().min():.10f}")
 
-    return result, time_cut
+    return time_cut

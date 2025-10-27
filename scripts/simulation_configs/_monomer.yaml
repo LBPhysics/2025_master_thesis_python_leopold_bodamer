@@ -14,14 +14,13 @@ laser:
 bath:
   bath_type: ohmic
   cutoff: 100
-  temperature: 1e-4
-  coupling: 0.001
+  temperature: 1e-1
+  coupling: 0.1
 
 config:
-  solver: Paper_eqs
+  solver: BR
   signal_types: [rephasing, nonrephasing]
 
-  t_det_max: 50.0
-  t_coh_max: 5.0
+  t_det_max: 60.0
   t_wait: 0.0
-  dt: 0.4
+  dt: 0.1

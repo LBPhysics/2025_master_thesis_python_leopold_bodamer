@@ -1,5 +1,10 @@
-"""Polarization related helper functions."""
+"""Polarization related helper functions.
 
+Pphys(t) = Tr[μ ρ(t)] = ∑_{m,n} μ_{mn} ρ_{nm}(t)
+
+but for spectroscopy are onlz interested in
+P^+(t) = Tr[μ^+ ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
+"""
 from __future__ import annotations
 from typing import Union, List, Callable
 import numpy as np
@@ -57,9 +62,9 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
     """
     rho = ket2dm(state) if state.isket else state
     # Positive-frequency part for this codebase's basis ordering corresponds to
-    # the strictly UPPER-triangular portion (i < j) in the energy eigenbasis.
-    # ~ sigma^- e^[+iwt]
-    dipole_op_pos = Qobj(np.triu(dipole_op.full(), k=1), dims=dipole_op.dims)
+    # the strictly LOWER-triangular portion (m > n) in the energy eigenbasis.
+    # ~ sigma^+ e^[-iwt]
+    dipole_op_pos = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
 
     pol = expect(dipole_op_pos, rho)
 
@@ -86,15 +91,11 @@ def make_polarization_expectation_operator(
         Function that takes (t, state) and returns polarization expectation value.
     """
     # Positive-frequency part
-    dipole_op_pos = Qobj(np.triu(dipole_op.full(), k=1), dims=dipole_op.dims)
+    dipole_op_pos = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
 
     def e_ops_callable(t: float, state: Qobj) -> complex:
-        try:
-            state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
-            return expect(dipole_op_pos, state_lab)
-        except Exception as e:
-            print(f"Error in e_ops_callable at t={t}: {e}")
-            return 0.0 + 0.0j
+        state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
+        return expect(dipole_op_pos, state_lab)
 
     return e_ops_callable
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+from sympy import solve
 
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
@@ -64,7 +65,7 @@ def estimate_slurm_resources(
     Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
     """
     # ---------------------- MEMORY ----------------------
-    bytes_per_solver = n_times * (N_dim**2) * 16
+    bytes_per_solver = n_times * (N_dim) * 16 # doesnt scale quadratically because i dont store states
     total_bytes = mem_safety * workers * bytes_per_solver
     mem_mb = base_mb + total_bytes / (1024**2)
     requested_mem = f"{int(math.ceil(mem_mb))}M"
@@ -75,9 +76,11 @@ def estimate_slurm_resources(
     combos_per_batch = max(1, combos_total // max(1, n_batches))
 
     # Empirical baseline: base_time s per combo for ME, 1 atom, n_times=1000, N=2
-    t0 = 0.015
-    if solver == "BR" or solver == "Paper_eqs":
-        t0 *= 25.0  # slower solver
+    t0 = 0.015 # basic case for ME
+    if solver == "Paper_eqs":
+        t0 *= 5.0  # slower solver
+    elif solver == "BR":
+        t0 *= 20.0  # slower solver
     base_t = t0
 
     # scaling ~ n_times * N^2  (sparse regime)
@@ -215,7 +218,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     sim = load_simulation(config_path, validate=True)
     print("✅ Simulation object constructed.")
 
-    _, time_cut = check_the_solver(sim)
+    time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
     sim.simulation_config.sim_type = args.sim_type  # to ensure t_coh_axis has the right behavior

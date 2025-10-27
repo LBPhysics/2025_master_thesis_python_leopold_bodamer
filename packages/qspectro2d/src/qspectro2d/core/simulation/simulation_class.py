@@ -34,7 +34,6 @@ class SimulationModuleOQS:
         solver = self.simulation_config.ode_solver
         if solver == "Paper_eqs":
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
-
             evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
         elif solver == "ME" or solver == "BR":
             evo_obj = QobjEvo(self.H_total_t)
