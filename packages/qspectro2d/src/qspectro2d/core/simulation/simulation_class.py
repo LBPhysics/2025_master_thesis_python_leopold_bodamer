@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 import numpy as np
 from qutip import Qobj, QobjEvo, ket2dm
-from typing import List, Tuple, Union
+from typing import List, Union
 from qutip import BosonicEnvironment
 
 from .sim_config import SimulationConfig
@@ -33,7 +33,9 @@ class SimulationModuleOQS:
     def evo_obj(self) -> Union[Qobj, QobjEvo]:
         solver = self.simulation_config.ode_solver
         if solver == "Paper_eqs":
-            evo_obj = QobjEvo(self.paper_eqs_evo)
+            from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
+
+            evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
         elif solver == "ME" or solver == "BR":
             evo_obj = QobjEvo(self.H_total_t)
         else:  # Fallback: create evolution without lasers
@@ -64,18 +66,6 @@ class SimulationModuleOQS:
             N_eig = self.system.to_eigenbasis(self.system.number_op)
             H_diag -= omega_L * N_eig
         return H_diag
-
-    def paper_eqs_evo(self, t: float) -> Qobj:
-        """Global helper for 'Paper_eqs' solver evolution.
-
-        Kept at module scope so partial(paper_eqs_evo, sim) remains pickleable.
-        Lazy import inside to avoid circular import at module load.
-        """
-        from qspectro2d.core.simulation.liouvillian_paper import (
-            matrix_ODE_paper as _matrix_ODE_paper,
-        )
-
-        return _matrix_ODE_paper(t, self)
 
     def H_int_sl(self, t: float) -> Qobj:
         """
@@ -166,3 +156,6 @@ class SimulationModuleOQS:
 
         # Apply to laser pulse delays and invalidate cached time properties
         self.laser.pulse_delays = [float(t_coh), float(t_wait)]
+
+        if t_coh > self.simulation_config.t_coh_max:
+            self.simulation_config.t_coh_max = t_coh

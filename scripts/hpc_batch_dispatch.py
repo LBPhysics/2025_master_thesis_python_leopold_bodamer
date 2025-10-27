@@ -56,8 +56,8 @@ def estimate_slurm_resources(
     N_dim: int,
     solver: str = "ME",
     mem_safety: float = 100.0,
-    base_mb: int = 100,
-    time_safety: float = 1,
+    base_mb: int = 500,
+    time_safety: float = 10,
     base_time: float = 60.0,
 ) -> tuple[str, str]:
     """
@@ -76,8 +76,8 @@ def estimate_slurm_resources(
 
     # Empirical baseline: base_time s per combo for ME, 1 atom, n_times=1000, N=2
     t0 = 0.015
-    if solver == "BR":
-        t0 *= 5.0  # slower solver
+    if solver == "BR" or solver == "Paper_eqs":
+        t0 *= 25.0  # slower solver
     base_t = t0
 
     # scaling ~ n_times * N^2  (sparse regime)
@@ -252,7 +252,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     requested_mem, requested_time = estimate_slurm_resources(
         n_times=len(times_global),
         n_inhom=n_inhom,
-        n_t_coh=t_coh_values.size,
+        n_t_coh=len(t_coh_values),
         n_batches=args.n_batches,
         workers=16,  # BECAUSE I set every batch to use 16 CPUs
         N_dim=sim.system.dimension,
@@ -265,6 +265,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     job_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = job_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
+
+    # Save a copy of the config file to the job directory
+    config_copy_path = job_dir / config_path.name
+    if not config_copy_path.exists():
+        shutil.copy2(config_path, config_copy_path)
+        print(f"✅ Config file copied to {config_copy_path}")
+
+    # Use the copied config path for subsequent operations
+    config_path = config_copy_path
 
     samples_file = job_dir / "samples.npy"
     np.save(samples_file, samples.astype(float))
