@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import time
 import warnings
 from pathlib import Path
@@ -57,18 +58,18 @@ warnings.filterwarnings(
 # ---------------------------------------------------------------------------
 # Helper function
 # ---------------------------------------------------------------------------
-def pick_config_yaml():
-    """Pick a config YAML from scripts/simulation_configs.
+def pick_config_yaml(config_dir: Path | None = None) -> Path:
+    """Pick a config YAML from the specified directory or default scripts/simulation_configs.
 
     Preference order:
     1) Any file whose name starts with '_' (user-marked; Windows-safe)
     2) Otherwise, the first file in alphabetical order
     """
-    cfg_candidates = sorted(SIM_CONFIGS_DIR.glob("*.yaml"))
+    if config_dir is None:
+        config_dir = SIM_CONFIGS_DIR
+    cfg_candidates = sorted(config_dir.glob("*.yaml"))
     if not cfg_candidates:
-        raise FileNotFoundError(
-            f"No .yaml config files found in {SIM_CONFIGS_DIR}. Please add one."
-        )
+        raise FileNotFoundError(f"No .yaml config files found in {config_dir}. Please add one.")
     # Prefer Windows-safe marker: leading underscore
     marked = [p for p in cfg_candidates if p.name.startswith("_")]
     return marked[0] if marked else cfg_candidates[0]
@@ -148,6 +149,15 @@ def main() -> None:
     data_base_path = generate_unique_data_base(
         sim.system, sim.simulation_config, data_root=DATA_DIR
     )
+
+    # Save a copy of the config file to the target directory
+    config_copy_path = data_base_path.parent / config_path.name
+    if not config_copy_path.exists():
+        shutil.copy2(config_path, config_copy_path)
+        print(f"✅ Config file copied to {config_copy_path}")
+
+    # Use the copied config path for subsequent operations
+    config_path = config_copy_path
 
     n_inhom = sim.simulation_config.n_inhomogen
     if n_inhom <= 0:

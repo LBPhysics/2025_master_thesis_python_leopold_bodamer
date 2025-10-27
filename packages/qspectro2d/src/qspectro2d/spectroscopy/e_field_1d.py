@@ -25,7 +25,8 @@ from ..config.default_simulation_params import (
     PHASE_CYCLING_PHASES,
     COMPONENT_MAP,
 )
-from qspectro2d.utils.rwa_utils import from_rotating_frame_list, from_rotating_frame_op
+from ..spectroscopy.polarization import make_polarization_expectation_operator
+from qspectro2d.utils.rwa_utils import from_rotating_frame_list
 
 __all__ = [
     "parallel_compute_1d_e_comps",
@@ -66,50 +67,152 @@ def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
     return [res.states[int(i)] for i in selected_idxs]
 
 
+def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.ndarray:
+    """Slice the list of polarization values P_t to only keep the detection window portion.
+
+    Returns:
+        Array of polarization values corresponding to the window time points.
+    """
+    # Assuming times are sorted and equally spaced
+    times = np.asarray(times)
+    window = np.asarray(window)
+
+    # nearest index for each window time
+    idxs = np.searchsorted(times, window, side="left")
+    idxs = np.clip(idxs, 0, len(times) - 1)
+
+    # For each window time, find the best matching time index
+    selected_idxs = np.zeros_like(idxs)
+    for k, (idx, w) in enumerate(zip(idxs, window)):
+        # Candidates: idx-1, idx, idx+1 (if within bounds)
+        candidates = []
+        if idx > 0:
+            candidates.append(idx - 1)
+        candidates.append(idx)
+        if idx < len(times) - 1:
+            candidates.append(idx + 1)
+
+        # Choose the candidate with minimal absolute difference
+        best_idx = min(candidates, key=lambda i: abs(times[i] - w))
+        selected_idxs[k] = best_idx
+
+    return np.array([P_t[int(i)] for i in selected_idxs], dtype=complex)
+
+
+def get_event_times_and_indices(pulses, times_array):
+    """Compute event times and their indices in times_array."""
+    event_times = [p.active_time_range[0] for p in pulses] + [
+        p.active_time_range[1] for p in pulses
+    ]
+    event_times = [times_array[0]] + event_times + [times_array[-1]]
+    event_times = sorted(set(event_times))
+    event_indices = np.searchsorted(times_array, event_times, side="left")
+    return event_times, event_indices
+
+
+def select_hamiltonian(sim_oqs, active_pulses):
+    """Select the appropriate Hamiltonian based on solver and active pulses."""
+    if sim_oqs.simulation_config.ode_solver == "Paper_eqs":
+        return sim_oqs.evo_obj
+    return sim_oqs.evo_obj if active_pulses else sim_oqs.H0_diagonalized
+
+
+def get_active_pulses_at_interval(pulses, event_times, i):
+    """Check if any pulses are active in the i-th interval."""
+    t0, t1 = event_times[i], event_times[i + 1]
+    return any(p.active_time_range[0] <= t1 and p.active_time_range[1] >= t0 for p in pulses)
+
+
+def evolve_single_interval(H, current_state, t_slice, run_solver, e_ops, all_times):
+    """Evolve over a single time interval and return updated state, results, and solver result.
+
+    Returns:
+        (new_state, times_part, data_part, result_obj_or_None)
+        - If e_ops is truthy: data_part is list of expectation values.
+        - Else: data_part is list of states.
+    """
+    # Nothing to do
+    if t_slice.size == 0:
+        return current_state, [], [], None
+
+    # Single sampling time: evaluate "by hand" without solver
+    if t_slice.size == 1:
+        t = float(t_slice[0])
+
+        # Only emit something if it's the very first time, or a genuinely new time
+        if len(all_times) == 0 or abs(t - all_times[-1]) >= 1e-12:
+            if e_ops:
+                # e_ops may contain callables or operators
+                op0 = e_ops[0]
+                if callable(op0):
+                    val = op0(t, current_state)
+                else:
+                    val = expect(op0, current_state)
+                return current_state, [t], [val], None
+            else:
+                return current_state, [t], [current_state], None
+
+        # Otherwise drop duplicate
+        return current_state, [], [], None
+
+    # Multi-point interval: use the solver
+    res = run_solver(H, current_state, t_slice, e_ops)
+    if res is None:
+        # Keep API stable even if solver skipped
+        return current_state, list(t_slice), ([] if e_ops else []), None
+
+    if e_ops:
+        # QuTiP returns list per e_op; you use a single e_op
+        final_state = res.states[-1] if res.states else current_state
+        return final_state, list(t_slice), list(res.expect[0]), res
+    else:
+        return res.states[-1], list(t_slice), list(res.states), res
+
+
+def aggregate_results(all_states, all_times, all_expect, use_eops, res_template):
+    """Aggregate and return the final results."""
+    if use_eops:
+        return np.array(all_times), np.array(all_expect)
+    else:
+        res_template.states = all_states
+        res_template.times = np.array(all_times)
+        return res_template
+
+
 def compute_evolution(
     sim_oqs: SimulationModuleOQS,
-    mu_op=None,
-    use_eops=False,
+    e_ops=None,
     **solver_options: dict,
-) -> Result | np.ndarray:
+) -> tuple[np.ndarray, list]:
     """
     Compute the evolution of the quantum system for a given pulse sequence, handling overlapping pulses.
-
-    Parameters
-    ----------
-    sim_oqs : SimulationModuleOQS
-        Prepared simulation object.
-    **solver_options : dict
-        Optional solver arguments to override defaults.
-
-    Returns
-    -------
-    Result
-        QuTiP Result object containing states, times, and final_state.
+    Returns (times, data) where data is list of expectation values if e_ops provided, else list of states.
     """
     from qspectro2d.config.default_simulation_params import SOLVER_OPTIONS
 
     options: dict = SOLVER_OPTIONS.copy()
     options.update(solver_options)
-    if use_eops:
+    if e_ops is not None:
         options["store_states"] = False
+        options["store_final_state"] = True
+        solver_e_ops = e_ops
     else:
-        options.setdefault("store_states", True)
+        options["store_states"] = True
+        solver_e_ops = []
 
     times_array = np.asarray(compute_times_global(sim_oqs.simulation_config))
     pulses = sim_oqs.laser.pulses
     ode_solver = sim_oqs.simulation_config.ode_solver
 
-    e_ops = [mu_op] if use_eops and mu_op is not None else []
-    all_expect = [] if use_eops else None
+    all_data = []
+    all_times = []
 
-    def run_solver(H, psi0_rho0, tlist, e_ops):
-        if len(tlist) < 2:
-            return None  # No evolution needed
+    def run_solver(H, rho0, tlist, e_ops):
         if ode_solver == "BR":
+            # Use rho0= to be compatible across QuTiP versions
             return brmesolve(
                 H=H,
-                psi0=psi0_rho0,
+                rho0=rho0,
                 tlist=tlist,
                 a_ops=sim_oqs.decay_channels,
                 e_ops=e_ops,
@@ -119,148 +222,93 @@ def compute_evolution(
         else:
             return mesolve(
                 H=H,
-                rho0=psi0_rho0,
+                rho0=rho0,
                 tlist=tlist,
                 c_ops=sim_oqs.decay_channels,
                 e_ops=e_ops,
                 options=options,
             )
 
-    # Helper to get active pulses at time t
-    def get_active_pulse_at_interval(i):
-        t0 = event_times[i]
-        t1 = event_times[i + 1]
-        for p in pulses:
-            p_start, p_end = p.active_time_range
-            if p_start <= t1 and p_end >= t0:
-                return True
-        return False
-
-    # Get all event times: pulse starts, ends, and simulation boundaries
-    event_times = [p.active_time_range[0] for p in pulses] + [
-        p.active_time_range[1] for p in pulses
+    # Build event grid
+    event_times, event_indices = get_event_times_and_indices(pulses, times_array)
+    active_intervals = [
+        get_active_pulses_at_interval(pulses, event_times, i) for i in range(len(event_times) - 1)
     ]
-    event_times = [times_array[0]] + event_times + [times_array[-1]]
-    event_times = sorted(set(event_times))  # Unique and sorted
 
-    # Precompute indices for efficient slicing
-    event_i0 = np.searchsorted(times_array, event_times, side="left")
-    event_i1 = np.searchsorted(times_array, event_times, side="right")
-
-    # Initialize
-    all_states = []
-    all_times = []
     current_state = sim_oqs.system.psi_ini
 
-    # Evolve over each interval where active pulses are constant
     for i in range(len(event_times) - 1):
-        active_pulses = get_active_pulse_at_interval(i)
+        H = select_hamiltonian(sim_oqs, active_intervals[i])
 
-        # Determine Hamiltonian
-        if active_pulses:
-            H = sim_oqs.evo_obj
-        else:
-            H = sim_oqs.H0_diagonalized
+        i0 = int(event_indices[i])
+        i1 = int(event_indices[i + 1])
 
-        # Evolve over this interval
-        i0 = event_i0[i]
-        i1 = event_i1[i + 1]
-        t_slice = times_array[i0:i1]
-        if len(t_slice) >= 1:
-            if len(t_slice) == 1:
-                # Single point, no evolution needed
-                if not (len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12):
-                    # Not a duplicate, add the point
-                    if use_eops:
-                        # For expectation values, we need to compute at this point
-                        # But since single point, perhaps interpolate or something, but for now, skip or handle
-                        pass  # Assuming single points are not critical for e_ops
-                    else:
-                        all_states.append(current_state)
-                        all_times.append(t_slice[0])
-            else:
-                res = run_solver(H, current_state, t_slice, e_ops)
-                if res:
-                    if use_eops:
-                        all_expect += list(res.expect[0])
-                    else:
-                        if len(all_times) > 0 and abs(t_slice[0] - all_times[-1]) < 1e-12:
-                            # Drop the first point only if it would duplicate the previous segment's last time
-                            all_states += res.states[1:]
-                            all_times += list(t_slice[1:])
-                        else:
-                            all_states += res.states
-                            all_times += list(t_slice)
-                        current_state = res.states[-1]
+        # Skip empty or inverted intervals
+        if i1 <= i0:
+            continue
 
-    if use_eops:
-        return np.array(all_times), np.array(all_expect)
-    else:
-        res.states = all_states
-        res.times = np.array(all_times)
-        return res
+        # INCLUDE the right endpoint so we don't drop last times
+        t_slice = times_array[i0 : i1 + 1]
+
+        current_state, times_part, data_part, _ = evolve_single_interval(
+            H, current_state, np.asarray(t_slice), run_solver, solver_e_ops, all_times
+        )
+
+        # De-dupe the very first element if it equals the last one we've already kept
+        if times_part and all_times and abs(times_part[0] - all_times[-1]) < 1e-12:
+            times_part = times_part[1:]
+            data_part = data_part[1:]
+
+        all_times.extend(times_part)
+        all_data.extend(data_part)
+
+    # If returning states and RWA was used, convert to lab frame
+    if e_ops is None and sim_oqs.simulation_config.rwa_sl and all_times:
+        all_data = from_rotating_frame_list(
+            all_data, np.array(all_times), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
+        )
+
+    return np.array(all_times, dtype=float), all_data
 
 
 def compute_polarization_over_window(
-    sim: SimulationModuleOQS,
-    window: np.ndarray | List = None,
-    *,
-    store_states: bool = True,
+    sim_oqs: SimulationModuleOQS,
+    window: np.ndarray | list | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Evolve the system once (with current laser settings) and return (t_det, P(t_det)).
-    usually window = t_det
-
-    - Uses `compute_seq_evolution` which dispatches ME/BR according to sim.simulation_config.
-    - Extracts complex/analytical polarization over the detection window only.
+    """
+    Evolve once with current laser settings and return (t_det, P(t_det)),
+    where P = ⟨μ_+⟩ computed on the requested detection window times.
     """
     if window is None:
-        window = compute_t_det(sim.simulation_config)
-    # Positive-frequency part for this codebase's basis ordering corresponds to
-    # the strictly UPPER-triangular portion (i < j) in the energy eigenbasis.
-    # ~ sigma^- e^[+iwt]
-    mu_op = sim.system.to_eigenbasis(sim.system.dipole_op)
-    dipole_op_pos = Qobj(np.triu(mu_op.full(), k=1), dims=mu_op.dims)
-    if not store_states:
-        if sim.simulation_config.rwa_sl:
+        window = compute_t_det(sim_oqs.simulation_config)
+    window = np.asarray(window, dtype=float)
 
-            def e_ops_callable(t, state):
-                state_lab = from_rotating_frame_op(
-                    state, t, sim.system.n_atoms, sim.laser.carrier_freq_fs
-                )
-                return expect(dipole_op_pos, state_lab)
+    # Build μ_+ in energy eigenbasis (strictly upper triangular part)
+    mu_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
 
-            P_t = compute_evolution(sim, mu_op=e_ops_callable, use_eops=True)
-        else:
-            P_t = compute_evolution(sim, mu_op=dipole_op_pos, use_eops=True)
-        return window, P_t
-    else:
-        # Ensure we store states to extract polarization
-        res: Result = compute_evolution(sim, store_states=store_states)
+    # Create the expectation operator callable
+    e_ops_callable = make_polarization_expectation_operator(
+        mu_op, sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
+    )
 
-        window_states = slice_states_to_window(res, window)
+    # Get polarization on the global time grid
+    times, P_t = compute_evolution(sim_oqs, e_ops=[e_ops_callable])
 
-        if sim.simulation_config.rwa_sl:
-            # States are stored in the rotating frame; convert back to lab for polarization
-            # Use times relative to the start of the simulation to preserve phase accumulation
-            window_states = from_rotating_frame_list(
-                window_states, window, sim.system.n_atoms, sim.laser.carrier_freq_fs
-            )
-
-        # Analytical polarization using positive-frequency part of dipole operator
-        P_t = np.array([expect(dipole_op_pos, state) for state in window_states])
-        return window, P_t
+    # Select the polarization at the desired window times (nearest matches)
+    P_on_window = slice_P_to_window(times, P_t, window)
+    return window, P_on_window
 
 
 def sim_with_only_pulses(
-    sim: SimulationModuleOQS, active_indices: List[int]
+    sim_oqs: SimulationModuleOQS, active_indices: List[int]
 ) -> SimulationModuleOQS:
-    """Return a deep-copied sim where only pulses in active_indices are active (others have amplitude 0).
+    """Return a deep-copied sim_oqs where only pulses in active_indices are active (others have amplitude 0).
 
     Notes:
     - Deep-copy is used to avoid mutating the input and to be process/thread-safe.
     - Phases and timings remain unchanged.
     """
-    sim_i = deepcopy(sim)
+    sim_i = deepcopy(sim_oqs)
     # Build a one-pulse sequence matching the i-th pulse timing and phase
     sim_i.laser.select_pulses(active_indices)
     return sim_i
@@ -272,10 +320,10 @@ def _worker_P_phi_pair(
     """Process worker: compute (phi1, phi2, t_det, P_{phi1,phi2})."""
     from qspectro2d.config.create_sim_obj import load_simulation
 
-    sim = load_simulation(config_path)
-    sim.update_delays(t_coh=t_coh)
-    sim.system.update_frequencies_cm(freq_vector)
-    sim.laser.pulse_phases = [
+    sim_oqs = load_simulation(config_path)
+    sim_oqs.update_delays(t_coh=t_coh)
+    sim_oqs.system.update_frequencies_cm(freq_vector)
+    sim_oqs.laser.pulse_phases = [
         phi1,
         phi2,
         0.0,
@@ -283,25 +331,19 @@ def _worker_P_phi_pair(
 
     # Compute third-order P_{phi1,phi2}(t_det) as P_total - Σ_i P_i with probe phase fixed at 0.
     # Uses: P^(3) ≈ P_total - Σ_i P_i
-    sim_work = deepcopy(sim)
-    sim_work.laser.pulse_phases = [
-        phi1,
-        phi2,
-        0.0,
-    ]  # NOTE: last pulse phase fixed to the DETECTION_PHASE (0)
 
     # Total signal with all pulses
-    t_det = compute_t_det(sim_work.simulation_config)
-    t_det_a, P_total = compute_polarization_over_window(sim_work, t_det)
+    t_det = compute_t_det(sim_oqs.simulation_config)
+    t_det_a, P_total = compute_polarization_over_window(sim_oqs, t_det)
 
     # Subtract signals from all subsets of size 1 and 2 pulses active
     P_sub_sum = np.zeros_like(P_total, dtype=np.complex128)
-    n_pulses = len(sim_work.laser.pulses)
+    n_pulses = len(sim_oqs.laser.pulses)
     import itertools
 
     for k in range(1, 2):  # subsets of size 1 only
         for combo in itertools.combinations(range(n_pulses), k):
-            sim_sub = sim_with_only_pulses(sim_work, list(combo))
+            sim_sub = sim_with_only_pulses(sim_oqs, list(combo))
             _, P_sub = compute_polarization_over_window(sim_sub, t_det)
             P_sub_sum += P_sub
 
@@ -355,14 +397,14 @@ def parallel_compute_1d_e_comps(
     phases_eff = tuple(float(x) for x in phases_src[:n_ph])
 
     # Prepare grid and helpers
-    n_t = len(compute_t_det(config))
+    t_det = compute_t_det(config)
+    n_t = len(t_det)
     sig_types = config.signal_types
     # Assume 3 pulses as per the function doc
 
     # Optional time mask (keep length constant)
     t_mask = None
     if time_cut is not None and np.isfinite(time_cut):
-        t_det = compute_t_det(config)
         t_mask = (t_det <= time_cut).astype(np.float64)
 
     # Accumulate P components as results arrive
@@ -384,6 +426,8 @@ def parallel_compute_1d_e_comps(
                 l, m = lm_tuple
                 phase_factor = np.exp(-1j * (l * phi1_v + m * phi2_v))
                 P_acc[sig] += phase_factor * P_phi
+                if np.all(P_phi == 0):
+                    print("All zero P_phi detected!")
 
     # Extract components for this realization
     dphi = np.diff(phases_eff).mean() if len(phases_eff) > 1 else 1.0
@@ -392,8 +436,7 @@ def parallel_compute_1d_e_comps(
     for sig in sig_types:
         P_comp = P_acc[sig] * dphi * dphi  # normalization
         E_comp = 1j * P_comp
-        if t_mask is not None:
-            E_comp = E_comp * t_mask
+        # if t_mask is not None: TODO uncomment (now just to see what the result is for Paper_eqs solver)
+        #     E_comp = E_comp * t_mask
         E_list.append(E_comp)
-
     return E_list
