@@ -16,9 +16,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
-
 import numpy as np
-from sympy import solve
 
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
@@ -59,13 +57,13 @@ def estimate_slurm_resources(
     mem_safety: float = 100.0,
     base_mb: int = 500,
     time_safety: float = 10,
-    base_time: float = 60.0,
+    base_time: float = 300.0,
 ) -> tuple[str, str]:
     """
     Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
     """
     # ---------------------- MEMORY ----------------------
-    bytes_per_solver = n_times * (N_dim) * 16 # doesnt scale quadratically because i dont store states
+    bytes_per_solver = n_times * (N_dim) * 16 # doesnt scale quadratically because i dont store states    
     total_bytes = mem_safety * workers * bytes_per_solver
     mem_mb = base_mb + total_bytes / (1024**2)
     requested_mem = f"{int(math.ceil(mem_mb))}M"
@@ -76,11 +74,11 @@ def estimate_slurm_resources(
     combos_per_batch = max(1, combos_total // max(1, n_batches))
 
     # Empirical baseline: base_time s per combo for ME, 1 atom, n_times=1000, N=2
-    t0 = 0.015 # basic case for ME
+    t0 = 0.03 # basic case for pessimistic ME
     if solver == "Paper_eqs":
         t0 *= 5.0  # slower solver
     elif solver == "BR":
-        t0 *= 20.0  # slower solver
+        t0 *= 10.0  # slower solver
     base_t = t0
 
     # scaling ~ n_times * N^2  (sparse regime)
@@ -102,7 +100,6 @@ def estimate_slurm_resources(
     requested_time = f"{h:02d}:{m:02d}:{s:02d}"
 
     return requested_mem, requested_time
-
 
 def _split_indices(n_items: int, n_batches: int) -> list[np.ndarray]:
     if n_batches <= 0:
@@ -294,6 +291,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "job_label": job_label,
         "generated_at": timestamp,
         "data_base_path": str(data_base_path),
+        "config_path": str(config_path),
         "rng_seed": args.rng_seed,
     }
     write_json(job_dir / "job_metadata.json", job_metadata)

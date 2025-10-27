@@ -17,7 +17,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from calc_datas import pick_config_yaml
+
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import (
     save_run_artifact,
@@ -98,13 +98,17 @@ def main() -> None:
 
     combos_path = Path(args.combos_file).resolve()
     samples_path = Path(args.samples_file).resolve()
-    config_path = pick_config_yaml().resolve()
     job_dir = combos_path.parent
     job_metadata_path = job_dir / "job_metadata.json"
     job_metadata: dict[str, Any] | None = None
     if job_metadata_path.exists():
         with job_metadata_path.open("r", encoding="utf-8") as handle:
             job_metadata = json.load(handle)
+
+    if job_metadata is None:
+        raise ValueError("job_metadata.json not found")
+
+    config_path = Path(job_metadata["config_path"])
 
     data_base_path = Path(job_metadata["data_base_path"])
     data_dir = data_base_path.parent
