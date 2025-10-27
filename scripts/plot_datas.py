@@ -105,8 +105,8 @@ def main() -> None:
         np.asarray(t_det),
         np.asarray(t_coh) if t_coh is not None else None,
         pad=pad_factor,
-        nu_win_coh=SECTION[1] if SECTION is not None and t_coh is not None else None,
-        nu_win_det=SECTION[1] if SECTION is not None else None,
+        nu_win_coh=SECTION[1] if SECTION is not None else 2.0,
+        nu_win_det=SECTION[1] if SECTION is not None else 2.0,
     )
 
     for idx, st in enumerate(out_types):

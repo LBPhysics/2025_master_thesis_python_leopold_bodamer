@@ -23,14 +23,14 @@ class AtomicSystem:
     # 1 = existing behaviour (ground + single exc manifold); 2 adds double manifold
     max_excitation: int = 1
 
-    psi_ini: Optional[Qobj] = None  # initial state, default is ground state
+    rho_ini: Optional[Qobj] = None  # initial state, default is ground state
 
     def __post_init__(self):
         # build basis
         self._build_basis()
 
         # spectroscopy always starts in the ground state
-        self.psi_ini = ket2dm(self.basis[0])
+        self.rho_ini = ket2dm(self.basis[0])
 
         # store the initial frequencies in history
         self.frequencies_cm_history = [self.frequencies_cm.copy()]
@@ -157,7 +157,7 @@ class AtomicSystem:
 
     @cached_property
     def eigenstates(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Eigenvalues & eigenstates (cached)."""
+        """Eigenvalues & eigenstates (cached). TODO shouldnt be cached?"""
         return self.hamiltonian.eigenstates()
 
     @cached_property
@@ -414,8 +414,8 @@ class AtomicSystem:
             lines.append(f"    {'coupling matrix (cm^-1)':<20}:")
             lines.append(str(self.coupling_matrix_cm))
 
-        lines.append(f"\n    {'psi_ini':<20}:")
-        lines.append(str(self.psi_ini))
+        lines.append(f"\n    {'rho_ini':<20}:")
+        lines.append(str(self.rho_ini))
         lines.append(f"\n    {'System Hamiltonian (undiagonalized)':<20}:")
         lines.append(str(self.hamiltonian))
         lines.append("\n# Dipole operator (dipole_op):")

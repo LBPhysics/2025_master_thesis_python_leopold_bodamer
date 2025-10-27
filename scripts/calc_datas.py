@@ -143,7 +143,7 @@ def main() -> None:
     sim = load_simulation(config_path, validate=True)
     print("✅ Simulation object constructed.")
 
-    _, time_cut = check_the_solver(sim)
+    time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
     data_base_path = generate_unique_data_base(

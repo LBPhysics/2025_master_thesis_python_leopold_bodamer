@@ -17,7 +17,6 @@ from typing import List, Sequence, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from qutip import Qobj, Result, mesolve, brmesolve, expect
-from copy import deepcopy
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_global, compute_t_det
@@ -76,7 +75,6 @@ def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.nd
     # Assuming times are sorted and equally spaced
     times = np.asarray(times)
     window = np.asarray(window)
-
     # nearest index for each window time
     idxs = np.searchsorted(times, window, side="left")
     idxs = np.clip(idxs, 0, len(times) - 1)
@@ -95,7 +93,7 @@ def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.nd
         # Choose the candidate with minimal absolute difference
         best_idx = min(candidates, key=lambda i: abs(times[i] - w))
         selected_idxs[k] = best_idx
-
+    
     return np.array([P_t[int(i)] for i in selected_idxs], dtype=complex)
 
 
@@ -121,52 +119,6 @@ def get_active_pulses_at_interval(pulses, event_times, i):
     """Check if any pulses are active in the i-th interval."""
     t0, t1 = event_times[i], event_times[i + 1]
     return any(p.active_time_range[0] <= t1 and p.active_time_range[1] >= t0 for p in pulses)
-
-
-def evolve_single_interval(H, current_state, t_slice, run_solver, e_ops, all_times):
-    """Evolve over a single time interval and return updated state, results, and solver result.
-
-    Returns:
-        (new_state, times_part, data_part, result_obj_or_None)
-        - If e_ops is truthy: data_part is list of expectation values.
-        - Else: data_part is list of states.
-    """
-    # Nothing to do
-    if t_slice.size == 0:
-        return current_state, [], [], None
-
-    # Single sampling time: evaluate "by hand" without solver
-    if t_slice.size == 1:
-        t = float(t_slice[0])
-
-        # Only emit something if it's the very first time, or a genuinely new time
-        if len(all_times) == 0 or abs(t - all_times[-1]) >= 1e-12:
-            if e_ops:
-                # e_ops may contain callables or operators
-                op0 = e_ops[0]
-                if callable(op0):
-                    val = op0(t, current_state)
-                else:
-                    val = expect(op0, current_state)
-                return current_state, [t], [val], None
-            else:
-                return current_state, [t], [current_state], None
-
-        # Otherwise drop duplicate
-        return current_state, [], [], None
-
-    # Multi-point interval: use the solver
-    res = run_solver(H, current_state, t_slice, e_ops)
-    if res is None:
-        # Keep API stable even if solver skipped
-        return current_state, list(t_slice), ([] if e_ops else []), None
-
-    if e_ops:
-        # QuTiP returns list per e_op; you use a single e_op
-        final_state = res.states[-1] if res.states else current_state
-        return final_state, list(t_slice), list(res.expect[0]), res
-    else:
-        return res.states[-1], list(t_slice), list(res.states), res
 
 
 def aggregate_results(all_states, all_times, all_expect, use_eops, res_template):
@@ -209,10 +161,9 @@ def compute_evolution(
 
     def run_solver(H, rho0, tlist, e_ops):
         if ode_solver == "BR":
-            # Use rho0= to be compatible across QuTiP versions
             return brmesolve(
                 H=H,
-                rho0=rho0,
+                psi0=rho0,
                 tlist=tlist,
                 a_ops=sim_oqs.decay_channels,
                 e_ops=e_ops,
@@ -235,7 +186,7 @@ def compute_evolution(
         get_active_pulses_at_interval(pulses, event_times, i) for i in range(len(event_times) - 1)
     ]
 
-    current_state = sim_oqs.system.psi_ini
+    current_state = sim_oqs.system.rho_ini
 
     for i in range(len(event_times) - 1):
         H = select_hamiltonian(sim_oqs, active_intervals[i])
@@ -247,20 +198,17 @@ def compute_evolution(
         if i1 <= i0:
             continue
 
-        # INCLUDE the right endpoint so we don't drop last times
-        t_slice = times_array[i0 : i1 + 1]
+        # Include the right endpoint only for the last interval to avoid dropping last times
+        is_last_interval = i == len(event_times) - 2
+        t_slice = times_array[i0 : i1 + 1] if is_last_interval else times_array[i0 : i1]
 
-        current_state, times_part, data_part, _ = evolve_single_interval(
-            H, current_state, np.asarray(t_slice), run_solver, solver_e_ops, all_times
-        )
+        res = run_solver(H, current_state, t_slice, solver_e_ops)
+        current_state = res.final_state
+        data_part = res.expect[0] if e_ops is not None else res.states
 
-        # De-dupe the very first element if it equals the last one we've already kept
-        if times_part and all_times and abs(times_part[0] - all_times[-1]) < 1e-12:
-            times_part = times_part[1:]
-            data_part = data_part[1:]
-
-        all_times.extend(times_part)
-        all_data.extend(data_part)
+        if len(t_slice) > 0 and (not all_times or abs(t_slice[0] - all_times[-1]) > 1e-12):
+            all_times.extend(t_slice)
+            all_data.extend(data_part)
 
     # If returning states and RWA was used, convert to lab frame
     if e_ops is None and sim_oqs.simulation_config.rwa_sl and all_times:
@@ -308,6 +256,7 @@ def sim_with_only_pulses(
     - Deep-copy is used to avoid mutating the input and to be process/thread-safe.
     - Phases and timings remain unchanged.
     """
+    from copy import deepcopy
     sim_i = deepcopy(sim_oqs)
     # Build a one-pulse sequence matching the i-th pulse timing and phase
     sim_i.laser.select_pulses(active_indices)
