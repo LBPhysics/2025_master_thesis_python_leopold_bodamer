@@ -94,9 +94,7 @@ def main() -> None:
             # Save the figure
             saved = save_fig(fig, filename=filename)
             saved_files.append(str(saved))
-            print(f"  Saved: {saved}")
-
-    # Frequency domain
+            print(saved)
     print("Plotting frequency domain...")
     pad_factor = EXTEND
     nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
@@ -147,9 +145,9 @@ def main() -> None:
             # Save the figure
             saved = save_fig(fig, filename=filename)
             saved_files.append(str(saved))
-            print(f"  Saved: {saved}")
+            print(saved)
 
-    print(f"✅ Plotted and saved {len(saved_files)} figures.")
+    print(f"to see them go to:\n{filename.parent}")
 
 
 if __name__ == "__main__":
