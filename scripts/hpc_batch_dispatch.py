@@ -58,6 +58,7 @@ def estimate_slurm_resources(
     base_mb: int = 500,
     time_safety: float = 10,
     base_time: float = 300.0,
+    rwa_sl: bool = True,
 ) -> tuple[str, str]:
     """
     Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
@@ -79,6 +80,8 @@ def estimate_slurm_resources(
     t0 = 0.03  # basic case for pessimistic ME
     if solver == "Paper_eqs" or solver == "BR":
         t0 *= 5.0  # slower solver
+    if not rwa_sl:
+        t0 *= 5.0  # non-RWA is WAY slower
     base_t = t0
 
     # scaling ~ n_times * N^2  (sparse regime)
@@ -258,6 +261,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         workers=16,  # BECAUSE I set every batch to use 16 CPUs
         N_dim=sim.system.dimension,
         solver=sim.simulation_config.ode_solver,
+        rwa_sl=sim.simulation_config.rwa_sl,
     )
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

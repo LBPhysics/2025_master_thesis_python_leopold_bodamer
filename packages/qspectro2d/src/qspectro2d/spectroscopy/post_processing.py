@@ -28,14 +28,14 @@ def compute_spectra(
     force_dense: bool = False,
 ) -> Tuple[Optional[np.ndarray], np.ndarray, List[ArrayOrSparse], List[str]]:
     """Compute spectra along detection (and optional coherence) axes.
-        Based on the actual paper: https://pubs.aip.org/jcp/article/124/23/234504/930650/
-    
+    Based on the paper: https://doi.org/10.1063/5.0214023
+
     For each input data array:
-    - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{-i w t} dt
+    - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
       (implemented via IFFT with virtual padding, no normalization scaling applied).
     - If coherence axis is present:
-        - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (IFFT)
-        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT))
+        - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT)
+        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (IFFT))
 
     Args:
         datas: List of time-domain data arrays (original size, not extended).

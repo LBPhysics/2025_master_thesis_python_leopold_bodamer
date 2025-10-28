@@ -167,7 +167,7 @@ def compute_evolution(
                 a_ops=sim_oqs.decay_channels,
                 e_ops=e_ops,
                 options=options,
-                sec_cutoff=0.1,  # TODO Changed from -1 to 0.1 to apply secular approximation and avoid numerical issues
+                sec_cutoff=-1, # NOTE this means no secondary cutoff -> full BR dynamics
             )
         else:
             return mesolve(
@@ -230,25 +230,14 @@ def compute_polarization_over_window(
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
-    # Build μ_+ in energy eigenbasis (strictly upper triangular part)
-    dip_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
-    dipole_op_pos = Qobj(np.tril(dip_op.full(), k=-1), dims=dip_op.dims)
-    # Positive-frequency part for this codebase's basis ordering corresponds to
-    # the strictly LOWER-triangular portion (m > n) in the energy eigenbasis.
-    # ~ sigma^+ e^[-iwt]
+    # Build μ_+ in energy eigenbasis (lower triangular part), which oscillates as exp(-i ω_L t) in RWA frame
+    mu_pos = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op.dag())
     if sim_oqs.simulation_config.rwa_sl:
         # rotate the states back to lab frame before expectation value
-        def e_ops_callable(t: float, state: Qobj) -> complex:
-            from qspectro2d.utils.rwa_utils import from_rotating_frame_op
-
-            n_atoms = sim_oqs.system.n_atoms
-            carrier_freq_fs = sim_oqs.laser.carrier_freq_fs
-            state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
-            return expect(dipole_op_pos, state_lab)
-
-        polarization = e_ops_callable
+        from qspectro2d.spectroscopy.polarization import time_dependent_polarization_rwa
+        polarization = lambda t, state: time_dependent_polarization_rwa(mu_pos, state, t, sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs)
     else:
-        polarization = dipole_op_pos
+        polarization = mu_pos
 
     # Get polarization on the global time grid
     times, P_t = compute_evolution(sim_oqs, e_ops=[polarization])
@@ -322,7 +311,7 @@ def parallel_compute_1d_e_comps(
     *,
     phases: Optional[Sequence[float]] = None,
     lm: Optional[Tuple[int, int]] = None,
-    time_cut: Optional[float] = None,
+    time_cut: Optional[float] = None, # TODO for now just to see evolution -> later implement again
 ) -> List[np.ndarray]:
     """Compute 1D electric field components E_kS(t_det) with phase cycling only.
 
@@ -364,9 +353,9 @@ def parallel_compute_1d_e_comps(
     # Assume 3 pulses as per the function doc
 
     # Optional time mask (keep length constant)
-    t_mask = None
-    if time_cut is not None and np.isfinite(time_cut):
-        t_mask = (t_det <= time_cut).astype(np.float64)
+    #t_mask = None
+    #if time_cut is not None and np.isfinite(time_cut):
+    #    t_mask = (t_det <= time_cut).astype(np.float64)
 
     # Accumulate P components as results arrive
     P_acc = {sig: np.zeros(n_t, dtype=np.complex128) for sig in sig_types}
@@ -397,7 +386,7 @@ def parallel_compute_1d_e_comps(
     for sig in sig_types:
         P_comp = P_acc[sig] * dphi * dphi  # normalization
         E_comp = 1j * P_comp
-        # if t_mask is not None: TODO uncomment (now just to see what the result is for Paper_eqs solver)
+        # if t_mask is not None:
         #     E_comp = E_comp * t_mask
         E_list.append(E_comp)
     return E_list
