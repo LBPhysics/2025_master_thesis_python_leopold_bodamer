@@ -7,11 +7,9 @@ P^+(t) = Tr[μ^+ ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
 """
 
 from __future__ import annotations
-from typing import Union, List, Callable
+from typing import Union, List
 import numpy as np
 from qutip import Qobj, ket2dm, expect
-
-from ..utils.rwa_utils import from_rotating_frame_op
 
 
 def complex_polarization(
@@ -72,33 +70,4 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
     return complex(pol)
 
 
-def make_polarization_expectation_operator(
-    dipole_op: Qobj, n_atoms: int, carrier_freq_fs: float
-) -> Callable[[float, Qobj], complex]:
-    """Create a callable expectation operator for polarization in lab frame.
-
-    Parameters
-    ----------
-    dipole_op : Qobj
-        Dipole operator in eigenbasis.
-    n_atoms : int
-        Number of atoms.
-    carrier_freq_fs : float
-        Carrier frequency in fs^-1.
-
-    Returns
-    -------
-    Callable[[float, Qobj], complex]
-        Function that takes (t, state) and returns polarization expectation value.
-    """
-    # Positive-frequency part
-    dipole_op_pos = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
-
-    def e_ops_callable(t: float, state: Qobj) -> complex:
-        state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
-        return expect(dipole_op_pos, state_lab)
-
-    return e_ops_callable
-
-
-__all__ = ["complex_polarization", "make_polarization_expectation_operator"]
+__all__ = ["complex_polarization"]
