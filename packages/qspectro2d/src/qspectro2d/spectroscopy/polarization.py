@@ -5,6 +5,7 @@ Pphys(t) = Tr[μ ρ(t)] = ∑_{m,n} μ_{mn} ρ_{nm}(t)
 but for spectroscopy are onlz interested in
 P^+(t) = Tr[μ^+ ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
 """
+
 from __future__ import annotations
 from typing import Union, List, Callable
 import numpy as np

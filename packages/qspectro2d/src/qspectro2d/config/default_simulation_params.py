@@ -61,9 +61,10 @@ RWA_SL = True
 ODE_SOLVER = "BR"  # ODE solver to use
 SIM_TYPE = "1d"
 SOLVER_OPTIONS = {
-    #    "nsteps": 200000,
-    #    "atol": 1e-6,
-    #    "rtol": 1e-4,
+    "nsteps": 200000,
+    "atol": 1e-5,
+    "rtol": 1e-3,
+    "method": "bdf",  # Changed to bdf for stiff ODE systems
     # "secular_cutoff", TODO can i also include redfield options here?
 }
 # === BATH SYSTEM DEFAULTS ===

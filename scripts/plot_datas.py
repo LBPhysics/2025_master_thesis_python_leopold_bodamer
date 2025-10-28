@@ -147,7 +147,7 @@ def main() -> None:
             saved_files.append(str(saved))
             print(saved)
 
-    print(f"to see them go to:\n{filename.parent}")
+    print(f"to see them go to:\n{Path(filename).parent}")
 
 
 if __name__ == "__main__":
