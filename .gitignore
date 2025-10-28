@@ -11,6 +11,7 @@
 /packages/plotstyle/figures/
 /figures/
 .idea/
+*.yaml
 
 # Ignore Python cache files
 __pycache__/
