@@ -157,7 +157,7 @@ class AtomicSystem:
 
     @cached_property
     def eigenstates(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Eigenvalues & eigenstates (cached). TODO shouldnt be cached?"""
+        """Eigenvalues & eigenstates (cached)."""
         return self.hamiltonian.eigenstates()
 
     @cached_property

@@ -70,4 +70,17 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
     return complex(pol)
 
 
-__all__ = ["complex_polarization"]
+def time_dependent_polarization_rwa(
+    dipole_op: Qobj, 
+    state: Qobj, 
+    t: float, 
+    n_atoms: int, 
+    carrier_freq_fs: float
+) -> complex:
+    """Compute time-dependent polarization with RWA correction."""
+    from qspectro2d.utils.rwa_utils import from_rotating_frame_op
+    state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
+    return expect(dipole_op, state_lab)
+
+__all__ = ["complex_polarization", "time_dependent_polarization_rwa"]
+

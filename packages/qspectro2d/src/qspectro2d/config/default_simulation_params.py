@@ -61,11 +61,10 @@ RWA_SL = True
 ODE_SOLVER = "BR"  # ODE solver to use
 SIM_TYPE = "1d"
 SOLVER_OPTIONS = {
-    "nsteps": 200000,
-    "atol": 1e-5,
-    "rtol": 1e-3,
-    "method": "bdf",  # Changed to bdf for stiff ODE systems
-    # "secular_cutoff", TODO can i also include redfield options here?
+#    "nsteps": 200000,
+#    "atol": 1e-5,
+#    "rtol": 1e-3,
+#    "method": "bdf",  # Changed to bdf for stiff ODE systems
 }
 # === BATH SYSTEM DEFAULTS ===
 # frequencies = [convert_cm_to_fs(freq_cm) for freq_cm in FREQUENCIES_CM]
@@ -174,7 +173,7 @@ def validate(params: dict) -> None:
         raise ValueError(f"DIP_MOMENTS length ({len(dip_moments)}) != N_ATOMS ({n_atoms})")
 
     # Validate positive values
-    if bath_temp <= 0:
+    if bath_temp < 0:
         raise ValueError("BATH_TEMP must be positive")
 
     if bath_cutoff <= 0:
