@@ -24,7 +24,6 @@ from ..config.default_simulation_params import (
     PHASE_CYCLING_PHASES,
     COMPONENT_MAP,
 )
-from ..spectroscopy.polarization import make_polarization_expectation_operator
 from qspectro2d.utils.rwa_utils import from_rotating_frame_list
 
 __all__ = [
@@ -232,15 +231,27 @@ def compute_polarization_over_window(
     window = np.asarray(window, dtype=float)
 
     # Build μ_+ in energy eigenbasis (strictly upper triangular part)
-    mu_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
+    dip_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
+    dipole_op_pos = Qobj(np.tril(dip_op.full(), k=-1), dims=dip_op.dims)
+    # Positive-frequency part for this codebase's basis ordering corresponds to
+    # the strictly LOWER-triangular portion (m > n) in the energy eigenbasis.
+    # ~ sigma^+ e^[-iwt]
+    if sim_oqs.simulation_config.rwa_sl:
+        # rotate the states back to lab frame before expectation value
+        def e_ops_callable(t: float, state: Qobj) -> complex:
+            from qspectro2d.utils.rwa_utils import from_rotating_frame_op
 
-    # Create the expectation operator callable
-    e_ops_callable = make_polarization_expectation_operator(
-        mu_op, sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
-    )
+            n_atoms = sim_oqs.system.n_atoms
+            carrier_freq_fs = sim_oqs.laser.carrier_freq_fs
+            state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
+            return expect(dipole_op_pos, state_lab)
+
+        polarization = e_ops_callable
+    else:
+        polarization = dipole_op_pos
 
     # Get polarization on the global time grid
-    times, P_t = compute_evolution(sim_oqs, e_ops=[e_ops_callable])
+    times, P_t = compute_evolution(sim_oqs, e_ops=[polarization])
 
     # Select the polarization at the desired window times (nearest matches)
     P_on_window = slice_P_to_window(times, P_t, window)
