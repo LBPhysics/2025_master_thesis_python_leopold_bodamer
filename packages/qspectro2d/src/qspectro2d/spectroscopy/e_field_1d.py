@@ -93,7 +93,7 @@ def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.nd
         # Choose the candidate with minimal absolute difference
         best_idx = min(candidates, key=lambda i: abs(times[i] - w))
         selected_idxs[k] = best_idx
-    
+
     return np.array([P_t[int(i)] for i in selected_idxs], dtype=complex)
 
 
@@ -168,7 +168,7 @@ def compute_evolution(
                 a_ops=sim_oqs.decay_channels,
                 e_ops=e_ops,
                 options=options,
-                sec_cutoff=-1,
+                sec_cutoff=0.1,  # TODO Changed from -1 to 0.1 to apply secular approximation and avoid numerical issues
             )
         else:
             return mesolve(
@@ -200,7 +200,7 @@ def compute_evolution(
 
         # Include the right endpoint only for the last interval to avoid dropping last times
         is_last_interval = i == len(event_times) - 2
-        t_slice = times_array[i0 : i1 + 1] if is_last_interval else times_array[i0 : i1]
+        t_slice = times_array[i0 : i1 + 1] if is_last_interval else times_array[i0:i1]
 
         res = run_solver(H, current_state, t_slice, solver_e_ops)
         current_state = res.final_state
@@ -257,6 +257,7 @@ def sim_with_only_pulses(
     - Phases and timings remain unchanged.
     """
     from copy import deepcopy
+
     sim_i = deepcopy(sim_oqs)
     # Build a one-pulse sequence matching the i-th pulse timing and phase
     sim_i.laser.select_pulses(active_indices)

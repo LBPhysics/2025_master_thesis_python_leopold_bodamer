@@ -152,7 +152,8 @@ def main() -> None:
     for combo in _iter_combos(combinations):
         t_idx = combo.get("t_index", 0)
         inhom_idx = combo.get("inhom_index")
-        global_idx = combo.get("index", len(saved_paths))
+        global_idx = combo.get("index")
+        local_idx = len(saved_paths)
         t_coh_val = combo.get("t_coh_value")
 
         if inhom_idx < 0 or inhom_idx >= n_inhom:
@@ -164,7 +165,7 @@ def main() -> None:
         freq_vector = samples[inhom_idx, :].astype(float)
 
         print(
-            f"\n--- combo {global_idx} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
+            f"\n--- combo {local_idx} / {len(combinations)} (global {global_idx}): t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
             f"inhom_idx={inhom_idx} ---"
         )
 
