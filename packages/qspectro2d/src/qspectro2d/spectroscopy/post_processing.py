@@ -10,8 +10,8 @@ __all__ = [
 ]
 
 
-ArrayOrSparse = Union[np.ndarray, sp.spmatrix]
 
+ArrayOrSparse = Union[np.ndarray, sp.spmatrix]
 
 def compute_spectra(
     datas: List[np.ndarray],
@@ -22,14 +22,14 @@ def compute_spectra(
     *,
     # ---- rectangular band settings in 10^4 cm^-1 ----
     nu_win_det: float = 2.0,
-    nu_win_coh: Optional[float] = 2.0,  # ignored if t_coh is None
+    nu_win_coh: Optional[float] = 2.0,   # ignored if t_coh is None
     # ---- outputs / memory tuning ----
     return_sparse: bool = True,
     force_dense: bool = False,
 ) -> Tuple[Optional[np.ndarray], np.ndarray, List[ArrayOrSparse], List[str]]:
     """Compute spectra along detection (and optional coherence) axes.
-    TODO changed from:  Based on the paper: https://doi.org/10.1063/5.0214023
-                   to:  Based on the actual paper: https://pubs.aip.org/jcp/article/124/23/234504/930650/
+        Based on the actual paper: https://pubs.aip.org/jcp/article/124/23/234504/930650/
+    
     For each input data array:
     - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{-i w t} dt
       (implemented via IFFT with virtual padding, no normalization scaling applied).
@@ -75,8 +75,8 @@ def compute_spectra(
 
     # Detection frequency axes
     freq_dets = np.fft.fftfreq(n_det_ext, d=dt_det)
-    nu_det_unshifted = freq_dets / 2.998 * 10  # for masking (no shift)
-    nu_dets = np.fft.fftshift(nu_det_unshifted)  # for user ergonomics
+    nu_det_unshifted = freq_dets / 2.998 * 10                 # for masking (no shift)
+    nu_dets = np.fft.fftshift(nu_det_unshifted)               # for user ergonomics
 
     # Coherence axes
     if t_coh is None:
@@ -89,8 +89,8 @@ def compute_spectra(
         n_coh_ext = int(np.ceil(pad * n_coh))
         dt_coh = float(t_coh[1] - t_coh[0])
         freq_cohs = np.fft.fftfreq(n_coh_ext, d=dt_coh)
-        nu_coh_unshifted = freq_cohs / 2.998 * 10  # for masking (no shift)
-        nu_cohs = np.fft.fftshift(nu_coh_unshifted)  # for convenience
+        nu_coh_unshifted = freq_cohs / 2.998 * 10             # for masking (no shift)
+        nu_cohs = np.fft.fftshift(nu_coh_unshifted)           # for convenience
 
     datas_nu: List[ArrayOrSparse] = []
     out_types: List[str] = []
@@ -101,9 +101,9 @@ def compute_spectra(
         if nu_win_coh is None:
             raise ValueError("nu_win_coh must be set for 2D rectangular ROI")
         # Build outer-product mask in shifted coordinates
-        det_mask = (np.abs(nu_dets) < float(nu_win_det))[None, :]  # shape (1, n_det_ext)
-        coh_mask = (np.abs(nu_cohs) < float(nu_win_coh))[:, None]  # shape (n_coh_ext, 1)
-        rect_mask_2d = coh_mask & det_mask  # shape (n_coh_ext, n_det_ext)
+        det_mask = (np.abs(nu_dets) < float(nu_win_det))[None, :]   # shape (1, n_det_ext)
+        coh_mask = (np.abs(nu_cohs) < float(nu_win_coh))[:, None]   # shape (n_coh_ext, 1)
+        rect_mask_2d = coh_mask & det_mask                                   # shape (n_coh_ext, n_det_ext)
 
     for idx, (arr, stype) in enumerate(zip(datas, sig_types)):
         st_norm = str(stype).strip().lower()
@@ -113,8 +113,8 @@ def compute_spectra(
             if arr.ndim != 1 or arr.shape[0] != n_det:
                 raise ValueError(f"datas[{idx}] must be 1D with length len(t_det)")
 
-            # Detection axis (-i): IFFT with virtual padding
-            spec_det = np.fft.fft(arr, n=n_det_ext, axis=0)
+            # Detection axis (+i): IFFT with virtual padding
+            spec_det = np.fft.ifft(arr, n=n_det_ext, axis=0)
 
             if force_dense or not return_sparse:
                 # Keep dense; shift for user-facing axis
@@ -137,15 +137,15 @@ def compute_spectra(
         if arr.ndim != 2 or arr.shape != (n_coh, n_det):
             raise ValueError(f"datas[{idx}] must be 2D with shape (len(t_coh), len(t_det))")
 
-        # Detection axis (-i): IFFT along det axis (virtual padding)
-        spec_2d = np.fft.fft(arr, n=n_det_ext, axis=1)
+        # Detection axis (+i): IFFT along det axis (virtual padding)
+        spec_2d = np.fft.ifft(arr, n=n_det_ext, axis=1)
 
         # Coherence axis depends on signal type (virtual padding)
         if st_norm == "nonrephasing":
-            spec_2d = np.fft.fft(spec_2d, n=n_coh_ext, axis=0)
+            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("nonrephasing")
         else:
-            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0)
+            spec_2d = np.fft.fft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("rephasing")
 
         if force_dense or not return_sparse:
@@ -162,9 +162,9 @@ def compute_spectra(
             vals = spec_2d_shifted[rows, cols]
             spmat = sp.coo_matrix((vals, (rows, cols)), shape=(n_coh_ext, n_det_ext))
             datas_nu.append(spmat)
-
+            
     if t_coh is not None:
-        have_r = any(t.lower().startswith("rephasing") for t in out_types)
+        have_r  = any(t.lower().startswith("rephasing") for t in out_types)
         have_nr = any(t.lower().startswith("nonrephasing") for t in out_types)
         if have_r and have_nr:
             # Example: match by index or by separate provided lists;
