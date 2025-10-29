@@ -107,7 +107,7 @@ def e_pulses(
         phi_eff = phi + omega * pulse_seq.pulse_peak_times[i]
         E_amp = pulse_seq.pulse_amplitudes[i]
         single_env = single_pulse_envelope(t_array, pulse_seq.pulses[i])
-        field_total += E_amp * single_env * np.exp(-1j * phi_eff)
+        field_total += E_amp * single_env * np.exp(+1j * phi_eff)
 
     if is_scalar:
         return complex(field_total[0])

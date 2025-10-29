@@ -10,8 +10,8 @@ __all__ = [
 ]
 
 
-
 ArrayOrSparse = Union[np.ndarray, sp.spmatrix]
+
 
 def compute_spectra(
     datas: List[np.ndarray],
@@ -22,7 +22,7 @@ def compute_spectra(
     *,
     # ---- rectangular band settings in 10^4 cm^-1 ----
     nu_win_det: float = 2.0,
-    nu_win_coh: Optional[float] = 2.0,   # ignored if t_coh is None
+    nu_win_coh: Optional[float] = 2.0,  # ignored if t_coh is None
     # ---- outputs / memory tuning ----
     return_sparse: bool = True,
     force_dense: bool = False,
@@ -74,8 +74,8 @@ def compute_spectra(
 
     # Detection frequency axes
     freq_dets = np.fft.fftfreq(n_det_ext, d=dt_det)
-    nu_det_unshifted = freq_dets / 2.998 * 10                 # for masking (no shift)
-    nu_dets = np.fft.fftshift(nu_det_unshifted)               # for user ergonomics
+    nu_det_unshifted = freq_dets / 2.998 * 10  # for masking (no shift)
+    nu_dets = np.fft.fftshift(nu_det_unshifted)  # for user ergonomics
 
     # Coherence axes
     if t_coh is None:
@@ -88,8 +88,8 @@ def compute_spectra(
         n_coh_ext = int(np.ceil(pad * n_coh))
         dt_coh = float(t_coh[1] - t_coh[0])
         freq_cohs = np.fft.fftfreq(n_coh_ext, d=dt_coh)
-        nu_coh_unshifted = freq_cohs / 2.998 * 10             # for masking (no shift)
-        nu_cohs = np.fft.fftshift(nu_coh_unshifted)           # for convenience
+        nu_coh_unshifted = freq_cohs / 2.998 * 10  # for masking (no shift)
+        nu_cohs = np.fft.fftshift(nu_coh_unshifted)  # for convenience
 
     datas_nu: List[ArrayOrSparse] = []
     out_types: List[str] = []
@@ -100,9 +100,9 @@ def compute_spectra(
         if nu_win_coh is None:
             raise ValueError("nu_win_coh must be set for 2D rectangular ROI")
         # Build outer-product mask in shifted coordinates
-        det_mask = (np.abs(nu_dets) < float(nu_win_det))[None, :]   # shape (1, n_det_ext)
-        coh_mask = (np.abs(nu_cohs) < float(nu_win_coh))[:, None]   # shape (n_coh_ext, 1)
-        rect_mask_2d = coh_mask & det_mask                                   # shape (n_coh_ext, n_det_ext)
+        det_mask = (np.abs(nu_dets) < float(nu_win_det))[None, :]  # shape (1, n_det_ext)
+        coh_mask = (np.abs(nu_cohs) < float(nu_win_coh))[:, None]  # shape (n_coh_ext, 1)
+        rect_mask_2d = coh_mask & det_mask  # shape (n_coh_ext, n_det_ext)
 
     for idx, (arr, stype) in enumerate(zip(datas, sig_types)):
         st_norm = str(stype).strip().lower()
