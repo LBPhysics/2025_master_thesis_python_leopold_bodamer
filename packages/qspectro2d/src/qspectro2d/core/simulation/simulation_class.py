@@ -70,18 +70,17 @@ class SimulationModuleOQS:
         """
         Interaction Hamiltonian:
         With
-            H_int = -(σ- E⁺(t) + σ+ E⁻(t))
+            H_int = -(σ- E⁻(t) + σ+ E⁺(t))
             where   E⁺(t) = positive-frequency component of E_i(t), e.g. E_i^0 * exp(-iφ_i-wL*t_i)
                     σ⁻ is THE LOWERING OPERATOR / also the positive frequency part of the dipole operator
         Without RWA (full field):
             H_int(t) = -[E⁺(t) + E⁻(t)] ⊗ (σ⁺ + σ⁻)
-                    = -E(t) (σ⁺ + σ⁻)
         """
         lowering_op = self.system.to_eigenbasis(self.system.lowering_op) # oscillates as exp(+i ω_L t) in RWA frame
         if self.simulation_config.rwa_sl:
             E_plus_RWA = e_pulses(t, self.laser) # oscillates as exp(-i ω_L t) in lab frame
             E_minus_RWA = np.conj(E_plus_RWA)
-            H_int = -(lowering_op * E_plus_RWA + lowering_op.dag() * E_minus_RWA)
+            H_int = -(lowering_op * E_minus_RWA + lowering_op.dag() * E_plus_RWA)
             return H_int
         dipole_op = lowering_op + lowering_op.dag()
         E_plus = epsilon_pulses(t, self.laser)
