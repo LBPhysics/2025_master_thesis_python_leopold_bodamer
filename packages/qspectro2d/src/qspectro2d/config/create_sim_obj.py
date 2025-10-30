@@ -78,6 +78,9 @@ def load_simulation_config(
     pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
     t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
     t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
+    t_coh_current_raw = config_cfg.get("t_coh_current", None)
+    if t_coh_current_raw != t_coh_max:
+        t_coh_current = float(t_coh_current_raw)
     t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
     dt = float(config_cfg.get("dt", dflt.DT))
     n_phases = int(config_cfg.get("n_phases", dflt.N_PHASES))
@@ -94,6 +97,7 @@ def load_simulation_config(
         rwa_sl=rwa_sl,
         dt=dt,
         t_coh_max=t_coh_max,
+        t_coh_current=t_coh_current,
         t_wait=t_wait,
         t_det_max=t_det_max,
         pulse_fwhm_fs=pulse_fwhm_fs,
@@ -129,7 +133,12 @@ def load_simulation_laser(
     t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
 
     # Create laser with initial delays
-    pulse_delays = [0.0, t_wait]  # -> 3 pulses
+    t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
+    t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
+    t_coh_current_raw = config_cfg.get("t_coh_current", None)
+    if t_coh_current_raw != t_coh_max:
+        t_coh_current = float(t_coh_current_raw)
+    pulse_delays = [t_coh_current, t_wait]  # -> 3 pulses
     phases = [0.0, 0.0, 0.0]  # last phase is detection phase
 
     laser = LaserPulseSequence.from_pulse_delays(

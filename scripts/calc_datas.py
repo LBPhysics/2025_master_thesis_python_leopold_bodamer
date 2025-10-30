@@ -167,6 +167,8 @@ def main() -> None:
     )
 
     sim.simulation_config.sim_type = args.sim_type
+    if args.sim_type == "1d" and getattr(sim.simulation_config, "t_coh_current", None) is None:
+        sim.simulation_config.t_coh_current = float(sim.simulation_config.t_coh_max)
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
     combinations = build_combinations(t_coh_values, n_inhom)
 
@@ -184,6 +186,11 @@ def main() -> None:
         "n_t_coh": int(t_coh_values.size),
         "n_combinations": len(combinations),
         "time_cut": float(time_cut),
+        "t_coh_current": (
+            float(sim.simulation_config.t_coh_current)
+            if sim.simulation_config.t_coh_current is not None
+            else None
+        ),
         "job_label": job_label,
         "job_token": label_token,
         "data_base_path": str(data_base_path),
