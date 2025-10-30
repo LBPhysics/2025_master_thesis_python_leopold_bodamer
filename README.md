@@ -40,6 +40,8 @@ There are two main workflows: **local execution** (for small tests) and **HPC ba
 For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates all combinations of coherence times and inhomogeneous samples, then processes them into final averaged spectra.
 
 1. **Configure simulation** — Duplicate the template in `scripts/simulation_configs/` and adjust physical parameters. `_monomer.yaml` is the default that `calc_datas.py` auto-selects.
+   - Always set `config.t_coh` (fs) for 0d/1d runs. If omitted, the code falls back to `t_coh_max` (which defaults to `t_det_max`), but explicit values make intent clear.
+   - 2d sweeps ignore `config.t_coh` and instead iterate over the full grid up to `t_coh_max`.
 
 1. **Simulate** — Run `python scripts/calc_datas.py --sim_type {0d,1d,2d}` locally.
    - Generates all combinations of `t_coh` points and inhomogeneous samples.

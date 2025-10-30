@@ -62,10 +62,10 @@ RWA_SL = True
 ODE_SOLVER = "BR"  # ODE solver to use
 SIM_TYPE = "1d"
 SOLVER_OPTIONS = {
-#    "nsteps": 200000,
-#    "atol": 1e-5,
-#    "rtol": 1e-3,
-#    "method": "bdf",  # Changed to bdf for stiff ODE systems
+    #    "nsteps": 200000,
+    #    "atol": 1e-5,
+    #    "rtol": 1e-3,
+    #    "method": "bdf",  # Changed to bdf for stiff ODE systems
 }
 # === BATH SYSTEM DEFAULTS ===
 # frequencies = [convert_cm_to_fs(freq_cm) for freq_cm in FREQUENCIES_CM]
@@ -114,6 +114,7 @@ def validate(params: dict) -> None:
     t_det_max = params.get("t_det_max", T_DET_MAX)
     dt = params.get("dt", DT)
     t_coh_max = params.get("t_coh_max", T_COH_MAX)
+    t_coh_current = params.get("t_coh_current")
     t_wait = params.get("t_wait", T_WAIT)
 
     # Sampling and signal types
@@ -139,6 +140,9 @@ def validate(params: dict) -> None:
         raise ValueError("dt must be > 0")
     if t_coh_max < 0:
         raise ValueError("t_coh_max must be >= 0")
+    if t_coh_current is not None:
+        if t_coh_current < 0:
+            raise ValueError("config.t_coh must be >= 0")
     if t_wait < 0:
         raise ValueError("t_wait must be >= 0")
     if t_det_max <= 0:
@@ -231,6 +235,9 @@ def validate(params: dict) -> None:
         raise ValueError(f"sim_type '{sim_type}' not in {SUPPORTED_SIM_TYPES}")
     if max_workers <= 0:
         raise ValueError("max_workers must be >= 1")
+
+    if sim_type in ("0d", "1d") and t_coh_current is None:
+        raise ValueError("config.t_coh must be provided for 0d/1d simulations")
 
     if rwa_sl:
         freqs_array = np.array(frequencies_cm)

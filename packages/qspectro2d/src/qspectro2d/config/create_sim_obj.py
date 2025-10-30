@@ -78,9 +78,8 @@ def load_simulation_config(
     pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
     t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
     t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
-    t_coh_current_raw = config_cfg.get("t_coh_current", None)
-    if t_coh_current_raw != t_coh_max:
-        t_coh_current = float(t_coh_current_raw)
+    t_coh_value = config_cfg.get("t_coh")
+    t_coh_current = float(t_coh_value) if t_coh_value is not None else None
     t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
     dt = float(config_cfg.get("dt", dflt.DT))
     n_phases = int(config_cfg.get("n_phases", dflt.N_PHASES))
@@ -88,6 +87,8 @@ def load_simulation_config(
     ode_solver = str(config_cfg.get("solver", dflt.ODE_SOLVER))
     signal_types = list(config_cfg.get("signal_types", dflt.SIGNAL_TYPES))
     sim_type = str(config_cfg.get("sim_type", dflt.SIM_TYPE))
+    if sim_type in {"0d", "1d"} and t_coh_current is None:
+        t_coh_current = t_coh_max
     rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
     initial_state = str(config_cfg.get("initial_state", dflt.INITIAL_STATE))
     max_workers = get_max_workers()
@@ -135,10 +136,10 @@ def load_simulation_laser(
     # Create laser with initial delays
     t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
     t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
-    t_coh_current_raw = config_cfg.get("t_coh_current", None)
-    if t_coh_current_raw != t_coh_max:
-        t_coh_current = float(t_coh_current_raw)
-    pulse_delays = [t_coh_current, t_wait]  # -> 3 pulses
+    t_coh_value = config_cfg.get("t_coh")
+    t_coh_current = float(t_coh_value) if t_coh_value is not None else None
+    t_coh_delay = t_coh_current if t_coh_current is not None else t_coh_max
+    pulse_delays = [t_coh_delay, t_wait]  # -> 3 pulses
     phases = [0.0, 0.0, 0.0]  # last phase is detection phase
 
     laser = LaserPulseSequence.from_pulse_delays(
@@ -269,6 +270,7 @@ def load_simulation(
             "t_det_max": sim_config.t_det_max,
             "dt": sim_config.dt,
             "t_coh_max": sim_config.t_coh_max,
+            "t_coh_current": sim_config.t_coh_current,
             "t_wait": sim_config.t_wait,
             "n_inhomogen": sim_config.n_inhomogen,
             # Newly added for extended validation
