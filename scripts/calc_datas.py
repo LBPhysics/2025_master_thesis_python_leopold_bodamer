@@ -1,15 +1,12 @@
 """Run all combinations of (t_coh, inhomogeneity) locally without batching.
 
-This script iterates over the full Cartesian product of coherence times and
-inhomogeneous frequency samples, computing and saving each combination as an
-individual file. It uses the same structure and naming conventions as the
-HPC batch scripts (hpc_batch_dispatch.py and run_batch.py) for consistency.
+This script iterates over the Cartesian product of coherence times and
+inhomogeneous frequency samples, saving each combination as an individual
+artifact. The folder layout matches the HPC workflow so that downstream
+processing remains uniform between local and cluster executions.
 
-The resulting files can be processed downstream:
-- For 1D: average over inhomogeneity using avg_inhomogenity.py
-- For 2D: stack per inhomogeneity sample using stack_times.py, then average
-
-Examples:
+Examples
+--------
     python calc_datas.py --sim_type 1d
     python calc_datas.py --sim_type 2d
 """
@@ -21,16 +18,18 @@ import json
 import shutil
 import time
 import warnings
-from pathlib import Path
-import numpy as np
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
 
 from qspectro2d.config.create_sim_obj import load_simulation
+from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_t_det
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_run_artifact, save_info_file
-from qspectro2d.utils.file_naming import generate_unique_data_base
-from qspectro2d.core.simulation.time_axes import compute_t_det, compute_t_coh
+from qspectro2d.utils.data_io import save_info_file, save_run_artifact
+from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
 
 SCRIPTS_DIR = Path(__file__).parent.resolve()
 for _parent in SCRIPTS_DIR.parents:
@@ -41,11 +40,11 @@ else:
     raise RuntimeError("Could not locate project root (missing .git directory)")
 
 DATA_DIR = (PROJECT_ROOT / "data").resolve()
+RUNS_ROOT = DATA_DIR / "jobs"
 SIM_CONFIGS_DIR = SCRIPTS_DIR / "simulation_configs"
 DATA_DIR.mkdir(exist_ok=True)
+RUNS_ROOT.mkdir(exist_ok=True)
 
-
-# Silence noisy but harmless warnings
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -54,24 +53,16 @@ warnings.filterwarnings(
 )
 
 
-# ---------------------------------------------------------------------------
-# Helper function
-# ---------------------------------------------------------------------------
 def pick_config_yaml(config_dir: Path | None = None) -> Path:
-    """Pick a config YAML from the specified directory or default scripts/simulation_configs.
+    """Return the preferred YAML configuration from ``config_dir``."""
 
-    Preference order:
-    1) Any file whose name starts with '_' (user-marked; Windows-safe)
-    2) Otherwise, the first file in alphabetical order
-    """
     if config_dir is None:
         config_dir = SIM_CONFIGS_DIR
-    cfg_candidates = sorted(config_dir.glob("*.yaml"))
-    if not cfg_candidates:
-        raise FileNotFoundError(f"No .yaml config files found in {config_dir}. Please add one.")
-    # Prefer Windows-safe marker: leading underscore
-    marked = [p for p in cfg_candidates if p.name.startswith("_")]
-    return marked[0] if marked else cfg_candidates[0]
+    candidates = sorted(config_dir.glob("*.yaml"))
+    if not candidates:
+        raise FileNotFoundError(f"No .yaml config files found in {config_dir}.")
+    marked = [entry for entry in candidates if entry.name.startswith("_")]
+    return marked[0] if marked else candidates[0]
 
 
 @dataclass(frozen=True)
@@ -145,24 +136,25 @@ def main() -> None:
     time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
-    data_base_path = generate_unique_data_base(
-        sim.system, sim.simulation_config, data_root=DATA_DIR
-    )
+    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=args.sim_type)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    job_label = f"local_{label_token}_{timestamp}"
+    job_dir = allocate_job_dir(RUNS_ROOT, job_label)
+    job_paths = ensure_job_layout(job_dir, base_name="raw")
+    data_base_path = job_paths.data_base_path
 
-    # Save a copy of the config file to the target directory
-    config_copy_path = data_base_path.parent / config_path.name
+    print(f"Job workspace: {job_paths.job_dir}")
+
+    config_copy_path = job_paths.job_dir / config_path.name
     if not config_copy_path.exists():
         shutil.copy2(config_path, config_copy_path)
         print(f"✅ Config file copied to {config_copy_path}")
-
-    # Use the copied config path for subsequent operations
     config_path = config_copy_path
 
     n_inhom = sim.simulation_config.n_inhomogen
     if n_inhom <= 0:
         raise ValueError("n_inhom must be positive")
 
-    # Set random seed if provided
     if args.rng_seed is not None:
         np.random.seed(args.rng_seed)
 
@@ -174,7 +166,7 @@ def main() -> None:
         mu=base_freqs,
     )
 
-    sim.simulation_config.sim_type = args.sim_type  # to ensure t_coh_axis has the right behavior
+    sim.simulation_config.sim_type = args.sim_type
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
     combinations = build_combinations(t_coh_values, n_inhom)
 
@@ -192,7 +184,13 @@ def main() -> None:
         "n_t_coh": int(t_coh_values.size),
         "n_combinations": len(combinations),
         "time_cut": float(time_cut),
+        "job_label": job_label,
+        "job_token": label_token,
         "data_base_path": str(data_base_path),
+        "job_dir": str(job_paths.job_dir),
+        "data_dir": str(job_paths.data_dir),
+        "figures_dir": str(job_paths.figures_dir),
+        "data_base_name": job_paths.base_name,
         "rng_seed": args.rng_seed,
     }
 
@@ -207,7 +205,6 @@ def main() -> None:
             extra_payload=job_metadata,
         )
 
-    # Save samples and combinations for reference
     samples_target = data_base_path.parent / f"{data_base_path.name}_samples.npy"
     if not samples_target.exists():
         np.save(samples_target, samples.astype(float))
@@ -230,12 +227,11 @@ def main() -> None:
         global_idx = combo.index
         t_coh_val = combo.t_coh
 
-        # Update simulation configuration for this combination
         freq_vector = samples[inhom_idx, :].astype(float)
 
         print(
-            f"\n--- combo {global_idx + 1} / {len(combinations)}: t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
-            f"inhom_idx={inhom_idx} ---"
+            f"\n--- combo {global_idx + 1} / {len(combinations)}: "
+            f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
         )
 
         e_components = parallel_compute_1d_e_comps(
@@ -272,9 +268,9 @@ def main() -> None:
     if saved_paths:
         print("Latest artifact:")
         print(f"  {saved_paths[-1]}")
-
         print("\n🎯 Next step:")
         print(f"     python process_datas.py --abs_path '{saved_paths[-1]}' --skip_if_exists")
+        print(f"Workspace figures will land in: {job_paths.figures_dir}")
 
     print("=" * 80)
     print("DONE")

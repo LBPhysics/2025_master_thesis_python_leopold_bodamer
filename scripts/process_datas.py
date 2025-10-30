@@ -43,6 +43,7 @@ class RunEntry:
     laser: Any | None
     bath: Any | None
     t_coh: np.ndarray | None = None
+    job_metadata: dict[str, Any] | None = None
 
 
 def _load_entry(path: Path) -> RunEntry:
@@ -77,6 +78,7 @@ def _load_entry(path: Path) -> RunEntry:
         laser=artifact.get("laser"),
         bath=artifact.get("bath"),
         t_coh=t_coh,
+        job_metadata=artifact.get("job_metadata"),
     )
 
 
@@ -170,6 +172,7 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
         laser=reference.laser,
         bath=reference.bath,
         t_coh=t_coh_axis,
+        job_metadata=reference.job_metadata,
     )
 
 
@@ -195,6 +198,7 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             laser=single.laser,
             bath=single.bath,
             t_coh=single.t_coh,
+            job_metadata=single.job_metadata,
         )
 
     reference = entries[0]
@@ -241,6 +245,7 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             laser=reference.laser,
             bath=reference.bath,
             t_coh=t_coh,
+            job_metadata=reference.job_metadata,
         )
     else:
         # 1D averaging (reuse logic from avg_inhomogenity.py)
@@ -285,8 +290,8 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
             system=reference.system,
             laser=reference.laser,
             bath=reference.bath,
+            job_metadata=reference.job_metadata,
         )
-
 
 def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     abs_path = abs_path.expanduser().resolve()
@@ -328,13 +333,17 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
     # Save info if needed
     info_path = directory / final_filename.replace(".npz", ".pkl")
     if not info_path.exists():
+        extra_payload: dict[str, Any] = {}
+        if final_entry.job_metadata:
+            extra_payload.update(final_entry.job_metadata)
+        extra_payload.update({"t_det": final_entry.t_det, "t_coh": final_entry.t_coh})
         save_info_file(
             info_path,
             final_entry.system,
             final_entry.simulation_config,
             bath=final_entry.bath,
             laser=final_entry.laser,
-            extra_payload={"t_det": final_entry.t_det, "t_coh": final_entry.t_coh},
+            extra_payload=extra_payload,
         )
 
     out_path = save_run_artifact(
