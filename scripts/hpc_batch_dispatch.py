@@ -23,7 +23,7 @@ from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
 from qspectro2d.core.simulation.time_axes import (
-    compute_times_global,
+    compute_times_local,
     compute_t_coh,
     compute_t_det,
 )
@@ -43,7 +43,7 @@ def _set_random_seed(seed: int | None) -> None:
 
 
 def estimate_slurm_resources(
-    n_times: int,  # number of global times -> how many time steps
+    n_times: int,  # number of time steps in the local grid
     n_inhom: int,
     n_t_coh: int,  # number of coherence times -> how many combinations
     n_batches: int,
@@ -236,7 +236,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     # Use SimulationModuleOQS.t_coh for coherence axis (handles 0d/1d/2d)
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
-    times_global = np.asarray(compute_times_global(sim.simulation_config), dtype=float)
+    times_local = np.asarray(compute_times_local(sim.simulation_config), dtype=float)
 
     combinations = build_combinations(t_coh_values, n_inhom)
 
@@ -247,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     # Estimate RAM and TIME based on batch size
     requested_mem, requested_time = estimate_slurm_resources(
-        n_times=len(times_global),
+        n_times=len(times_local),
         n_inhom=n_inhom,
         n_t_coh=len(t_coh_values),
         n_batches=args.n_batches,

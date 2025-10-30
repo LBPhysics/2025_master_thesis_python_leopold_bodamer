@@ -86,6 +86,7 @@ def load_simulation_config(
     signal_types = list(config_cfg.get("signal_types", dflt.SIGNAL_TYPES))
     sim_type = str(config_cfg.get("sim_type", dflt.SIM_TYPE))
     rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
+    initial_state = str(config_cfg.get("initial_state", dflt.INITIAL_STATE))
     max_workers = get_max_workers()
 
     return SimulationConfig(
@@ -101,6 +102,7 @@ def load_simulation_config(
         signal_types=signal_types,
         sim_type=sim_type,
         max_workers=max_workers,
+        initial_state=initial_state,
     )
 
 

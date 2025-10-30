@@ -86,6 +86,8 @@ class AtomBathCoupling:
         sys = self.system
         n_atoms = sys.n_atoms
         c_ops = []
+        add_op = lambda op, rate: c_ops.append(sys.to_eigenbasis(op) * np.sqrt(rate))
+
 
         # Dephasing rate (assumed identical structure for all single excitations)
         deph_rate = 1 / 100
@@ -94,12 +96,12 @@ class AtomBathCoupling:
         for i_atom in range(1, n_atoms + 1):
             # singles dephasing
             deph_op = sys.deph_op_i(i_atom)
-            c_ops.append(sys.to_eigenbasis(deph_op) * np.sqrt(deph_rate))
+            add_op(deph_op, deph_rate)
 
             # Radiative-like single-site relaxation (singles -> ground) and thermal excitation
             if n_atoms != 2:  # TO match the paper, no radiative decay in the dimer
                 L_down = sys.basis[0] * sys.basis[i_atom].dag()  # |0><i|
-                c_ops.append(sys.to_eigenbasis(L_down) * np.sqrt(down_rate))
+                add_op(L_down, down_rate)
 
         # Double-state dephasing if manifold present
         max_exc = sys.max_excitation
@@ -110,10 +112,8 @@ class AtomBathCoupling:
 
                     idx = pair_to_index(i, j, n_atoms)
                     deph_op_ij = sys.deph_op_i(idx)
-                    c_ops.append(sys.to_eigenbasis(deph_op_ij) * np.sqrt(deph_rate))
-                    c_ops.append(
-                        sys.to_eigenbasis(deph_op_ij) * np.sqrt(deph_rate)
-                    )  # each double excited state gets one contribution from each site
+                    add_op(deph_op_ij, deph_rate)
+                    add_op(deph_op_ij, deph_rate)  # each double excited state gets one contribution from each site
             if n_atoms == 2:  # to match the paper
                 return c_ops
             for i_atom in range(1, n_atoms):  # otherwise add decay channels
@@ -123,8 +123,8 @@ class AtomBathCoupling:
                     # Double -> single lowering
                     L_idx_i = sys.basis[i] * sys.basis[idx].dag()  # |i><i,j|
                     L_idx_j = sys.basis[j] * sys.basis[idx].dag()  # |j><i,j|
-                    c_ops.append(sys.to_eigenbasis(L_idx_i) * np.sqrt(down_rate))
-                    c_ops.append(sys.to_eigenbasis(L_idx_j) * np.sqrt(down_rate))
+                    add_op(L_idx_i, down_rate)
+                    add_op(L_idx_j, down_rate)
 
         return c_ops
 

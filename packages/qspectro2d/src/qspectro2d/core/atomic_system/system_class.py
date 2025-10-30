@@ -3,7 +3,7 @@
 import numpy as np
 import math
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple
+from typing import List, Tuple
 from functools import cached_property
 from qutip import basis as qt_basis, ket2dm, Qobj
 
@@ -23,14 +23,9 @@ class AtomicSystem:
     # 1 = existing behaviour (ground + single exc manifold); 2 adds double manifold
     max_excitation: int = 1
 
-    rho_ini: Optional[Qobj] = None  # initial state, default is ground state
-
     def __post_init__(self):
         # build basis
         self._build_basis()
-
-        # spectroscopy always starts in the ground state
-        self.rho_ini = ket2dm(self.basis[0])
 
         # store the initial frequencies in history
         self.frequencies_cm_history = [self.frequencies_cm.copy()]
@@ -177,6 +172,10 @@ class AtomicSystem:
     def to_site_basis(self, operator: Qobj) -> Qobj:
         """Transform an operator into the site basis of the Hamiltonian using cached U."""
         return self.eigenbasis_transform * operator * self.eigenbasis_transform.dag()
+
+    def ground_state_dm(self) -> Qobj:
+        """Return |g><g| as a density matrix."""
+        return ket2dm(self.basis[self.idx_ground()])
 
     @property
     def lowering_op(self) -> Qobj:
@@ -414,8 +413,6 @@ class AtomicSystem:
             lines.append(f"    {'coupling matrix (cm^-1)':<20}:")
             lines.append(str(self.coupling_matrix_cm))
 
-        lines.append(f"\n    {'rho_ini':<20}:")
-        lines.append(str(self.rho_ini))
         lines.append(f"\n    {'System Hamiltonian (undiagonalized)':<20}:")
         lines.append(str(self.hamiltonian))
         lines.append("\n# Dipole operator (dipole_op):")

@@ -9,16 +9,24 @@ if TYPE_CHECKING:
     from .sim_config import SimulationConfig
 
 
-def compute_times_global(cfg: "SimulationConfig") -> np.ndarray:
-    """Compute the global time grid for the simulation."""
-    dt = cfg.dt
-    t0 = -2 * cfg.pulse_fwhm_fs - cfg.t_coh_max - cfg.t_wait
+def _active_t_coh(cfg: "SimulationConfig") -> float:
+    """Return the coherence time currently applied in the simulation."""
+    t_coh = getattr(cfg, "t_coh_current", None)
+    if t_coh is None:
+        return float(cfg.t_coh_max)
+    return float(t_coh)
 
-    # Compute number of steps to cover from t0 to t_det_max with step dt
-    n_steps = int(np.floor((cfg.t_det_max - t0) / dt)) + 1
+
+def compute_times_local(cfg: "SimulationConfig") -> np.ndarray:
+    """Compute the local time grid starting at -t_wait - t_coh."""
+    dt = float(cfg.dt)
+    t_coh = _active_t_coh(cfg)
+    t0 = -(float(cfg.t_wait) + t_coh + 1.5 * float(cfg.pulse_fwhm_fs))
+
+    n_steps = int(np.floor((float(cfg.t_det_max) - t0) / dt)) + 1
     # Generate time grid: [t0, t0 + dt, ..., t_det_max]
-    times_global = t0 + dt * np.arange(n_steps, dtype=float)
-    return times_global
+    times_local = t0 + dt * np.arange(n_steps, dtype=float)
+    return times_local
 
 
 def compute_t_det(cfg: "SimulationConfig") -> np.ndarray:
@@ -26,8 +34,8 @@ def compute_t_det(cfg: "SimulationConfig") -> np.ndarray:
 
     Behavior depends on simulation type:
     - '0d': return a single detection time equal to t_det_max (as a 1-element array)
-    - otherwise: return the usual grid starting from the first non-negative time in
-      times_global with spacing dt up to t_det_max.
+        - otherwise: return the usual grid starting from the first non-negative time in
+            times_local with spacing dt up to t_det_max.
     """
     # 0d: treat everything as a single detection sample at t_det_max
     if getattr(cfg, "sim_type", "1d") == "0d":
@@ -36,10 +44,10 @@ def compute_t_det(cfg: "SimulationConfig") -> np.ndarray:
     # default behaviour for 1d/2d
     dt = cfg.dt
     t_det_max = cfg.t_det_max
-    times_global = compute_times_global(cfg)
+    times_local = compute_times_local(cfg)
 
-    # Find the smallest time in times_global that is >= 0
-    t0 = times_global[0]
+    # Find the smallest time in times_local that is >= 0
+    t0 = times_local[0]
     k = int(np.ceil(-t0 / dt))
     x = t0 + k * dt
 
@@ -59,24 +67,24 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
     Behavior depends on simulation type:
     - '0d': single value (cfg.t_coh_max)
     - '1d': single coherence value (cfg.t_coh_max)
-    - '2d': return array aligned to times_global grid from ~0 to cfg.t_coh_max
+    - '2d': return array aligned to the local time grid from ~0 to cfg.t_coh_max
     """
     sim_type = getattr(cfg, "sim_type", "1d")
-    t_coh_max = float(cfg.t_coh_max)
     dt = float(cfg.dt)
 
-    if sim_type == "0d" or sim_type == "1d":
-        # For 0d/1d return a 1-element array for consistent consumers
-        return np.asarray([t_coh_max], dtype=float)
+    if sim_type in {"0d", "1d"}:
+        # For 0d/1d return the active coherence time as a single-element array
+        return np.asarray([_active_t_coh(cfg)], dtype=float)
 
-    # 2d: build axis aligned to times_global, starting from grid point closest to 0
+    # 2d: build axis aligned to times_local, starting from grid point closest to 0
     if sim_type == "2d":
-        times_global = compute_times_global(cfg)
-        t0 = times_global[0]
+        times_local = compute_times_local(cfg)
+        t0 = times_local[0]
         # Find the grid point at or immediately after 0 (same logic as t_det)
         k = int(np.ceil((0 - t0) / dt))
         x = t0 + k * dt
 
+        t_coh_max = float(cfg.t_coh_max)
         # Ensure x is within bounds
         if x > t_coh_max:
             return np.array([])
@@ -86,4 +94,4 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
         return t_coh_axis
 
     # fallback: return single value
-    return np.asarray([t_coh_max], dtype=float)
+    return np.asarray([_active_t_coh(cfg)], dtype=float)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import cached_property
 import numpy as np
-from qutip import Qobj, QobjEvo, ket2dm
+from qutip import Qobj, QobjEvo, ket2dm, brmesolve, Options
 from typing import List, Union
 from qutip import BosonicEnvironment
 
@@ -27,6 +27,8 @@ class SimulationModuleOQS:
 
     def __post_init__(self) -> None:
         self.sb_coupling = AtomBathCoupling(self.system, self.bath)
+        if self.simulation_config.t_coh_current is None:
+            self.simulation_config.t_coh_current = float(self.simulation_config.t_coh_max)
 
     # --- Deferred solver-dependent initialization ---------------------------------
     @property
@@ -51,6 +53,53 @@ class SimulationModuleOQS:
         else:  # for Paper_eqs & Fallback: create generic evolution with no decay channels.
             decay_channels = []
         return decay_channels
+
+    @property
+    def initial_state(self) -> Qobj:
+        """Density matrix used as the solver's initial condition.
+        TODO For now only 'ground' is supported. Thermal state behaves weird for 4 level system"""
+        init_choice = getattr(self.simulation_config, "initial_state", "ground")
+        if init_choice == "ground":
+            initial_state = self.system.ground_state_dm()
+        if init_choice == "thermal":
+            initial_state = self._thermal_state()
+
+        if not initial_state:
+            raise ValueError(
+                f"Unsupported initial_state '{init_choice}'. Expected 'ground' or 'thermal'."
+            )
+        return self.system.to_eigenbasis(initial_state)
+
+    def _thermal_state(self) -> Qobj:
+        """Return the Gibbs state associated with the system Hamiltonian and bath temperature."""
+        temperature = getattr(self.bath, "T", None)
+        if temperature is None or temperature <= 0:
+            return self.system.ground_state_dm()
+
+        # Use Bloch-Redfield evolution to relax into the steady state.
+        tlist = np.linspace(0.0, 10000.0, 100)
+        H = self.H0_diagonalized
+        a_ops = self.decay_channels
+        if not a_ops:  # No BLOCH REDFIELD decay channels; return ground state
+            return self.system.ground_state_dm()
+
+        rho0 = self.system.ground_state_dm()
+        opts = Options(store_states=False, store_final_state=True)
+        res = brmesolve(
+            H,
+            rho0,
+            tlist,
+            a_ops=a_ops,
+            sec_cutoff=-1.0,
+            options=opts,
+        )
+        rho_ss = getattr(res, "final_state", None)
+        if rho_ss is None:
+            raise ValueError("Thermal state computation failed: solver returned no state.")
+        trace = rho_ss.tr()
+        if np.isclose(trace, 0.0):
+            raise ValueError("Thermal state computation failed: steady state has zero trace.")
+        return rho_ss / trace
 
     # --- Hamiltonians & Evolutions -------------------------------------------------
     @property
@@ -80,7 +129,7 @@ class SimulationModuleOQS:
         if self.simulation_config.rwa_sl:
             E_plus_RWA = e_pulses(t, self.laser) # oscillates as exp(-i ω_L t) in lab frame
             E_minus_RWA = np.conj(E_plus_RWA)
-            H_int = -(lowering_op * E_minus_RWA + lowering_op.dag() * E_plus_RWA)
+            H_int = -(lowering_op * E_plus_RWA + lowering_op.dag() * E_minus_RWA)
             return H_int
         dipole_op = lowering_op + lowering_op.dag()
         E_plus = epsilon_pulses(t, self.laser)
@@ -154,6 +203,7 @@ class SimulationModuleOQS:
 
         # Apply to laser pulse delays and invalidate cached time properties
         self.laser.pulse_delays = [float(t_coh), float(t_wait)]
+        self.simulation_config.t_coh_current = float(t_coh)
 
         if t_coh > self.simulation_config.t_coh_max:
             self.simulation_config.t_coh_max = t_coh
