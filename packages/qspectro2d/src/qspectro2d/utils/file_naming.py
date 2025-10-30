@@ -105,6 +105,12 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
     else:
         parts.append(f"{n_atoms}_atoms")
 
+    if n_atoms > 1:
+        # Add coupling strength if applicable. For inhom runs, avoid numeric per-run values.
+        coupling_cm = sys_f.get("coupling_cm")
+        if coupling_cm and coupling_cm > 0:
+            parts.append(f"{round(coupling_cm, 0)}cm")
+
     # Add solver if available
     parts.append(sim_f.get("ode_solver"))
 
@@ -118,12 +124,6 @@ def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) ->
     n_inhomogen = int(sim_f.get("n_inhomogen", 1))
     if n_inhomogen > 1:
         parts.append(f"inhom_{sys_f.get('delta_inhomogen_cm', '0')}_cm_{n_inhomogen}n")
-
-    if n_atoms > 1:
-        # Add coupling strength if applicable. For inhom runs, avoid numeric per-run values.
-        coupling_cm = sys_f.get("coupling_cm")
-        if coupling_cm and coupling_cm > 0:
-            parts.append(f"{round(coupling_cm, 0)}cm")
 
     base_path = Path(*parts)
     return base_path

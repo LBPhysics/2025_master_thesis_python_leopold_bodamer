@@ -366,6 +366,7 @@ def plot_el_field(
     domain: Literal["time", "freq"] = "time",
     section: Optional[tuple[float, float]] = None,
     ax: Optional[plt.Axes] = None,
+    cutoff_percent: float = 5.0,
     **kwargs: dict,
 ) -> plt.Figure:
     if component not in ("real", "img", "abs", "phase"):
@@ -389,6 +390,11 @@ def plot_el_field(
 
     # Select the component to plot
     plot_data, base_title = _component_data(data, component)
+
+    if cutoff_percent > 0:
+        threshold = cutoff_percent / 100 * np.max(np.abs(plot_data))
+        mask = np.abs(plot_data) < threshold
+        plot_data = np.ma.masked_where(mask, plot_data)
 
     if ax is None:
         fig, ax = plt.subplots()
