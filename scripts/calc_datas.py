@@ -46,7 +46,6 @@ DATA_DIR.mkdir(exist_ok=True)
 
 
 # Silence noisy but harmless warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered in exp")
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
