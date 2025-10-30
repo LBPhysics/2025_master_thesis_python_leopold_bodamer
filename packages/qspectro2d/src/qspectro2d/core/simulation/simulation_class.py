@@ -36,6 +36,7 @@ class SimulationModuleOQS:
         solver = self.simulation_config.ode_solver
         if solver == "Paper_eqs":
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
+
             evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
         elif solver == "ME" or solver == "BR":
             evo_obj = QobjEvo(self.H_total_t)
@@ -125,11 +126,13 @@ class SimulationModuleOQS:
         Without RWA (full field):
             H_int(t) = -[E⁺(t) + E⁻(t)] ⊗ (σ⁺ + σ⁻)
         """
-        lowering_op = self.system.to_eigenbasis(self.system.lowering_op) # oscillates as exp(+i ω_L t) in RWA frame
+        lowering_op = self.system.to_eigenbasis(
+            self.system.lowering_op
+        )  # oscillates as exp(+i ω_L t) in RWA frame
         if self.simulation_config.rwa_sl:
-            E_plus_RWA = e_pulses(t, self.laser) # oscillates as exp(-i ω_L t) in lab frame
+            E_plus_RWA = e_pulses(t, self.laser)  # oscillates as exp(-i ω_L t) in lab frame
             E_minus_RWA = np.conj(E_plus_RWA)
-            H_int = -(lowering_op * E_plus_RWA + lowering_op.dag() * E_minus_RWA)
+            H_int = -(lowering_op * E_minus_RWA + lowering_op.dag() * E_plus_RWA)
             return H_int
         dipole_op = lowering_op + lowering_op.dag()
         E_plus = epsilon_pulses(t, self.laser)
