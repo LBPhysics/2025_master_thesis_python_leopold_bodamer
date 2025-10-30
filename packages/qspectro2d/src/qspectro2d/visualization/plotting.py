@@ -366,7 +366,7 @@ def plot_el_field(
     domain: Literal["time", "freq"] = "time",
     section: Optional[tuple[float, float]] = None,
     ax: Optional[plt.Axes] = None,
-    cutoff_percent: float = 5.0,
+    cutoff_percent: float = 0.0,
     **kwargs: dict,
 ) -> plt.Figure:
     if component not in ("real", "img", "abs", "phase"):
