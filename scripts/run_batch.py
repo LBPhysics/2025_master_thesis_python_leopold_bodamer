@@ -19,12 +19,7 @@ import numpy as np
 
 
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import (
-    save_run_artifact,
-)
-from calc_datas import DATA_DIR
-
-DATA_DIR.mkdir(exist_ok=True)
+from qspectro2d.utils.data_io import save_run_artifact
 
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
@@ -110,9 +105,15 @@ def main() -> None:
 
     config_path = Path(job_metadata["config_path"])
 
-    data_base_path = Path(job_metadata["data_base_path"])
-    data_dir = data_base_path.parent
-    prefix = data_base_path.name
+    try:
+        data_dir = Path(job_metadata["data_dir"]).resolve()
+        prefix = str(job_metadata["data_base_name"])
+        data_base_path = Path(job_metadata["data_base_path"]).resolve()
+    except KeyError as exc:
+        missing = exc.args[0]
+        raise KeyError(f"job_metadata.json missing required key: {missing}") from exc
+
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")
@@ -214,11 +215,9 @@ def main() -> None:
         and args.n_batches is not None
         and args.batch_id == args.n_batches - 1
     ):
-        # Find the job directory by going up from combos_file
-        combos_dir = Path(args.combos_file).parent
-        job_dir = combos_dir.parent  # batch_jobs/<job_label>
+        job_dir_final = Path(job_metadata["job_dir"]).resolve()
         print("\n🎯 All batches completed! Finalize and queue plotting from SCRIPTS_DIR with:")
-        print(f"python hpc_plot_datas.py --job_dir {job_dir.resolve()}")
+        print(f"python hpc_plot_datas.py --job_dir {job_dir_final}")
 
 
 if __name__ == "__main__":

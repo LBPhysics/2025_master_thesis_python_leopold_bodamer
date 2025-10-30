@@ -52,7 +52,6 @@ def _render_slurm_script(
     job_dir: Path,
     logs_dir: Path,
     artifact: Path,
-    data_dir: Path,
     partition: str,
     cpus: int,
     mem: str,
@@ -65,7 +64,6 @@ def _render_slurm_script(
     # Use absolute log paths to avoid issues when --chdir is ignored by older SLURM versions
     logs_abs = logs_dir.resolve().as_posix()
     artifact_path = artifact.as_posix()
-    data_dir_posix = data_dir.as_posix()
     plot_py = PLOT_SCRIPT.as_posix()
     process_py = (SCRIPTS_DIR / "process_datas.py").resolve().as_posix()
 
@@ -118,7 +116,7 @@ def main() -> None:
         "--job_dir",
         type=str,
         required=True,
-        help="Path to batch_jobs/<job_label> (contains job_metadata.json)",
+        help="Path to data/jobs/<job_label> (contains job_metadata.json)",
     )
     parser.add_argument(
         "--skip_if_exists",
@@ -141,8 +139,13 @@ def main() -> None:
     with metadata_path.open("r", encoding="utf-8") as f:
         metadata = json.load(f)
 
-    data_base_path = Path(metadata["data_base_path"])
-    data_dir = data_base_path.parent
+    try:
+        data_dir = Path(metadata["data_dir"]).resolve()
+    except KeyError as exc:
+        raise KeyError("job_metadata.json missing required key: data_dir") from exc
+    if not data_dir.exists():
+        print(f"Data directory missing: {data_dir}")
+        raise SystemExit("Data directory missing.")
 
     # Find any *_s*.npz file (they are all equivalent for processing)
     candidates = list(data_dir.glob("*_s*.npz"))
@@ -159,7 +162,6 @@ def main() -> None:
         job_dir=job_dir,
         logs_dir=logs_dir,
         artifact=artifact,
-        data_dir=data_dir,
         partition=SLURM_PARTITION,
         cpus=SLURM_CPUS,
         mem=SLURM_MEM,

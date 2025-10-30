@@ -42,7 +42,7 @@ def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
 
 def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
     """Log diagnostic information about the quantum system."""
-    print("=== SYSTEM DIAGNOSTICS ===")
+    print("\n \n=== SYSTEM DIAGNOSTICS ===")
     rho_ini = sim_oqs.system.rho_ini
     print(
         f"Initial state type, shape, is hermitian, trace: {type(rho_ini)}, {rho_ini.shape}, {rho_ini.isherm}, {rho_ini.tr():.6f}"
@@ -181,7 +181,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
 
     # DETAILED SYSTEM DIAGNOSTICS
 
-    print(f"=== SOLVER DIAGNOSTICS ===")
+    print(f"\n \n=== SOLVER DIAGNOSTICS ===")
     print(f"Solver: {copy_sim_oqs.simulation_config.ode_solver}")
     print(f"Time range: t0={t0:.3f}, t_max={times[-1]:.3f}, dt={dt:.6f}")
     print(f"Number of time points: {len(times)}")
@@ -212,7 +212,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     # RWA conversion is already done in compute_evolution if needed
 
     # Enhanced state checking with more diagnostics
-    print("=== STATE-BY-STATE ANALYSIS ===")
+    print("\n \n=== STATE-BY-STATE ANALYSIS ===")
     error_messages, time_cut = _check_density_matrix_properties(states, times_result)
 
     if not error_messages:

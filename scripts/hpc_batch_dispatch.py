@@ -21,7 +21,7 @@ import numpy as np
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
-from qspectro2d.utils.file_naming import generate_unique_data_base
+from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
 from qspectro2d.core.simulation.time_axes import (
     compute_times_global,
     compute_t_coh,
@@ -29,15 +29,12 @@ from qspectro2d.core.simulation.time_axes import (
 )
 
 from calc_datas import (
+    RUNS_ROOT,
     SCRIPTS_DIR,
-    DATA_DIR,
     pick_config_yaml,
     build_combinations,
     write_json,
 )
-
-JOB_ROOT = SCRIPTS_DIR / "batch_jobs"
-JOB_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def _set_random_seed(seed: int | None) -> None:
@@ -224,10 +221,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     sim.simulation_config.sim_type = args.sim_type  # to ensure t_coh_axis has the right behavior
 
-    data_base_path = generate_unique_data_base(
-        sim.system, sim.simulation_config, data_root=DATA_DIR
-    )
-
     n_inhom = sim.simulation_config.n_inhomogen
     if n_inhom <= 0:
         raise ValueError("n_inhom must be positive")
@@ -264,10 +257,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         rwa_sl=sim.simulation_config.rwa_sl,
     )
 
+    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=args.sim_type)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_label = f"{args.sim_type}_{n_inhom}inh_{t_coh_values.size}t_{timestamp}"
-    job_dir = JOB_ROOT / job_label
-    job_dir.mkdir(parents=True, exist_ok=True)
+    job_label = f"hpc_{label_token}_{timestamp}"
+    job_dir = allocate_job_dir(RUNS_ROOT, job_label)
+    job_paths = ensure_job_layout(job_dir, base_name="raw")
+    data_base_path = job_paths.data_base_path
     logs_dir = job_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
 
@@ -294,7 +289,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         "n_batches": int(args.n_batches),
         "time_cut": float(time_cut),
         "job_label": job_label,
+        "job_token": label_token,
         "generated_at": timestamp,
+        "job_dir": str(job_paths.job_dir),
+        "data_dir": str(job_paths.data_dir),
+        "figures_dir": str(job_paths.figures_dir),
+        "data_base_name": job_paths.base_name,
         "data_base_path": str(data_base_path),
         "config_path": str(config_path),
         "rng_seed": args.rng_seed,

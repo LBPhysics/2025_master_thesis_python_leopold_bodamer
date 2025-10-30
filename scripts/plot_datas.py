@@ -14,12 +14,12 @@ from __future__ import annotations
 from pathlib import Path
 import numpy as np
 import argparse
+from typing import Any
 
-from qspectro2d import load_simulation_data, generate_unique_plot_filename
+from qspectro2d import load_simulation_data
 from qspectro2d.visualization.plotting import plot_el_field
 from qspectro2d.spectroscopy.post_processing import compute_spectra
-from qspectro2d.utils.file_naming import _generate_unique_filename
-from plotstyle import save_fig
+from plotstyle import save_fig, FIG_FORMAT
 
 from calc_datas import PROJECT_ROOT
 
@@ -59,6 +59,10 @@ def main() -> None:
     components = ["real", "img", "abs"]
     saved_files = []
 
+    job_metadata = data.get("job_metadata") or {}
+    figures_root = _resolve_figures_dir(job_metadata)
+    base_token = _figure_token(job_metadata, sim_config)
+
     for st, sig_data in signals.items():
         combined_dict["signal_type"] = st
         print(f"Plotting signal: {st}")
@@ -75,23 +79,9 @@ def main() -> None:
                 print(f"  Skipping {st} {comp}: unsupported data shape")
                 continue
 
-            # Generate filename
-            base_name = Path(
-                generate_unique_plot_filename(
-                    system=system,
-                    sim_config=sim_config,
-                    domain="time",
-                    component=comp,
-                    figures_root=FIGURES_DIR,
-                )
-            )
-            safe_label = str(st).replace(" ", "_")
-            unique_path = _generate_unique_filename(
-                base_name.parent, f"{base_name.name}_{safe_label}"
-            )
-            filename = unique_path
+            stem = _figure_stem(base_token, st, "time", comp)
+            filename = _unique_fig_path(figures_root, stem)
 
-            # Save the figure
             saved = save_fig(fig, filename=filename)
             saved_files.append(str(saved))
             print(saved)
@@ -126,28 +116,52 @@ def main() -> None:
                 print(f"  Skipping {st} {comp}: unsupported data shape")
                 continue
 
-            # Generate filename
-            base_name = Path(
-                generate_unique_plot_filename(
-                    system=system,
-                    sim_config=sim_config,
-                    domain="freq",
-                    component=comp,
-                    figures_root=FIGURES_DIR,
-                )
-            )
-            safe_label = str(st).replace(" ", "_")
-            unique_path = _generate_unique_filename(
-                base_name.parent, f"{base_name.name}_{safe_label}"
-            )
-            filename = unique_path
+            stem = _figure_stem(base_token, st, "freq", comp)
+            filename = _unique_fig_path(figures_root, stem)
 
-            # Save the figure
             saved = save_fig(fig, filename=filename)
             saved_files.append(str(saved))
             print(saved)
 
     print(f"to see them go to:\n{Path(filename).parent}")
+
+
+def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
+    try:
+        figures_dir = Path(job_metadata["figures_dir"]).expanduser()
+    except KeyError as exc:
+        raise KeyError("job_metadata.json missing required key: figures_dir") from exc
+
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    return figures_dir
+
+
+def _figure_token(job_metadata: dict[str, Any], sim_config: Any) -> str:
+    if "job_label" in job_metadata:
+        return str(job_metadata["job_label"])
+    job_dir = job_metadata.get("job_dir")
+    if job_dir:
+        return Path(job_dir).name
+    if job_metadata.get("data_base_name"):
+        return str(job_metadata["data_base_name"])
+    return getattr(sim_config, "sim_type", "run")
+
+
+def _figure_stem(base_token: str, signal: str, domain: str, component: str) -> str:
+    safe_signal = str(signal).replace(" ", "_").replace("/", "-")
+    return f"{base_token}_{domain}_{component}_{safe_signal}".lower()
+
+
+def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    default_ext = f".{FIG_FORMAT.lstrip('.')}"
+    candidate = figures_dir / stem
+    base = candidate
+    counter = 1
+    while candidate.with_suffix(default_ext).exists():
+        candidate = base.with_name(f"{stem}_{counter:02d}")
+        counter += 1
+    return candidate
 
 
 if __name__ == "__main__":

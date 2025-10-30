@@ -173,6 +173,17 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     system = info.get("system", {})
     laser = info.get("laser")
     bath = info.get("bath")
+    job_metadata = {
+        key: info[key]
+        for key in (
+            "job_dir",
+            "data_dir",
+            "figures_dir",
+            "data_base_path",
+            "data_base_name",
+        )
+        if key in info
+    }
 
     signals: dict[str, np.ndarray] = {}
     for key in list(contents.keys()):
@@ -191,6 +202,7 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
         "system": system,
         "laser": laser,
         "bath": bath,
+        "job_metadata": job_metadata,
     }
 
 
@@ -206,5 +218,9 @@ def load_simulation_data(abs_path: Path | str) -> dict:
         bundle[name] = array
     if bundle.get("frequency_sample_cm") is None:
         raise KeyError("Run artifact is missing the frequency sample axis")
+
+    job_meta = artifact.get("job_metadata")
+    if job_meta:
+        bundle["job_metadata"] = job_meta
 
     return bundle
