@@ -11,6 +11,7 @@ import warnings
 
 # from ..utils.constants import BOLTZMANN, convert_cm_to_fs
 
+INITIAL_STATE = "ground"
 # === signal processing / phase cycling ===
 # PHASE_CYCLING_PHASES = [0, np.pi / 2, np.pi, 3 * np.pi / 2]
 N_PHASES = 4  # Number of phase cycles for the simulation

@@ -20,9 +20,13 @@ class SimulationConfig:
 
     t_det_max: float = 100.0
     t_coh_max: float = 0.0
+    t_coh_current: float | None = None
     t_wait: float = 0.0
     dt: float = 0.1
     pulse_fwhm_fs: float = 10.0
+
+    # Runtime/adaptive attributes
+    initial_state: str = "ground"
 
     # potentially do 2d inhomogeneous broadened
     sim_type: str = "1d"
@@ -45,6 +49,13 @@ class SimulationConfig:
                 stacklevel=2,
             )
             self.rwa_sl = True
+
+        init_state = str(self.initial_state).strip().lower()
+        if init_state not in {"ground", "thermal"}:
+            raise ValueError(
+                "initial_state must be 'ground' or 'thermal' (case-insensitive)"
+            )
+        self.initial_state = init_state
 
     def summary(self) -> str:
         return (
@@ -80,6 +91,7 @@ class SimulationConfig:
             "t_wait": self.t_wait,
             "t_coh_max": self.t_coh_max,
             "pulse_fwhm_fs": self.pulse_fwhm_fs,
+            "initial_state": self.initial_state,
         }
         if self.solver_options:
             result["solver_options"] = self.solver_options

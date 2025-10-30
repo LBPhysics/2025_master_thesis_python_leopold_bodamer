@@ -19,7 +19,7 @@ from qutip import Qobj
 
 # LOCAL IMPORTS
 from ..core.simulation import SimulationModuleOQS
-from ..core.simulation.time_axes import compute_times_global
+from ..core.simulation.time_axes import compute_times_local
 from .e_field_1d import compute_evolution
 
 __all__ = ["check_the_solver"]
@@ -27,9 +27,9 @@ __all__ = ["check_the_solver"]
 
 def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
     """Validate simulation input parameters."""
-    if not isinstance(sim_oqs.system.rho_ini, Qobj):
-        raise TypeError("rho_ini must be a Qobj")
-    times_global = compute_times_global(sim_oqs.simulation_config)
+    if not isinstance(sim_oqs.initial_state, Qobj):
+        raise TypeError("initial_state must be a Qobj")
+    times_global = compute_times_local(sim_oqs.simulation_config)
     if not isinstance(times_global, np.ndarray):
         raise TypeError("times_global must be a numpy.ndarray")
     if not isinstance(sim_oqs.observable_ops, list) or not all(
@@ -43,7 +43,7 @@ def _validate_simulation_input(sim_oqs: SimulationModuleOQS) -> None:
 def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
     """Log diagnostic information about the quantum system."""
     print("\n \n=== SYSTEM DIAGNOSTICS ===")
-    rho_ini = sim_oqs.system.rho_ini
+    rho_ini = sim_oqs.initial_state
     print(
         f"Initial state type, shape, is hermitian, trace: {type(rho_ini)}, {rho_ini.shape}, {rho_ini.isherm}, {rho_ini.tr():.6f}"
     )
@@ -174,7 +174,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     """
     # print(f"Checking '{sim_oqs.simulation_config.ode_solver}' solver")
     copy_sim_oqs = deepcopy(sim_oqs)
-    times = compute_times_global(sim_oqs.simulation_config)
+    times = compute_times_local(sim_oqs.simulation_config)
     t0 = times[0]
     dt = times[1] - times[0]
     copy_sim_oqs.laser.pulse_phases = [1.0] * len(copy_sim_oqs.laser.pulses)

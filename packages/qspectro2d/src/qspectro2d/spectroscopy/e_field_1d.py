@@ -19,7 +19,7 @@ import numpy as np
 from qutip import Qobj, Result, mesolve, brmesolve, expect
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
-from ..core.simulation.time_axes import compute_times_global, compute_t_det
+from ..core.simulation.time_axes import compute_times_local, compute_t_det
 from ..config.default_simulation_params import (
     PHASE_CYCLING_PHASES,
     COMPONENT_MAP,
@@ -151,7 +151,7 @@ def compute_evolution(
         options["store_states"] = True
         solver_e_ops = []
 
-    times_array = np.asarray(compute_times_global(sim_oqs.simulation_config))
+    times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
     pulses = sim_oqs.laser.pulses
     ode_solver = sim_oqs.simulation_config.ode_solver
 
@@ -167,7 +167,7 @@ def compute_evolution(
                 a_ops=sim_oqs.decay_channels,
                 e_ops=e_ops,
                 options=options,
-                sec_cutoff=-1, # NOTE this means no secondary cutoff -> full BR dynamics
+                sec_cutoff=-1.0, # NOTE this means no secondary cutoff -> full BR dynamics
             )
         else:
             return mesolve(
@@ -185,7 +185,7 @@ def compute_evolution(
         get_active_pulses_at_interval(pulses, event_times, i) for i in range(len(event_times) - 1)
     ]
 
-    current_state = sim_oqs.system.rho_ini
+    current_state = sim_oqs.initial_state
 
     for i in range(len(event_times) - 1):
         H = select_hamiltonian(sim_oqs, active_intervals[i])
