@@ -341,6 +341,10 @@ def parallel_compute_1d_e_comps(
     from qspectro2d.config.create_sim_obj import load_simulation_config
 
     config = load_simulation_config(config_path)
+    t_coh_val = float(t_coh)
+    config.t_coh_current = t_coh_val
+    if t_coh_val > float(config.t_coh_max):
+        config.t_coh_max = t_coh_val
     # Determine phases from config defaults if not provided
     n_ph = config.n_phases
     phases_src = phases if phases is not None else PHASE_CYCLING_PHASES

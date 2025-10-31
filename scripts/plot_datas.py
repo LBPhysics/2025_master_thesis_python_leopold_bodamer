@@ -45,8 +45,12 @@ def main() -> None:
     # Load the data
     data = load_simulation_data(args.abs_path)
     signals = data["signals"]
+    print(f"Available signals: {list(signals.keys())}, with shapes {[s.shape for s in signals.values()]}")
     t_det = data["t_det"]
     t_coh = data.get("t_coh")
+    print(f"Loaded t_det with shape: {t_det.shape}",
+            f"and t_coh with shape: {t_coh.shape if t_coh is not None else 'None'}"
+          )
     if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
         t_coh = None
     system = data["system"]
