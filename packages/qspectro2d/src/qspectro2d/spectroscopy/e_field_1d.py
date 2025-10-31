@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import List, Sequence, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
-from qutip import Qobj, Result, mesolve, brmesolve, expect
+from qutip import Qobj, Result, mesolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local, compute_t_det
@@ -95,41 +95,6 @@ def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.nd
 
     return np.array([P_t[int(i)] for i in selected_idxs], dtype=complex)
 
-
-def get_event_times_and_indices(pulses, times_array):
-    """Compute event times and their indices in times_array."""
-    event_times = [p.active_time_range[0] for p in pulses] + [
-        p.active_time_range[1] for p in pulses
-    ]
-    event_times = [times_array[0]] + event_times + [times_array[-1]]
-    event_times = sorted(set(event_times))
-    event_indices = np.searchsorted(times_array, event_times, side="left")
-    return event_times, event_indices
-
-
-def select_hamiltonian(sim_oqs, active_pulses):
-    """Select the appropriate Hamiltonian based on solver and active pulses."""
-    if sim_oqs.simulation_config.ode_solver == "Paper_eqs":
-        return sim_oqs.evo_obj
-    return sim_oqs.evo_obj if active_pulses else sim_oqs.H0_diagonalized
-
-
-def get_active_pulses_at_interval(pulses, event_times, i):
-    """Check if any pulses are active in the i-th interval."""
-    t0, t1 = event_times[i], event_times[i + 1]
-    return any(p.active_time_range[0] <= t1 and p.active_time_range[1] >= t0 for p in pulses)
-
-
-def aggregate_results(all_states, all_times, all_expect, use_eops, res_template):
-    """Aggregate and return the final results."""
-    if use_eops:
-        return np.array(all_times), np.array(all_expect)
-    else:
-        res_template.states = all_states
-        res_template.times = np.array(all_times)
-        return res_template
-
-
 def compute_evolution(
     sim_oqs: SimulationModuleOQS,
     e_ops=None,
@@ -139,10 +104,12 @@ def compute_evolution(
     Compute the evolution of the quantum system for a given pulse sequence, handling overlapping pulses.
     Returns (times, data) where data is list of expectation values if e_ops provided, else list of states.
     """
-    from qspectro2d.config.default_simulation_params import SOLVER_OPTIONS
-
-    options: dict = SOLVER_OPTIONS.copy()
+    options: dict = sim_oqs.simulation_config.solver_options.copy()
     options.update(solver_options)
+    # Remove Bloch-Redfield specific knobs that QuTiP's mesolve does not understand.
+    options.pop("sec_cutoff", None)
+    options.pop("br_computation_method", None)
+    options.pop("tensor_type", None)
     if e_ops is not None:
         options["store_states"] = False
         options["store_final_state"] = True
@@ -152,70 +119,27 @@ def compute_evolution(
         solver_e_ops = []
 
     times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
-    pulses = sim_oqs.laser.pulses
-    ode_solver = sim_oqs.simulation_config.ode_solver
-
-    all_data = []
-    all_times = []
-
-    def run_solver(H, rho0, tlist, e_ops):
-        if ode_solver == "BR":
-            return brmesolve(
-                H=H,
-                psi0=rho0,
-                tlist=tlist,
-                a_ops=sim_oqs.decay_channels,
-                e_ops=e_ops,
-                options=options,
-                sec_cutoff=-1.0, # NOTE this means no secondary cutoff -> full BR dynamics
-            )
-        else:
-            return mesolve(
-                H=H,
-                rho0=rho0,
-                tlist=tlist,
-                c_ops=sim_oqs.decay_channels,
-                e_ops=e_ops,
-                options=options,
-            )
 
     # Build event grid
-    event_times, event_indices = get_event_times_and_indices(pulses, times_array)
-    active_intervals = [
-        get_active_pulses_at_interval(pulses, event_times, i) for i in range(len(event_times) - 1)
-    ]
-
     current_state = sim_oqs.initial_state
 
-    for i in range(len(event_times) - 1):
-        H = select_hamiltonian(sim_oqs, active_intervals[i])
-
-        i0 = int(event_indices[i])
-        i1 = int(event_indices[i + 1])
-
-        # Skip empty or inverted intervals
-        if i1 <= i0:
-            continue
-
-        # Include the right endpoint only for the last interval to avoid dropping last times
-        is_last_interval = i == len(event_times) - 2
-        t_slice = times_array[i0 : i1 + 1] if is_last_interval else times_array[i0:i1]
-
-        res = run_solver(H, current_state, t_slice, solver_e_ops)
-        current_state = res.final_state
-        data_part = res.expect[0] if e_ops is not None else res.states
-
-        if len(t_slice) > 0 and (not all_times or abs(t_slice[0] - all_times[-1]) > 1e-12):
-            all_times.extend(t_slice)
-            all_data.extend(data_part)
-
-    # If returning states and RWA was used, convert to lab frame
-    if e_ops is None and sim_oqs.simulation_config.rwa_sl and all_times:
-        all_data = from_rotating_frame_list(
-            all_data, np.array(all_times), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
+    res = mesolve(
+            H=sim_oqs.evo_obj,
+            rho0=current_state,
+            tlist=times_array,
+            e_ops=solver_e_ops,
+            options=options,
         )
 
-    return np.array(all_times, dtype=float), all_data
+    data = res.expect[0] if e_ops is not None else res.states
+
+    # If returning states and RWA was used, convert to lab frame
+    if res.expect is None and sim_oqs.simulation_config.rwa_sl and times_array:
+        data = from_rotating_frame_list(
+            data, np.array(times_array), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
+        )
+
+    return np.array(times_array, dtype=float), data
 
 
 def compute_polarization_over_window(

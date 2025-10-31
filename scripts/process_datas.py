@@ -66,17 +66,20 @@ def _load_entry(path: Path) -> RunEntry:
     if sim_cfg is None or system is None:
         raise ValueError(f"Artifact {path} is missing simulation context")
 
-    # Align detection axis with stored signal length if metadata drifted.
-    if signals:
-        det_len = next(iter(signals.values())).shape[-1]
-        if t_det.size != det_len:
-            cfg_for_det = deepcopy(sim_cfg)
-            tc_val = metadata.get("t_coh_value")
-            if tc_val is not None:
-                cfg_for_det.t_coh_current = float(tc_val)
-            new_t_det = compute_t_det(cfg_for_det)
-            if new_t_det.size == det_len:
-                t_det = new_t_det
+    # Align to consistent t_det computed with t_coh_current = 0
+    cfg_for_det = deepcopy(sim_cfg)
+    cfg_for_det.t_coh_current = 0.0
+    new_t_det = compute_t_det(cfg_for_det)
+    t_det = new_t_det
+    det_len = next(iter(signals.values())).shape[-1]
+    if len(t_det) != det_len:
+        if len(t_det) > det_len:
+            pad_len = len(t_det) - det_len
+            for key in signals:
+                signals[key] = np.pad(signals[key], (0, pad_len), mode='constant', constant_values=0)
+        else:
+            for key in signals:
+                signals[key] = signals[key][:len(t_det)]
 
     if sim_cfg.sim_type == "1d":
         t_coh = None
@@ -137,9 +140,14 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
     for entry in group_sorted[1:]:
         if not np.allclose(entry.frequency_sample_cm, freq_ref):
             raise ValueError(f"Inconsistent frequency for {entry.path}")
+        if entry.t_det.shape != reference.t_det.shape or not np.allclose(entry.t_det, reference.t_det):
+            raise ValueError(f"Inconsistent t_det for {entry.path}")
         current_signals = list(entry.metadata.get("signal_types", entry.signals.keys()))
         if current_signals != signal_types:
             raise ValueError(f"Inconsistent signals for {entry.path}")
+        for sig in signal_types:
+            if entry.signals[sig].shape != reference.signals[sig].shape:
+                raise ValueError(f"Inconsistent signal shape for {sig} in {entry.path}")
 
     # Stack signals
     stacked_signals = {

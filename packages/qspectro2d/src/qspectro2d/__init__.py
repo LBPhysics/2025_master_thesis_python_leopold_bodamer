@@ -32,6 +32,14 @@ _warnings.filterwarnings(
     module=r"qutip\.solver\.brmesolve",
 )
 
+# QuTiP emits a benign RuntimeWarning when the thermal prefactor vanishes; silence it globally.
+_warnings.filterwarnings(
+    "ignore",
+    category=RuntimeWarning,
+    message=r"divide by zero encountered in divide",
+    module=r"qutip\.utilities",
+)
+
 
 # EXPLICIT IMPORTS ONLY (no lazy imports)
 

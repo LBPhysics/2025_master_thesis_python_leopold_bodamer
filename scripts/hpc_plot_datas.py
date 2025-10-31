@@ -91,6 +91,8 @@ def _render_slurm_script(
     if skip_if_exists:
         process_cmd += " --skip_if_exists"
 
+    artifact_dir = artifact.parent.resolve().as_posix()
+
     lines.extend(
         [
             "",
@@ -99,7 +101,20 @@ def _render_slurm_script(
             f"mkdir -p {logs_abs}",
             f"cd {job_dir_posix}",
             "echo 'Launching process_datas.py'",
-            f'final_path=$({process_cmd} 2>&1 | grep "Final processed artifact:" | sed "s/.*: //" | tr -d "\\n")',
+            f"{process_cmd}",
+            "",
+            "echo 'Locating processed artifact'",
+            "set +e",
+            "set +o pipefail",
+            f"final_path=$(python - <<'PY'\nfrom pathlib import Path\nimport sys\nartifact_dir = Path('{artifact_dir}')\ncandidates = []\nfor candidate in artifact_dir.glob('*_inhom_averaged.npz'):\n    try:\n        resolved = candidate.resolve()\n        candidates.append((resolved.stat().st_mtime, resolved))\n    except FileNotFoundError:\n        continue\nif not candidates:\n    sys.exit('No processed artifact found after process_datas run.')\nmtime, path = max(candidates, key=lambda item: item[0])\nprint(path.as_posix())\nPY\n)",
+            "status=$?",
+            "set -e",
+            "set -o pipefail",
+            "if [ $status -ne 0 ] || [ -z \"$final_path\" ]; then",
+            "  echo 'Failed to locate processed artifact. Check process_datas output above.' >&2",
+            "  exit 1",
+            "fi",
+            'echo "Final processed artifact: $final_path"',
             "echo 'Launching plot_datas.py'",
             f'python {plot_py} --abs_path "$final_path"',
         ]
