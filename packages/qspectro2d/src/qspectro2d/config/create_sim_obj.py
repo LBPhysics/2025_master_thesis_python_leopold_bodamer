@@ -91,10 +91,32 @@ def load_simulation_config(
         t_coh_current = t_coh_max
     rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
     initial_state = str(config_cfg.get("initial_state", dflt.INITIAL_STATE))
+    solver_options_cfg = config_cfg.get("solver_options", {})
+    solver_options = dict(dflt.SOLVER_OPTIONS)
+    if isinstance(solver_options_cfg, Mapping):
+        solver_options.update(solver_options_cfg)
+    # Normalize CLI/YAML numeric strings (e.g. "1e-6") into numbers for validation downstream.
+    normalized_solver_opts: dict[str, Any] = {}
+    for key, value in solver_options.items():
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                numeric_val = float(text)
+            except ValueError:
+                normalized_solver_opts[key] = value
+            else:
+                if numeric_val.is_integer() and text.lower().find("e") == -1 and "." not in text:
+                    normalized_solver_opts[key] = int(numeric_val)
+                else:
+                    normalized_solver_opts[key] = numeric_val
+        else:
+            normalized_solver_opts[key] = value
+    solver_options = normalized_solver_opts
     max_workers = get_max_workers()
 
     return SimulationConfig(
         ode_solver=ode_solver,
+        solver_options=solver_options,
         rwa_sl=rwa_sl,
         dt=dt,
         t_coh_max=t_coh_max,
@@ -273,6 +295,7 @@ def load_simulation(
             "t_coh_current": sim_config.t_coh_current,
             "t_wait": sim_config.t_wait,
             "n_inhomogen": sim_config.n_inhomogen,
+            "solver_options": sim_config.solver_options,
             # Newly added for extended validation
             "pulse_fwhm_fs": sim_config.pulse_fwhm_fs,
             "base_amplitude": laser_sequence.E0,

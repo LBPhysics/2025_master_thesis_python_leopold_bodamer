@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import cached_property
 import numpy as np
-from qutip import Qobj, QobjEvo, ket2dm, brmesolve, Options
+from qutip import (
+    Qobj,
+    QobjEvo,
+    ket2dm,
+    brmesolve,
+    liouvillian,
+)
+from qutip.core.blochredfield import bloch_redfield_tensor
 from typing import List, Union
 from qutip import BosonicEnvironment
 
@@ -38,10 +45,33 @@ class SimulationModuleOQS:
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
 
             evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
-        elif solver == "ME" or solver == "BR":
-            evo_obj = QobjEvo(self.H_total_t)
+        elif solver == "ME":
+            H_evo = QobjEvo(self.H_total_t)
+            c_ops = self.sb_coupling.me_decay_channels
+            evo_obj = liouvillian(H_evo, c_ops)
+        elif solver == "BR":
+            H_evo = QobjEvo(self.H_total_t)
+            solver_opts = self.simulation_config.solver_options or {}
+            sec_cutoff = solver_opts.get("sec_cutoff", 0.1)
+            if sec_cutoff is None:
+                sec_cutoff = 0.1
+            sec_cutoff = float(sec_cutoff)
+            tensor_type = (
+                solver_opts.get("br_computation_method")
+                or solver_opts.get("tensor_type")
+                or "sparse"
+            )
+            tensor_type = str(tensor_type)
+            a_ops = self.sb_coupling.br_decay_channels
+            evo_obj = bloch_redfield_tensor(
+                H_evo,
+                a_ops=a_ops,
+                sec_cutoff=sec_cutoff,
+                fock_basis=True,
+                br_computation_method=tensor_type,
+            )
         else:  # Fallback: create evolution without lasers
-            evo_obj = self.H0_diagonalized
+            evo_obj = liouvillian(self.H0_diagonalized)
         return evo_obj
 
     @property
@@ -85,14 +115,21 @@ class SimulationModuleOQS:
             return self.system.ground_state_dm()
 
         rho0 = self.system.ground_state_dm()
-        opts = Options(store_states=False, store_final_state=True)
+        solver_opts = (self.simulation_config.solver_options or {}).copy()
+        sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
+        if sec_cutoff is None:
+            sec_cutoff = 0.1
+        solver_opts.pop("br_computation_method", None)
+        solver_opts.pop("tensor_type", None)
+        solver_opts.update({"store_states": False, "store_final_state": True})
+
         res = brmesolve(
             H,
             rho0,
             tlist,
             a_ops=a_ops,
-            sec_cutoff=-1.0,
-            options=opts,
+            sec_cutoff=sec_cutoff,
+            options=solver_opts,
         )
         rho_ss = getattr(res, "final_state", None)
         if rho_ss is None:
