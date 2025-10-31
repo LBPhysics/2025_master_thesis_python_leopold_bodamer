@@ -249,3 +249,46 @@ class AtomBathCoupling:
 
     def __str__(self) -> str:
         return self.summary()
+
+    # --- HEOM coupling helpers -------------------------------------------------
+    def heom_coupling_ops(
+        self,
+        *,
+        sites: list[int] | None = None,
+        include_double_manifold: bool | None = None,
+    ) -> list[Qobj]:
+        """Return system coupling operators suited for HEOM simulations.
+
+        Parameters
+        ----------
+        sites:
+            Optional subset of site indices (1-based, matching AtomicSystem convention)
+            to include. Defaults to all physical sites.
+        include_double_manifold:
+            If ``True`` and the system exposes the double-excitation manifold, include
+            projectors onto each doubly excited state. Defaults to ``False``.
+
+        Returns
+        -------
+        list[Qobj]
+            Coupling operators transformed into the eigenbasis of ``H0``.
+        """
+
+        sys = self.system
+        selected_sites = sites or list(range(1, sys.n_atoms + 1))
+        coupling_ops: list[Qobj] = []
+
+        for idx in selected_sites:
+            op = sys.deph_op_i(idx)
+            coupling_ops.append(sys.to_eigenbasis(op))
+
+        include_double = bool(include_double_manifold)
+        if include_double and sys.max_excitation == 2:
+            from qspectro2d.core.atomic_system.system_class import pair_to_index
+
+            for i in range(1, sys.n_atoms):
+                for j in range(i + 1, sys.n_atoms + 1):
+                    op = sys.deph_op_i(pair_to_index(i, j, sys.n_atoms))
+                    coupling_ops.append(sys.to_eigenbasis(op))
+
+        return coupling_ops

@@ -15,18 +15,29 @@ from qutip import (
     liouvillian,
 )
 from qutip.core.blochredfield import bloch_redfield_tensor
-from typing import List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from qutip import BosonicEnvironment
 
 from .sim_config import SimulationConfig
 from ..atomic_system import AtomicSystem
 from ..laser_system import e_pulses, epsilon_pulses, LaserPulseSequence
 from ..atom_bath_class import AtomBathCoupling
+from qutip.solver.heom import HEOMSolver
 
+from .heom_defaults import (
+    HEOM_DEFAULT_INCLUDE_DOUBLE,
+    HEOM_DEFAULT_MAX_DEPTH,
+    HEOM_DEFAULT_METHOD,
+    HEOM_DEFAULT_N_EXP,
+    HEOM_DEFAULT_N_POINTS,
+    HEOM_DEFAULT_W_MAX_FACTOR,
+    HEOM_DEFAULT_W_MIN,
+)
 
-_BRT_SUPPORTS_METHOD = "br_computation_method" in inspect.signature(
-    bloch_redfield_tensor
-).parameters
+_BRT_SUPPORTS_METHOD = (
+    "br_computation_method" in inspect.signature(bloch_redfield_tensor).parameters
+)
+
 
 @dataclass
 class SimulationModuleOQS:
@@ -37,25 +48,139 @@ class SimulationModuleOQS:
     bath: BosonicEnvironment
 
     sb_coupling: AtomBathCoupling = field(init=False)
+    _heom_run_kwargs: Dict[str, Any] = field(init=False, default_factory=dict, repr=False)
+    _heom_bath_fit_info: Optional[Dict[str, Any]] = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.sb_coupling = AtomBathCoupling(self.system, self.bath)
         if self.simulation_config.t_coh_current is None:
             self.simulation_config.t_coh_current = float(self.simulation_config.t_coh_max)
 
+    def _build_heom_solver(self) -> Tuple[Any, Dict[str, Any]]:
+        heom_cfg, run_kwargs = self._resolve_heom_config()
+
+        max_depth_val = heom_cfg.get("max_depth", HEOM_DEFAULT_MAX_DEPTH)
+        try:
+            max_depth = int(max_depth_val)
+        except (TypeError, ValueError) as exc:  # pragma: no cover - invalid user config
+            raise ValueError("HEOM solver requires integer 'max_depth'.") from exc
+        if max_depth < 0:
+            raise ValueError("HEOM solver requires max_depth >= 0.")
+
+        bath_cfg = dict(heom_cfg["bath"])
+        bath_env = self._approximate_heom_environment(bath_cfg)
+
+        include_double = bool(heom_cfg.get("include_double", HEOM_DEFAULT_INCLUDE_DOUBLE))
+        coupling_ops = self._resolve_heom_couplings(heom_cfg.get("sites"), include_double)
+        if not coupling_ops:
+            raise ValueError("HEOM configuration produced no coupling operators.")
+        bath_specs = [(bath_env, op) for op in coupling_ops]
+
+        solver_options = self._normalize_heom_options(heom_cfg.get("options"))
+
+        H_evo = QobjEvo(self.H_total_t)
+        solver = HEOMSolver(H_evo, bath_specs, max_depth, options=solver_options)
+        return solver, run_kwargs
+
+    def _resolve_heom_config(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        solver_opts = self.simulation_config.solver_options or {}
+        heom_section = solver_opts.get("heom")
+        if heom_section is None:
+            heom_section = {}
+        elif not isinstance(heom_section, dict):
+            raise TypeError("solver_options['heom'] must be a dict when using the HEOM solver.")
+
+        cfg = dict(heom_section)
+
+        bath_cfg = cfg.get("bath")
+        if bath_cfg is None:
+            bath_cfg = {}
+        elif not isinstance(bath_cfg, dict):
+            raise TypeError("solver_options['heom']['bath'] must be a dict when provided.")
+        cfg["bath"] = dict(bath_cfg)
+
+        run_kwargs: Dict[str, Any] = {}
+        args_value = cfg.pop("args", None)
+        if args_value is not None:
+            if not isinstance(args_value, dict):
+                raise TypeError("solver_options['heom']['args'] must be a dict when provided.")
+            run_kwargs["args"] = args_value
+
+        run_kwargs.setdefault("progress_bar", None)
+
+        return cfg, run_kwargs
+
+    def _approximate_heom_environment(self, cfg: Dict[str, Any]):
+        method = str(cfg.get("method", HEOM_DEFAULT_METHOD)).lower()
+        if method != HEOM_DEFAULT_METHOD:
+            raise ValueError(f"Only HEOM bath method '{HEOM_DEFAULT_METHOD}' is supported.")
+
+        w_min = float(cfg.get("w_min", HEOM_DEFAULT_W_MIN))
+        w_max_factor = float(cfg.get("w_max_factor", HEOM_DEFAULT_W_MAX_FACTOR))
+        wc = getattr(self.bath, "wc", None)
+        if wc is None:
+            freq_ref = getattr(self.system, "frequencies_fs", None)
+            wc = float(np.max(freq_ref)) if freq_ref is not None else 1.0
+        w_max = float(cfg.get("w_max", wc * w_max_factor))
+        if w_max <= w_min:
+            w_max = w_min * 10.0
+
+        n_points = int(cfg.get("n_points", HEOM_DEFAULT_N_POINTS))
+        if n_points < 2:
+            raise ValueError("HEOM bath 'n_points' must be >= 2.")
+        n_exp = int(cfg.get("n_exp", HEOM_DEFAULT_N_EXP))
+        if n_exp <= 0:
+            raise ValueError("HEOM bath 'n_exp' must be positive.")
+
+        wlist = np.linspace(w_min, w_max, n_points, dtype=float)
+        approx_kwargs = {"wlist": wlist, "Nmax": n_exp}
+
+        bath_env, fit_info = self.bath.approximate(method, **approx_kwargs)
+        self._heom_bath_fit_info = fit_info
+        return bath_env
+
+    def _resolve_heom_couplings(self, sites_cfg: Any, include_double: bool) -> List[Qobj]:
+        if sites_cfg is None:
+            site_indices = list(range(1, self.system.n_atoms + 1))
+        else:
+            try:
+                site_indices = [int(idx) for idx in sites_cfg]
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "solver_options['heom']['sites'] must be a sequence of integers."
+                ) from exc
+
+        return self.sb_coupling.heom_coupling_ops(
+            sites=site_indices,
+            include_double_manifold=include_double,
+        )
+
+    def _normalize_heom_options(self, raw: Any) -> Dict[str, Any]:
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, dict):
+            raise TypeError("HEOM solver options must be provided as a dict.")
+
+        options = dict(raw)
+        options.setdefault("store_states", True)
+        options.setdefault("store_final_state", True)
+        options.setdefault("progress_bar", None)
+        return options
+
     # --- Deferred solver-dependent initialization ---------------------------------
     @property
-    def evo_obj(self) -> Union[Qobj, QobjEvo]:
+    def evo_obj(self) -> Union[Qobj, QobjEvo, Any]:
         solver = self.simulation_config.ode_solver
+        solver_upper = solver.upper() if isinstance(solver, str) else solver
         if solver == "Paper_eqs":
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
 
             evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
-        elif solver == "ME":
+        elif solver_upper == "ME":
             H_evo = QobjEvo(self.H_total_t)
             c_ops = self.sb_coupling.me_decay_channels
             evo_obj = liouvillian(H_evo, c_ops)
-        elif solver == "BR":
+        elif solver_upper == "BR":
             H_evo = QobjEvo(self.H_total_t)
             solver_opts = (self.simulation_config.solver_options or {}).copy()
             sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
@@ -80,6 +205,12 @@ class SimulationModuleOQS:
                 sec_cutoff=sec_cutoff,
                 **tensor_kwargs,
             )
+        elif solver_upper == "HEOM":
+            heom_solver, run_kwargs = self._build_heom_solver()
+            self._heom_run_kwargs = run_kwargs
+            evo_obj = heom_solver
+            self._heom_run_kwargs = run_kwargs
+            evo_obj = heom_solver
         else:  # Fallback: create evolution without lasers
             evo_obj = liouvillian(self.H0_diagonalized)
         return evo_obj
@@ -87,9 +218,10 @@ class SimulationModuleOQS:
     @property
     def decay_channels(self) -> list[Qobj] | list[tuple[Qobj, BosonicEnvironment]]:
         solver = self.simulation_config.ode_solver
-        if solver == "ME":
+        solver_upper = solver.upper() if isinstance(solver, str) else solver
+        if solver_upper == "ME":
             decay_channels = self.sb_coupling.me_decay_channels
-        elif solver == "BR":
+        elif solver_upper == "BR":
             decay_channels = self.sb_coupling.br_decay_channels
         else:  # for Paper_eqs & Fallback: create generic evolution with no decay channels.
             decay_channels = []
@@ -127,6 +259,7 @@ class SimulationModuleOQS:
         rho0 = self.system.ground_state_dm()
 
         solver_opts = dict(self.simulation_config.solver_options or {})
+        solver_opts.pop("heom", None)
         solver_opts.update({"store_states": False, "store_final_state": True})
 
         ode_solver = (self.simulation_config.ode_solver or "ME").upper()
@@ -150,6 +283,11 @@ class SimulationModuleOQS:
                 a_ops=decay_channels,
                 sec_cutoff=float(sec_cutoff),
                 options=solver_opts,
+            )
+        elif ode_solver == "HEOM":
+            raise NotImplementedError(
+                "Thermal state preparation via HEOM is not implemented. "
+                "Set initial_state='ground' or provide a custom density matrix."
             )
         else:
             # Remove BR-only knobs before calling mesolve

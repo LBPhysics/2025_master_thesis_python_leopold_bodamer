@@ -192,7 +192,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     # INPUT VALIDATION
     _validate_simulation_input(copy_sim_oqs)
 
-    times_result, states = compute_evolution(copy_sim_oqs)
+    times_result, states = compute_evolution(copy_sim_oqs, progress_bar="text")
 
     # CHECK THE RESULT
     if not isinstance(times_result, np.ndarray):
