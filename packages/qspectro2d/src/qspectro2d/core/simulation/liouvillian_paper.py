@@ -39,6 +39,9 @@ def _matrix_ODE_paper_1atom(t: float, sim_oqs: SimulationModuleOQS) -> Qobj:
     E_RWA_plus = e_pulses(t, pulse_seq)
     E_RWA_minus = np.conj(E_RWA_plus)
     mu = sim_oqs.system.dip_moments[0]  # dipole op looks the same in both bases
+    w0 = sim_oqs.system.frequencies_fs[0]
+    wL = pulse_seq.carrier_freq_fs
+    detuning = w0 - wL
     """
     w0 = sim_oqs.system.frequencies_fs[0]
     wL = pulse_seq.carrier_freq_fs
@@ -76,10 +79,10 @@ def _matrix_ODE_paper_1atom(t: float, sim_oqs: SimulationModuleOQS) -> Qobj:
     # Coherences
     L[idx_eg, idx_gg] = -1j * E_RWA_plus * mu
     L[idx_eg, idx_ee] = +1j * E_RWA_plus * mu
-    L[idx_eg, idx_eg] = -deph_rate_tot
+    L[idx_eg, idx_eg] = -deph_rate_tot - 1j * detuning
     L[idx_ge, idx_gg] = +1j * E_RWA_minus * mu
     L[idx_ge, idx_ee] = -1j * E_RWA_minus * mu
-    L[idx_ge, idx_ge] = -deph_rate_tot
+    L[idx_ge, idx_ge] = -deph_rate_tot + 1j * detuning
 
     return Qobj(L, dims=[[[size], [size]], [[size], [size]]])
 

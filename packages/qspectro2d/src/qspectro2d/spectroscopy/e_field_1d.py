@@ -104,18 +104,65 @@ def compute_evolution(
     Compute the evolution of the quantum system for a given pulse sequence, handling overlapping pulses.
     Returns (times, data) where data is list of expectation values if e_ops provided, else list of states.
     """
-    options: dict = sim_oqs.simulation_config.solver_options.copy()
-    options.update(solver_options)
+    solver_name = (sim_oqs.simulation_config.ode_solver or "ME").upper()
+    base_options: dict = dict(sim_oqs.simulation_config.solver_options or {})
+    base_options.update(solver_options)
+
+    heom_run_overrides = base_options.pop("heom", None)
+
+    if solver_name == "HEOM":
+        progress_override = base_options.pop("progress_bar", None)
+        times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
+        current_state = sim_oqs.initial_state
+        solver_e_ops = e_ops if e_ops is not None else []
+
+        run_kwargs = dict(getattr(sim_oqs, "_heom_run_kwargs", {}))
+        if isinstance(heom_run_overrides, dict):
+            if "args" in heom_run_overrides:
+                run_kwargs["args"] = heom_run_overrides["args"]
+            unused_keys = [k for k in heom_run_overrides.keys() if k != "args"]
+            if unused_keys:
+                print(
+                    f"⚠️  Ignoring unsupported HEOM runtime overrides: {sorted(unused_keys)}",
+                    flush=True,
+                )
+
+        if progress_override is not None:
+            run_kwargs["progress_bar"] = progress_override
+
+        heom_solver = sim_oqs.evo_obj
+        res = heom_solver.run(current_state, times_array, e_ops=solver_e_ops, **run_kwargs)
+
+        if e_ops is not None:
+            data = res.expect[0]
+        else:
+            data = getattr(res, "states", None)
+            if data is None:
+                raise RuntimeError(
+                    "HEOM solver did not store system states. Ensure ``solver_options['heom']['options']['store_states']=True``."
+                )
+
+        if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(times_array):
+            data = from_rotating_frame_list(
+                data,
+                np.array(times_array),
+                sim_oqs.system.n_atoms,
+                sim_oqs.laser.carrier_freq_fs,
+            )
+
+        return np.array(times_array, dtype=float), data
+
     # Remove Bloch-Redfield specific knobs that QuTiP's mesolve does not understand.
-    options.pop("sec_cutoff", None)
-    options.pop("br_computation_method", None)
-    options.pop("tensor_type", None)
+    base_options.pop("sec_cutoff", None)
+    base_options.pop("br_computation_method", None)
+    base_options.pop("tensor_type", None)
+
     if e_ops is not None:
-        options["store_states"] = False
-        options["store_final_state"] = True
+        base_options["store_states"] = False
+        base_options["store_final_state"] = True
         solver_e_ops = e_ops
     else:
-        options["store_states"] = True
+        base_options["store_states"] = True
         solver_e_ops = []
 
     times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
@@ -128,7 +175,7 @@ def compute_evolution(
             rho0=current_state,
             tlist=times_array,
             e_ops=solver_e_ops,
-            options=options,
+        options=base_options,
         )
 
     data = res.expect[0] if e_ops is not None else res.states
@@ -159,7 +206,16 @@ def compute_polarization_over_window(
     if sim_oqs.simulation_config.rwa_sl:
         # rotate the states back to lab frame before expectation value
         from qspectro2d.spectroscopy.polarization import time_dependent_polarization_rwa
-        polarization = lambda t, state: time_dependent_polarization_rwa(mu_pos, state, t, sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs)
+        def polarization(t, state):
+            # HEOM returns HierarchyADOsState objects; extract the system density first.
+            rho = state.extract(0) if hasattr(state, "extract") else state
+            return time_dependent_polarization_rwa(
+                mu_pos,
+                rho,
+                t,
+                sim_oqs.system.n_atoms,
+                sim_oqs.laser.carrier_freq_fs,
+            )
     else:
         polarization = mu_pos
 

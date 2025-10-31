@@ -9,7 +9,15 @@ and reduces code duplication.
 import numpy as np
 import warnings
 
-# from ..utils.constants import BOLTZMANN, convert_cm_to_fs
+from ..core.simulation.heom_defaults import (
+    HEOM_DEFAULT_INCLUDE_DOUBLE,
+    HEOM_DEFAULT_MAX_DEPTH,
+    HEOM_DEFAULT_METHOD,
+    HEOM_DEFAULT_N_EXP,
+    HEOM_DEFAULT_N_POINTS,
+    HEOM_DEFAULT_W_MAX_FACTOR,
+    HEOM_DEFAULT_W_MIN,
+)
 
 INITIAL_STATE = "ground"
 # === signal processing / phase cycling ===
@@ -32,7 +40,7 @@ NEGATIVE_EIGVAL_THRESHOLD = -1e-3
 TRACE_TOLERANCE = 1e-6
 
 # supported solvers and bath models
-SUPPORTED_SOLVERS = ["ME", "BR", "Paper_eqs"]
+SUPPORTED_SOLVERS = ["ME", "BR", "Paper_eqs", "HEOM"]
 SUPPORTED_BATHS = ["ohmic"]  # , "dl" NOTE: not yet implemented
 SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
 SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
@@ -227,6 +235,83 @@ def validate(params: dict) -> None:
             raise ValueError("solver_options.rtol must be > 0")
         if nsteps is not None and nsteps <= 0:
             raise ValueError("solver_options.nsteps must be > 0")
+
+        heom_opts = solver_options.get("heom")
+
+        if ode_solver == "HEOM":
+            if heom_opts is None:
+                heom_opts = {}
+            elif not isinstance(heom_opts, dict):
+                raise TypeError(
+                    "solver_options['heom'] must be a dict when provided."
+                )
+
+            allowed_keys = {"max_depth", "bath", "sites", "include_double", "options", "args"}
+            unexpected = set(heom_opts) - allowed_keys
+            if unexpected:
+                raise ValueError(
+                    f"Unsupported HEOM configuration keys: {sorted(unexpected)}. "
+                    "See README for the accepted structure."
+                )
+
+            max_depth_val = heom_opts.get("max_depth", HEOM_DEFAULT_MAX_DEPTH)
+            try:
+                max_depth_int = int(max_depth_val)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("HEOM solver requires an integer 'max_depth'.") from exc
+            if max_depth_int < 0:
+                raise ValueError("HEOM solver requires max_depth >= 0.")
+
+            sites_val = heom_opts.get("sites")
+            if sites_val is not None:
+                if not isinstance(sites_val, (list, tuple)) or not all(
+                    isinstance(idx, (int, np.integer)) for idx in sites_val
+                ):
+                    raise ValueError("solver_options['heom']['sites'] must be a list of integers if provided.")
+
+            include_double = heom_opts.get("include_double", HEOM_DEFAULT_INCLUDE_DOUBLE)
+            if not isinstance(include_double, bool):
+                raise TypeError("solver_options['heom']['include_double'] must be boolean if provided.")
+
+            bath_cfg = heom_opts.get("bath")
+            if bath_cfg is None:
+                bath_cfg = {}
+            elif not isinstance(bath_cfg, dict):
+                raise TypeError("solver_options['heom']['bath'] must be a dict when provided.")
+
+            method = str(bath_cfg.get("method", HEOM_DEFAULT_METHOD)).lower()
+            if method != HEOM_DEFAULT_METHOD:
+                raise ValueError(f"HEOM bath method must be '{HEOM_DEFAULT_METHOD}'.")
+
+            for key, default in (
+                ("w_min", HEOM_DEFAULT_W_MIN),
+                ("w_max_factor", HEOM_DEFAULT_W_MAX_FACTOR),
+                ("n_points", HEOM_DEFAULT_N_POINTS),
+                ("n_exp", HEOM_DEFAULT_N_EXP),
+            ):
+                value = bath_cfg.get(key, default)
+                if key in {"n_points", "n_exp"}:
+                    try:
+                        int_value = int(value)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(f"HEOM bath '{key}' must be an integer.") from exc
+                    if int_value <= 0:
+                        raise ValueError(f"HEOM bath '{key}' must be positive.")
+                else:
+                    try:
+                        float_value = float(value)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(f"HEOM bath '{key}' must be numeric.") from exc
+                    if float_value <= 0:
+                        raise ValueError(f"HEOM bath '{key}' must be positive.")
+
+            options_cfg = heom_opts.get("options", {})
+            if options_cfg is not None and not isinstance(options_cfg, dict):
+                raise TypeError("solver_options['heom']['options'] must be a dict when provided.")
+
+            args_cfg = heom_opts.get("args")
+            if args_cfg is not None and not isinstance(args_cfg, dict):
+                raise TypeError("solver_options['heom']['args'] must be a dict when provided.")
     else:
         raise TypeError("solver_options must be a dict")
 
