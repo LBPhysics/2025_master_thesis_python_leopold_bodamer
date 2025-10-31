@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from functools import cached_property
 import numpy as np
@@ -9,6 +10,7 @@ from qutip import (
     Qobj,
     QobjEvo,
     ket2dm,
+    mesolve,
     brmesolve,
     liouvillian,
 )
@@ -21,6 +23,10 @@ from ..atomic_system import AtomicSystem
 from ..laser_system import e_pulses, epsilon_pulses, LaserPulseSequence
 from ..atom_bath_class import AtomBathCoupling
 
+
+_BRT_SUPPORTS_METHOD = "br_computation_method" in inspect.signature(
+    bloch_redfield_tensor
+).parameters
 
 @dataclass
 class SimulationModuleOQS:
@@ -51,24 +57,28 @@ class SimulationModuleOQS:
             evo_obj = liouvillian(H_evo, c_ops)
         elif solver == "BR":
             H_evo = QobjEvo(self.H_total_t)
-            solver_opts = self.simulation_config.solver_options or {}
-            sec_cutoff = solver_opts.get("sec_cutoff", 0.1)
+            solver_opts = (self.simulation_config.solver_options or {}).copy()
+            sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
             if sec_cutoff is None:
                 sec_cutoff = 0.1
             sec_cutoff = float(sec_cutoff)
-            tensor_type = (
-                solver_opts.get("br_computation_method")
-                or solver_opts.get("tensor_type")
-                or "sparse"
-            )
-            tensor_type = str(tensor_type)
+            method_hint = solver_opts.pop("br_computation_method", None)
+            if method_hint is None and "tensor_type" in solver_opts:
+                method_hint = solver_opts.pop("tensor_type")
+            tensor_type = str(method_hint or "sparse")
             a_ops = self.sb_coupling.br_decay_channels
+            tensor_kwargs = {"fock_basis": True}
+            if _BRT_SUPPORTS_METHOD:
+                tensor_kwargs["br_computation_method"] = tensor_type
+            elif method_hint is not None:
+                print(
+                    "⚠️  bloch_redfield_tensor() does not support 'br_computation_method' for this QuTiP version."
+                )
             evo_obj = bloch_redfield_tensor(
                 H_evo,
                 a_ops=a_ops,
                 sec_cutoff=sec_cutoff,
-                fock_basis=True,
-                br_computation_method=tensor_type,
+                **tensor_kwargs,
             )
         else:  # Fallback: create evolution without lasers
             evo_obj = liouvillian(self.H0_diagonalized)
@@ -110,27 +120,50 @@ class SimulationModuleOQS:
         # Use Bloch-Redfield evolution to relax into the steady state.
         tlist = np.linspace(0.0, 10000.0, 100)
         H = self.H0_diagonalized
-        a_ops = self.decay_channels
-        if not a_ops:  # No BLOCH REDFIELD decay channels; return ground state
+        decay_channels = self.decay_channels
+        if not decay_channels:  # No bath present -> return ground state
             return self.system.ground_state_dm()
 
         rho0 = self.system.ground_state_dm()
-        solver_opts = (self.simulation_config.solver_options or {}).copy()
-        sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
-        if sec_cutoff is None:
-            sec_cutoff = 0.1
-        solver_opts.pop("br_computation_method", None)
-        solver_opts.pop("tensor_type", None)
+
+        solver_opts = dict(self.simulation_config.solver_options or {})
         solver_opts.update({"store_states": False, "store_final_state": True})
 
-        res = brmesolve(
-            H,
-            rho0,
-            tlist,
-            a_ops=a_ops,
-            sec_cutoff=sec_cutoff,
-            options=solver_opts,
-        )
+        ode_solver = (self.simulation_config.ode_solver or "ME").upper()
+
+        if ode_solver == "BR":
+            sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
+            if sec_cutoff is None:
+                sec_cutoff = 0.1
+            method_hint = solver_opts.pop("br_computation_method", None)
+            if method_hint is None and "tensor_type" in solver_opts:
+                method_hint = solver_opts.pop("tensor_type")
+            if method_hint is not None and not _BRT_SUPPORTS_METHOD:
+                print(
+                    "⚠️  bloch_redfield_tensor() does not support 'br_computation_method' for this QuTiP version."
+                )
+
+            res = brmesolve(
+                H,
+                rho0,
+                tlist,
+                a_ops=decay_channels,
+                sec_cutoff=float(sec_cutoff),
+                options=solver_opts,
+            )
+        else:
+            # Remove BR-only knobs before calling mesolve
+            solver_opts.pop("sec_cutoff", None)
+            solver_opts.pop("br_computation_method", None)
+            solver_opts.pop("tensor_type", None)
+
+            res = mesolve(
+                H,
+                rho0,
+                tlist,
+                c_ops=decay_channels,
+                options=solver_opts,
+            )
         rho_ss = getattr(res, "final_state", None)
         if rho_ss is None:
             raise ValueError("Thermal state computation failed: solver returned no state.")
