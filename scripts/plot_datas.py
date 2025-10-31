@@ -53,9 +53,7 @@ def main() -> None:
           )
     if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
         t_coh = None
-    system = data["system"]
     sim_config = data["simulation_config"]
-    combined_dict = {**system.to_dict(), **sim_config.to_dict()}
     print(f"Loaded data from {args.abs_path}")
     print(f"Signal types: {list(signals.keys())}")
     print(f"Data dimension: {'2D' if t_coh is not None else '1D'}")
@@ -68,7 +66,6 @@ def main() -> None:
     base_token = _figure_token(job_metadata, sim_config)
 
     for st, sig_data in signals.items():
-        combined_dict["signal_type"] = st
         print(f"Plotting signal: {st}")
         for comp in components:
             fig = plot_el_field(
@@ -77,7 +74,6 @@ def main() -> None:
                 axis_coh=t_coh,
                 component=comp,
                 domain="time",
-                **combined_dict,
             )
             if fig is None:
                 print(f"  Skipping {st} {comp}: unsupported data shape")
@@ -102,7 +98,6 @@ def main() -> None:
     )
 
     for idx, st in enumerate(out_types):
-        combined_dict["signal_type"] = st
         print(f"Plotting signal: {st}")
 
         sig_data_freq = datas_nu[idx]
@@ -114,7 +109,6 @@ def main() -> None:
                 component=comp,
                 domain="freq",
                 section=SECTION,
-                **combined_dict,
             )
             if fig is None:
                 print(f"  Skipping {st} {comp}: unsupported data shape")
