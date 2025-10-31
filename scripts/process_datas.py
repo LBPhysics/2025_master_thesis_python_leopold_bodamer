@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from qspectro2d.utils.data_io import (
     save_info_file,
     split_prefix,
 )
+from qspectro2d.core.simulation.time_axes import compute_t_det
 
 from calc_datas import DATA_DIR
 
@@ -63,6 +65,18 @@ def _load_entry(path: Path) -> RunEntry:
     system = artifact["system"]
     if sim_cfg is None or system is None:
         raise ValueError(f"Artifact {path} is missing simulation context")
+
+    # Align detection axis with stored signal length if metadata drifted.
+    if signals:
+        det_len = next(iter(signals.values())).shape[-1]
+        if t_det.size != det_len:
+            cfg_for_det = deepcopy(sim_cfg)
+            tc_val = metadata.get("t_coh_value")
+            if tc_val is not None:
+                cfg_for_det.t_coh_current = float(tc_val)
+            new_t_det = compute_t_det(cfg_for_det)
+            if new_t_det.size == det_len:
+                t_det = new_t_det
 
     if sim_cfg.sim_type == "1d":
         t_coh = None

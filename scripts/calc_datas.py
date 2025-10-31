@@ -18,6 +18,7 @@ import json
 import shutil
 import time
 import warnings
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -170,6 +171,13 @@ def main() -> None:
     if args.sim_type == "1d" and getattr(sim.simulation_config, "t_coh_current", None) is None:
         sim.simulation_config.t_coh_current = float(sim.simulation_config.t_coh_max)
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
+
+    # Derive a detection axis aligned with the active coherence grid to
+    # avoid mismatches later when stacking/averaging.
+    det_cfg = deepcopy(sim.simulation_config)
+    if t_coh_values.size:
+        det_cfg.t_coh_current = float(t_coh_values[0])
+    t_det_axis = compute_t_det(det_cfg).tolist()
     combinations = build_combinations(t_coh_values, n_inhom)
 
     print(
@@ -180,7 +188,7 @@ def main() -> None:
     job_metadata = {
         "sim_type": args.sim_type,
         "signal_types": sim.simulation_config.signal_types,
-        "t_det": compute_t_det(sim.simulation_config).tolist(),
+        "t_det": t_det_axis,
         "t_coh": t_coh_values.tolist(),
         "n_inhom": n_inhom,
         "n_t_coh": int(t_coh_values.size),
