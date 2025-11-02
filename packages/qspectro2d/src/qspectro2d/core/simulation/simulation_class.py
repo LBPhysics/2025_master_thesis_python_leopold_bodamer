@@ -209,8 +209,6 @@ class SimulationModuleOQS:
             heom_solver, run_kwargs = self._build_heom_solver()
             self._heom_run_kwargs = run_kwargs
             evo_obj = heom_solver
-            self._heom_run_kwargs = run_kwargs
-            evo_obj = heom_solver
         else:  # Fallback: create evolution without lasers
             evo_obj = liouvillian(self.H0_diagonalized)
         return evo_obj

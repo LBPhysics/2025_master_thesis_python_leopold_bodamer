@@ -14,9 +14,10 @@ Supports ME and BR solvers via the internals of SimulationModuleOQS.
 from __future__ import annotations
 
 from typing import List, Sequence, Tuple, Optional
+from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
-from qutip import Qobj, Result, mesolve
+from qutip import mesolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local, compute_t_det
@@ -34,37 +35,6 @@ __all__ = [
 # --------------------------------------------------------------------------------------
 # Internal helpers
 # --------------------------------------------------------------------------------------
-def slice_states_to_window(res: Result, window: np.ndarray) -> List[Qobj]:
-    """Slice the list of states in `res` to only keep the detection window portion.
-
-    Returns:
-        List of states corresponding to the window time points.
-    """
-    # Assuming res_times is sorted and equally spaced
-    times = np.asarray(res.times)
-    window = np.asarray(window)
-    # nearest index for each window time
-    idxs = np.searchsorted(times, window, side="left")
-    idxs = np.clip(idxs, 0, len(times) - 1)
-
-    # For each window time, find the best matching time index
-    selected_idxs = np.zeros_like(idxs)
-    for k, (idx, w) in enumerate(zip(idxs, window)):
-        # Candidates: idx-1, idx, idx+1 (if within bounds)
-        candidates = []
-        if idx > 0:
-            candidates.append(idx - 1)
-        candidates.append(idx)
-        if idx < len(times) - 1:
-            candidates.append(idx + 1)
-
-        # Choose the candidate with minimal absolute difference
-        best_idx = min(candidates, key=lambda i: abs(times[i] - w))
-        selected_idxs[k] = best_idx
-
-    return [res.states[int(i)] for i in selected_idxs]
-
-
 def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.ndarray:
     """Slice the list of polarization values P_t to only keep the detection window portion.
 
@@ -95,6 +65,7 @@ def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.nd
 
     return np.array([P_t[int(i)] for i in selected_idxs], dtype=complex)
 
+
 def compute_evolution(
     sim_oqs: SimulationModuleOQS,
     e_ops=None,
@@ -104,58 +75,15 @@ def compute_evolution(
     Compute the evolution of the quantum system for a given pulse sequence, handling overlapping pulses.
     Returns (times, data) where data is list of expectation values if e_ops provided, else list of states.
     """
-    solver_name = (sim_oqs.simulation_config.ode_solver or "ME").upper()
-    base_options: dict = dict(sim_oqs.simulation_config.solver_options or {})
-    base_options.update(solver_options)
-
-    heom_run_overrides = base_options.pop("heom", None)
-
-    if solver_name == "HEOM":
-        progress_override = base_options.pop("progress_bar", None)
-        times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
-        current_state = sim_oqs.initial_state
-        solver_e_ops = e_ops if e_ops is not None else []
-
-        run_kwargs = dict(getattr(sim_oqs, "_heom_run_kwargs", {}))
-        if isinstance(heom_run_overrides, dict):
-            if "args" in heom_run_overrides:
-                run_kwargs["args"] = heom_run_overrides["args"]
-            unused_keys = [k for k in heom_run_overrides.keys() if k != "args"]
-            if unused_keys:
-                print(
-                    f"⚠️  Ignoring unsupported HEOM runtime overrides: {sorted(unused_keys)}",
-                    flush=True,
-                )
-
-        if progress_override is not None:
-            run_kwargs["progress_bar"] = progress_override
-
-        heom_solver = sim_oqs.evo_obj
-        res = heom_solver.run(current_state, times_array, e_ops=solver_e_ops, **run_kwargs)
-
-        if e_ops is not None:
-            data = res.expect[0]
-        else:
-            data = getattr(res, "states", None)
-            if data is None:
-                raise RuntimeError(
-                    "HEOM solver did not store system states. Ensure ``solver_options['heom']['options']['store_states']=True``."
-                )
-
-        if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(times_array):
-            data = from_rotating_frame_list(
-                data,
-                np.array(times_array),
-                sim_oqs.system.n_atoms,
-                sim_oqs.laser.carrier_freq_fs,
-            )
-
-        return np.array(times_array, dtype=float), data
+    solver_name = sim_oqs.simulation_config.ode_solver
+    runtime_solver_options: dict = dict(solver_options)
 
     # Remove Bloch-Redfield specific knobs that QuTiP's mesolve does not understand.
+    base_options: dict = dict(sim_oqs.simulation_config.solver_options)
+    base_options.update(runtime_solver_options)
+    base_options.pop("heom", None)
     base_options.pop("sec_cutoff", None)
     base_options.pop("br_computation_method", None)
-    base_options.pop("tensor_type", None)
 
     if e_ops is not None:
         base_options["store_states"] = False
@@ -166,19 +94,38 @@ def compute_evolution(
         solver_e_ops = []
 
     times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
-
-    # Build event grid
     current_state = sim_oqs.initial_state
+    solver = sim_oqs.evo_obj
+    if solver_name == "heom":
+        run_kwargs: dict = dict(getattr(sim_oqs, "_heom_run_kwargs", {}))
 
-    res = mesolve(
+        if (
+            "args" in run_kwargs
+            and run_kwargs["args"] is not None
+            and not isinstance(run_kwargs["args"], Mapping)
+        ):
+            raise TypeError("HEOM run 'args' must be a mapping when using QuTiP 5.2.1.")
+
+        res = solver.run(current_state, times_array, e_ops=solver_e_ops, **run_kwargs)
+
+        if e_ops is not None:
+            data = res.expect[0]
+        else:
+            data = getattr(res, "states", None)
+            if data is None:
+                raise RuntimeError(
+                    "HEOM solver did not store system states. Ensure ``solver_options['heom']['options']['store_states']=True``."
+                )
+    else:
+        res = mesolve(
             H=sim_oqs.evo_obj,
             rho0=current_state,
             tlist=times_array,
             e_ops=solver_e_ops,
-        options=base_options,
+            options=base_options,
         )
 
-    data = res.expect[0] if e_ops is not None else res.states
+        data = res.expect[0] if e_ops is not None else res.states
 
     # If returning states and RWA was used, convert to lab frame
     if res.expect is None and sim_oqs.simulation_config.rwa_sl and times_array:
@@ -206,6 +153,7 @@ def compute_polarization_over_window(
     if sim_oqs.simulation_config.rwa_sl:
         # rotate the states back to lab frame before expectation value
         from qspectro2d.spectroscopy.polarization import time_dependent_polarization_rwa
+
         def polarization(t, state):
             # HEOM returns HierarchyADOsState objects; extract the system density first.
             rho = state.extract(0) if hasattr(state, "extract") else state
@@ -216,6 +164,7 @@ def compute_polarization_over_window(
                 sim_oqs.system.n_atoms,
                 sim_oqs.laser.carrier_freq_fs,
             )
+
     else:
         polarization = mu_pos
 
@@ -291,7 +240,7 @@ def parallel_compute_1d_e_comps(
     *,
     phases: Optional[Sequence[float]] = None,
     lm: Optional[Tuple[int, int]] = None,
-    time_cut: Optional[float] = None, # TODO for now just to see evolution -> later implement again
+    time_cut: Optional[float] = None,  # TODO for now just to see evolution -> later implement again
 ) -> List[np.ndarray]:
     """Compute 1D electric field components E_kS(t_det) with phase cycling only.
 
@@ -337,8 +286,8 @@ def parallel_compute_1d_e_comps(
     # Assume 3 pulses as per the function doc
 
     # Optional time mask (keep length constant)
-    #t_mask = None
-    #if time_cut is not None and np.isfinite(time_cut):
+    # t_mask = None
+    # if time_cut is not None and np.isfinite(time_cut):
     #    t_mask = (t_det <= time_cut).astype(np.float64)
 
     # Accumulate P components as results arrive
