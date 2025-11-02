@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, List
 from dataclasses import dataclass, field
 
 
@@ -13,9 +13,9 @@ class SimulationConfig:
     Focused immutable configuration object; no legacy compatibility paths.
     """
 
-    ode_solver: str = "ME"
+    ode_solver: str = "linblad"
     # Solver and pulse/detection options
-    solver_options: dict[str, float | int] = field(default_factory=lambda: {})
+    solver_options: dict[str, Any] = field(default_factory=lambda: {})
     rwa_sl: bool = True
 
     t_det_max: float = 100.0
@@ -41,10 +41,10 @@ class SimulationConfig:
     signal_types: List[str] = field(default_factory=lambda: ["rephasing"])
 
     def __post_init__(self) -> None:
-        # Enforce RWA for Paper_eqs
-        if self.ode_solver == "Paper_eqs" and not self.rwa_sl:
+        # Enforce RWA for paper_eqs
+        if self.ode_solver == "paper_eqs" and not self.rwa_sl:
             print(
-                "⚠️  Warning: rwa_sl forced True for Paper_eqs solver.",
+                "⚠️  Warning: rwa_sl forced True for paper_eqs solver.",
                 category=UserWarning,
                 stacklevel=2,
             )

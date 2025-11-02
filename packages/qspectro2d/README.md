@@ -90,7 +90,7 @@ sequence = LaserPulseSequence.from_pulse_delays(
 )
 
 config = SimulationConfig(
-		ode_solver="BR",
+		ode_solver="redfield",
 		dt=0.1,
 		t_coh=0.0,
 		t_wait=100.0,

@@ -19,7 +19,7 @@ class AtomBathCoupling:
           - Radiative decay channels (lowering operators) from singles to ground
           - (If max_excitation == 2) lowering from double states to singles
 
-        NOTE: BR formalism usually builds rates from bath correlation functions; here we
+        NOTE: redfield formalism usually builds rates from bath correlation functions; here we
         provide operator structures only. Coupling strengths are encoded in the bath object.
         """
         sys = self.system
@@ -88,7 +88,6 @@ class AtomBathCoupling:
         c_ops = []
         add_op = lambda op, rate: c_ops.append(sys.to_eigenbasis(op) * np.sqrt(rate))
 
-
         # Dephasing rate (assumed identical structure for all single excitations)
         deph_rate = 1 / 100
         down_rate = 1 / 300
@@ -113,7 +112,9 @@ class AtomBathCoupling:
                     idx = pair_to_index(i, j, n_atoms)
                     deph_op_ij = sys.deph_op_i(idx)
                     add_op(deph_op_ij, deph_rate)
-                    add_op(deph_op_ij, deph_rate)  # each double excited state gets one contribution from each site
+                    add_op(
+                        deph_op_ij, deph_rate
+                    )  # each double excited state gets one contribution from each site
             if n_atoms == 2:  # to match the paper
                 return c_ops
             for i_atom in range(1, n_atoms):  # otherwise add decay channels
@@ -253,37 +254,27 @@ class AtomBathCoupling:
     # --- HEOM coupling helpers -------------------------------------------------
     def heom_coupling_ops(
         self,
-        *,
-        sites: list[int] | None = None,
-        include_double_manifold: bool | None = None,
     ) -> list[Qobj]:
         """Return system coupling operators suited for HEOM simulations.
-
+        # TODO add decay operators??
         Parameters
-        ----------
-        sites:
-            Optional subset of site indices (1-based, matching AtomicSystem convention)
-            to include. Defaults to all physical sites.
-        include_double_manifold:
-            If ``True`` and the system exposes the double-excitation manifold, include
-            projectors onto each doubly excited state. Defaults to ``False``.
-
-        Returns
         -------
         list[Qobj]
             Coupling operators transformed into the eigenbasis of ``H0``.
         """
 
         sys = self.system
-        selected_sites = sites or list(range(1, sys.n_atoms + 1))
+        sites = list(range(1, sys.n_atoms + 1))
         coupling_ops: list[Qobj] = []
 
-        for idx in selected_sites:
+        for idx in sites:
             op = sys.deph_op_i(idx)
             coupling_ops.append(sys.to_eigenbasis(op))
 
-        include_double = bool(include_double_manifold)
-        if include_double and sys.max_excitation == 2:
+        max_exc = (
+            sys.max_excitation if sys.max_excitation is not None else 1
+        )  # include doubles when available
+        if max_exc == 2:
             from qspectro2d.core.atomic_system.system_class import pair_to_index
 
             for i in range(1, sys.n_atoms):

@@ -22,7 +22,7 @@ import numpy as np
 import psutil
 from pathlib import Path
 from typing import Any, Mapping, Optional
-from qutip import OhmicEnvironment
+from qutip import OhmicEnvironment, DrudeLorentzEnvironment
 import yaml
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
@@ -92,7 +92,7 @@ def load_simulation_config(
     rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
     initial_state = str(config_cfg.get("initial_state", dflt.INITIAL_STATE))
     solver_options_cfg = config_cfg.get("solver_options", {})
-    solver_options = dict(dflt.SOLVER_OPTIONS)
+    solver_options = dict(dflt.SOLVER_OPTIONS.get(ode_solver, {}))
     if isinstance(solver_options_cfg, Mapping):
         solver_options.update(solver_options_cfg)
     # Normalize CLI/YAML numeric strings (e.g. "1e-6") into numbers for validation downstream.
@@ -112,6 +112,11 @@ def load_simulation_config(
         else:
             normalized_solver_opts[key] = value
     solver_options = normalized_solver_opts
+
+    # Filter to only allowed options for the current solver
+    allowed_keys = dflt.ALLOWED_SOLVER_OPTIONS.get(ode_solver, [])
+    solver_options = {k: v for k, v in solver_options.items() if k in allowed_keys}
+
     max_workers = get_max_workers()
 
     return SimulationConfig(
@@ -228,14 +233,23 @@ def load_simulation_bath(
     coupling = float(bath_cfg.get("coupling", dflt.BATH_COUPLING))
     bath_type = str(bath_cfg.get("bath_type", dflt.BATH_TYPE))
 
-    # TODO extend to BsosonicEnvironment
-    bath_env = OhmicEnvironment(
-        T=temperature,
-        alpha=coupling,  # / cutoff,  # TODO make this is exactly the paper implementation
-        wc=cutoff,
-        s=1.0,
-        tag=bath_type,
-    )
+    if bath_type == "ohmic":
+        bath_env = OhmicEnvironment(
+            T=temperature,
+            alpha=coupling,
+            wc=cutoff,
+            s=1.0,
+            tag=bath_type,
+        )
+    elif bath_type == "drudelorentz":
+        bath_env = DrudeLorentzEnvironment(
+            T=temperature,
+            gamma=cutoff,
+            lam=coupling,
+            tag=bath_type,
+        )
+    else:
+        raise ValueError(f"Unsupported bath_type: {bath_type}. Supported: {dflt.SUPPORTED_BATHS}")
 
     return bath_env
 
@@ -273,6 +287,16 @@ def load_simulation(
     # VALIDATION (physics-level) BEFORE FINAL ASSEMBLY
     # -----------------
     if validate:
+        # Handle bath-specific attributes
+        if bath_env.tag == "ohmic":
+            cutoff_val = bath_env.wc
+            coupling_val = bath_env.alpha
+        elif bath_env.tag == "drudelorentz":
+            cutoff_val = bath_env.gamma
+            coupling_val = bath_env.lam
+        else:
+            raise ValueError(f"Unsupported bath_type for validation: {bath_env.tag}")
+
         params = {
             "solver": sim_config.ode_solver,
             "bath_type": bath_env.tag,
@@ -280,8 +304,8 @@ def load_simulation(
             "n_atoms": atomic_system.n_atoms,
             "dip_moments": atomic_system.dip_moments,
             "temperature": bath_env.T,
-            "cutoff": bath_env.wc,
-            "coupling": bath_env.alpha,
+            "cutoff": cutoff_val,
+            "coupling": coupling_val,
             "n_phases": sim_config.n_phases,
             "max_excitation": atomic_system.max_excitation,
             "n_chains": atomic_system.n_chains,
