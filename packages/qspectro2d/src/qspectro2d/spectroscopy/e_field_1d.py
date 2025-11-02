@@ -8,7 +8,7 @@ Steps:
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
 - P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
 
-Supports ME and BR solvers via the internals of SimulationModuleOQS.
+Supports linblad and redfield solvers via the internals of SimulationModuleOQS.
 """
 
 from __future__ import annotations
@@ -77,6 +77,7 @@ def compute_evolution(
     """
     solver_name = sim_oqs.simulation_config.ode_solver
     runtime_solver_options: dict = dict(solver_options)
+    progress_bar = runtime_solver_options.pop("progress_bar", None)
 
     # Remove Bloch-Redfield specific knobs that QuTiP's mesolve does not understand.
     base_options: dict = dict(sim_oqs.simulation_config.solver_options)
@@ -84,6 +85,12 @@ def compute_evolution(
     base_options.pop("heom", None)
     base_options.pop("sec_cutoff", None)
     base_options.pop("br_computation_method", None)
+
+    if progress_bar is not None and solver_name == "heom":
+        print(
+            "[compute_evolution] HEOMSolver does not expose a 'progress_bar' keyword; proceeding without progress feedback."
+        )
+        progress_bar = None
 
     if e_ops is not None:
         base_options["store_states"] = False
@@ -106,6 +113,7 @@ def compute_evolution(
         ):
             raise TypeError("HEOM run 'args' must be a mapping when using QuTiP 5.2.1.")
 
+        # think about replacing with from qutip.solver.heom import heomsolve
         res = solver.run(current_state, times_array, e_ops=solver_e_ops, **run_kwargs)
 
         if e_ops is not None:
@@ -117,13 +125,17 @@ def compute_evolution(
                     "HEOM solver did not store system states. Ensure ``solver_options['heom']['options']['store_states']=True``."
                 )
     else:
-        res = mesolve(
+        mesolve_kwargs = dict(
             H=sim_oqs.evo_obj,
             rho0=current_state,
             tlist=times_array,
             e_ops=solver_e_ops,
             options=base_options,
         )
+        if progress_bar is not None:
+            mesolve_kwargs["progress_bar"] = progress_bar
+
+        res = mesolve(**mesolve_kwargs)
 
         data = res.expect[0] if e_ops is not None else res.states
 

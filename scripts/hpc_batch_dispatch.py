@@ -50,7 +50,7 @@ def estimate_slurm_resources(
     *,
     workers: int = 1,
     N_dim: int,
-    solver: str = "ME",
+    solver: str = "linblad",
     mem_safety: float = 100.0,
     base_mb: int = 500,
     time_safety: float = 10,
@@ -61,9 +61,9 @@ def estimate_slurm_resources(
     Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
     """
     # ---------------------- MEMORY ----------------------
-    bytes_per_solver = (
-        n_times * (N_dim) * 16
-    )  # doesnt scale quadratically because i dont store states
+    bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
+    if solver == "heom":
+        mem_mb *= N_dim  # HEOM is much heavier on memory
     total_bytes = mem_safety * workers * bytes_per_solver
     mem_mb = base_mb + total_bytes / (1024**2)
     requested_mem = f"{int(math.ceil(mem_mb))}M"
@@ -73,10 +73,14 @@ def estimate_slurm_resources(
     combos_total = n_inhom * n_t_coh
     combos_per_batch = max(1, combos_total // max(1, n_batches))
 
-    # Empirical baseline: base_time s per combo for ME, 1 atom, n_times=1000, N=2
-    t0 = 0.03  # basic case for pessimistic ME
-    if solver == "Paper_eqs" or solver == "BR":
+    # Empirical baseline: base_time s per combo for linblad, 1 atom, n_times=1000, N=2
+    t0 = 0.03  # basic case for pessimistic linblad
+    if solver == "paper_eqs":
+        t0 *= 3.0  # slower solver
+    elif solver == "redfield":
         t0 *= 5.0  # slower solver
+    elif solver == "heom":
+        t0 *= 100.0  # HEOM is much slower
     if not rwa_sl:
         t0 *= 5.0  # non-RWA is WAY slower
     base_t = t0

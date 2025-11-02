@@ -285,7 +285,6 @@ def main() -> None:
         print(f"  {saved_paths[-1]}")
         print("\n🎯 Next step:")
         print(f"     python process_datas.py --abs_path '{saved_paths[-1]}' --skip_if_exists")
-        print(f"Workspace figures will land in: {job_paths.figures_dir}")
 
     print("=" * 80)
     print("DONE")

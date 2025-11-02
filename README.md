@@ -61,10 +61,10 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    ...
    Completed 1 combination(s) in 3.26 s
    Latest artifact:
-   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
+   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
 
    🎯 Next step:
-      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ================================================================================
    DONE
    ```
@@ -73,13 +73,13 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    **Example:**
 
    ```bash
-   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ```
 
    ```
    ...
    🎯 Plot with:
-   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
 4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `EXTEND` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
@@ -87,7 +87,7 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    **Example:**
 
    ```bash
-   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/ME/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
    -> find the figures under `figures/...`

@@ -1,4 +1,4 @@
-"""Paper-specific time independent Liouvillian builders. for Paper_eqs solver."""
+"""Paper-specific time independent Liouvillian builders. for paper_eqs solver."""
 
 from __future__ import annotations
 

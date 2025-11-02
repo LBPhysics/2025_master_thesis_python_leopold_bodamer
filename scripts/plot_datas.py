@@ -45,12 +45,15 @@ def main() -> None:
     # Load the data
     data = load_simulation_data(args.abs_path)
     signals = data["signals"]
-    print(f"Available signals: {list(signals.keys())}, with shapes {[s.shape for s in signals.values()]}")
+    print(
+        f"Available signals: {list(signals.keys())}, with shapes {[s.shape for s in signals.values()]}"
+    )
     t_det = data["t_det"]
     t_coh = data.get("t_coh")
-    print(f"Loaded t_det with shape: {t_det.shape}",
-            f"and t_coh with shape: {t_coh.shape if t_coh is not None else 'None'}"
-          )
+    print(
+        f"Loaded t_det with shape: {t_det.shape}",
+        f"and t_coh with shape: {t_coh.shape if t_coh is not None else 'None'}",
+    )
     if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
         t_coh = None
     sim_config = data["simulation_config"]
@@ -135,19 +138,14 @@ def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
 
 
 def _figure_token(job_metadata: dict[str, Any], sim_config: Any) -> str:
-    if "job_label" in job_metadata:
-        return str(job_metadata["job_label"])
-    job_dir = job_metadata.get("job_dir")
-    if job_dir:
-        return Path(job_dir).name
-    if job_metadata.get("data_base_name"):
-        return str(job_metadata["data_base_name"])
-    return getattr(sim_config, "sim_type", "run")
+    return ""
 
 
 def _figure_stem(base_token: str, signal: str, domain: str, component: str) -> str:
     safe_signal = str(signal).replace(" ", "_").replace("/", "-")
-    return f"{base_token}_{domain}_{component}_{safe_signal}".lower()
+    parts = [safe_signal, domain, component]
+    stem = "_".join(filter(None, parts)).lower()
+    return stem
 
 
 def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
