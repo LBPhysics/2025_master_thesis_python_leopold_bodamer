@@ -8,7 +8,7 @@ Steps:
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
 - P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
 
-Supports linblad and redfield solvers via the internals of SimulationModuleOQS.
+Supports linblad, redfield, and Monte Carlo solvers via the internals of SimulationModuleOQS.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import List, Sequence, Tuple, Optional
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
-from qutip import mesolve
+from qutip import mesolve, mcsolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local, compute_t_det
@@ -85,11 +85,13 @@ def compute_evolution(
     base_options.pop("heom", None)
     base_options.pop("sec_cutoff", None)
     base_options.pop("br_computation_method", None)
+    base_options.pop("progress_bar", None)
+
+    ntraj = None
+    if solver_name == "montecarlo":
+        ntraj = int(base_options.pop("ntraj", 64))
 
     if progress_bar is not None and solver_name == "heom":
-        print(
-            "[compute_evolution] HEOMSolver does not expose a 'progress_bar' keyword; proceeding without progress feedback."
-        )
         progress_bar = None
 
     if e_ops is not None:
@@ -124,9 +126,23 @@ def compute_evolution(
                 raise RuntimeError(
                     "HEOM solver did not store system states. Ensure ``solver_options['heom']['options']['store_states']=True``."
                 )
+    elif solver_name == "montecarlo":
+        mc_kwargs = dict(
+            H=solver,
+            state=sim_oqs.initial_state,
+            tlist=times_array,
+            c_ops=sim_oqs.decay_channels,
+            e_ops=solver_e_ops,
+            ntraj=ntraj,
+            options=base_options if base_options else None,
+        )
+        # Remove None-valued entries to avoid unexpected keyword errors
+        mc_kwargs = {k: v for k, v in mc_kwargs.items() if v is not None}
+        res = mcsolve(**mc_kwargs)
+        data = res.expect[0] if e_ops is not None else res.states
     else:
         mesolve_kwargs = dict(
-            H=sim_oqs.evo_obj,
+            H=solver,
             rho0=current_state,
             tlist=times_array,
             e_ops=solver_e_ops,
@@ -140,7 +156,7 @@ def compute_evolution(
         data = res.expect[0] if e_ops is not None else res.states
 
     # If returning states and RWA was used, convert to lab frame
-    if res.expect is None and sim_oqs.simulation_config.rwa_sl and times_array:
+    if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(times_array):
         data = from_rotating_frame_list(
             data, np.array(times_array), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
         )
@@ -169,6 +185,8 @@ def compute_polarization_over_window(
         def polarization(t, state):
             # HEOM returns HierarchyADOsState objects; extract the system density first.
             rho = state.extract(0) if hasattr(state, "extract") else state
+            if hasattr(rho, "isket") and rho.isket:
+                rho = rho.proj()
             return time_dependent_polarization_rwa(
                 mu_pos,
                 rho,
