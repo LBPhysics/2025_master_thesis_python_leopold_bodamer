@@ -21,8 +21,15 @@ SOLVER_OPTIONS = {
         "method": "bdf",
     },
     "redfield": {
-        "sec_cutoff": 0.1,
+        "sec_cutoff": -1,
         "br_computation_method": "sparse",
+        "atol": 1e-4,
+        "rtol": 1e-3,
+        "nsteps": 200000,
+        "method": "bdf",
+    },
+    "montecarlo": {
+        "ntraj": 64,
         "atol": 1e-5,
         "rtol": 1e-3,
         "nsteps": 200000,
@@ -53,6 +60,16 @@ ALLOWED_SOLVER_OPTIONS = {
         "min_step",
         "sec_cutoff",
         "br_computation_method",
+    ],
+    "montecarlo": [
+        "atol",
+        "rtol",
+        "nsteps",
+        "method",
+        "max_step",
+        "min_step",
+        "ntraj",
+        "progress_bar",
     ],
     "heom": [
         "max_depth",

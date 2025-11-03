@@ -204,6 +204,8 @@ class SimulationModuleOQS:
                 sec_cutoff=sec_cutoff,
                 **tensor_kwargs,
             )
+        elif solver == "montecarlo":
+            evo_obj = QobjEvo(self.H_total_t)
         elif solver == "heom":
             heom_solver, run_kwargs = self._build_heom_solver()
             self._heom_run_kwargs = run_kwargs
@@ -215,7 +217,7 @@ class SimulationModuleOQS:
     @property
     def decay_channels(self) -> list[Qobj] | list[tuple[Qobj, BosonicEnvironment]]:
         solver = self.simulation_config.ode_solver
-        if solver == "linblad":
+        if solver in {"linblad", "montecarlo"}:
             decay_channels = self.sb_coupling.me_decay_channels
         elif solver == "redfield":
             decay_channels = self.sb_coupling.br_decay_channels

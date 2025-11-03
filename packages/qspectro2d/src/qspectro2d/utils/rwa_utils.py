@@ -6,6 +6,14 @@ import numpy as np
 from typing import List
 from qutip import Qobj, expect
 
+
+def _ensure_density(op: Qobj) -> Qobj:
+    """Return a density-operator representation for kets."""
+    if hasattr(op, "isket") and op.isket:
+        return op.proj()
+    return op
+
+
 __all__ = [
     "rotating_frame_unitary",
     "to_rotating_frame_op",
@@ -54,12 +62,14 @@ def rotating_frame_unitary(ref: Qobj, t: float, n_atoms: int, omega_laser: float
 
 def to_rotating_frame_op(rho_lab: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
     """Compute ρ_RWA(t) = U(t) ρ_lab(t) U†(t)."""
+    rho_lab = _ensure_density(rho_lab)
     U = rotating_frame_unitary(rho_lab, t, n_atoms, omega_laser)
     return U * rho_lab * U.dag()
 
 
 def from_rotating_frame_op(rho_rot: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
     """Compute ρ_lab(t) = U†(t) ρ_RWA(t) U(t)."""
+    rho_rot = _ensure_density(rho_rot)
     U = rotating_frame_unitary(rho_rot, t, n_atoms, omega_laser)
     return U.dag() * rho_rot * U
 
@@ -80,7 +90,7 @@ def to_rotating_frame_list(
     if len(times_arr) != len(states):
         raise ValueError(f"Length mismatch: {len(states)} states vs {times_arr.shape[0]} times")
     return [
-        to_rotating_frame_op(rho, float(t), n_atoms, omega_laser)
+        to_rotating_frame_op(_ensure_density(rho), float(t), n_atoms, omega_laser)
         for rho, t in zip(states, times_arr)
     ]
 
@@ -101,7 +111,7 @@ def from_rotating_frame_list(
     if len(times_arr) != len(states):
         raise ValueError(f"Length mismatch: {len(states)} states vs {times_arr.shape[0]} times")
     return [
-        from_rotating_frame_op(rho, float(t), n_atoms, omega_laser)
+        from_rotating_frame_op(_ensure_density(rho), float(t), n_atoms, omega_laser)
         for rho, t in zip(states, times_arr)
     ]
 
