@@ -62,10 +62,10 @@ def estimate_slurm_resources(
     """
     # ---------------------- MEMORY ----------------------
     bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
-    if solver == "heom":
-        mem_mb *= N_dim  # HEOM is much heavier on memory
     total_bytes = mem_safety * workers * bytes_per_solver
     mem_mb = base_mb + total_bytes / (1024**2)
+    if solver == "heom":
+        mem_mb *= N_dim  # HEOM is much heavier on memory
     requested_mem = f"{int(math.ceil(mem_mb))}M"
 
     # ---------------------- TIME ------------------------
