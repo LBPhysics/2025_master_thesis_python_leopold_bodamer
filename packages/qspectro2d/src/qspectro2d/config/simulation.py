@@ -7,10 +7,10 @@ ODE_SOLVER = "redfield"  # ODE solver to use
 SIM_TYPE = "1d"
 SOLVER_OPTIONS = {
     "heom": {
-        "max_depth": 2,
+        "max_depth": 1, # 1 for redfield limit, higher more accurate
         "bath": {
             "approx_method": "prony",
-            "Ni": 5,
+            "Ni": 5, # good approximation
             "Nr": 5,
             "combine": True,
             "n_t": 1000,
