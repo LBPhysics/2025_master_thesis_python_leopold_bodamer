@@ -161,21 +161,6 @@ class SimulationModuleOQS:
 
         return max_depth, coupling_ops, bath_env, options, run_kwargs
 
-    def _build_heom_solver(self) -> Tuple[Any, Dict[str, Any]]:
-        max_depth, coupling_ops, bath_env, options, run_kwargs = self._collect_heom_inputs()
-
-        bath_specs = [(bath_env, op) for op in coupling_ops]
-
-        H_evo = QobjEvo(self.H_total_t)
-
-        solver = HEOMSolver(
-            H=H_evo,
-            bath=bath_specs,
-            max_depth=max_depth,
-            options=options,
-        )
-        return solver, run_kwargs
-
     # --- Deferred solver-dependent initialization ---------------------------------
     @property
     def evo_obj(self) -> Union[Qobj, QobjEvo, Any]:
@@ -191,25 +176,19 @@ class SimulationModuleOQS:
         elif solver == "redfield":
             H_evo = QobjEvo(self.H_total_t)
             solver_opts = (self.simulation_config.solver_options or {}).copy()
-            sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
-            if sec_cutoff is None:
-                sec_cutoff = 0.1
-            sec_cutoff = float(sec_cutoff)
-            method_hint = solver_opts.pop("br_computation_method", "sparse")
-            a_ops = self.sb_coupling.br_decay_channels
+            sec_cutoff = solver_opts.pop("sec_cutoff")
+            method_hint = solver_opts.pop("br_computation_method")
             tensor_kwargs = {"fock_basis": True, "br_computation_method": method_hint}
             evo_obj = bloch_redfield_tensor(
                 H_evo,
-                a_ops=a_ops,
+                a_ops=self.sb_coupling.br_decay_channels,
                 sec_cutoff=sec_cutoff,
                 **tensor_kwargs,
             )
         elif solver == "montecarlo":
             evo_obj = QobjEvo(self.H_total_t)
         elif solver == "heom":
-            heom_solver, run_kwargs = self._build_heom_solver()
-            self._heom_run_kwargs = run_kwargs
-            evo_obj = heom_solver
+            evo_obj = QobjEvo(self.H_total_t)
         else:  # Fallback: create evolution without lasers
             evo_obj = liouvillian(self.H0_diagonalized)
         return evo_obj

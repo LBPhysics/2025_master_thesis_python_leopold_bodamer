@@ -14,10 +14,10 @@ Supports linblad, redfield, and Monte Carlo solvers via the internals of Simulat
 from __future__ import annotations
 
 from typing import List, Sequence, Tuple, Optional
-from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 from qutip import mesolve, mcsolve
+from qutip.solver.heom import heomsolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local, compute_t_det
@@ -77,7 +77,7 @@ def compute_evolution(
     """
     solver_name = sim_oqs.simulation_config.ode_solver
     runtime_solver_options: dict = dict(solver_options)
-    progress_bar = runtime_solver_options.pop("progress_bar", None)
+    progress_bar = runtime_solver_options.pop("progress_bar", False)
 
     # Remove Bloch-Redfield specific knobs that QuTiP's mesolve does not understand.
     base_options: dict = dict(sim_oqs.simulation_config.solver_options)
@@ -87,13 +87,6 @@ def compute_evolution(
     base_options.pop("br_computation_method", None)
     base_options.pop("progress_bar", None)
 
-    ntraj = None
-    if solver_name == "montecarlo":
-        ntraj = int(base_options.pop("ntraj", 64))
-
-    if progress_bar is not None and solver_name == "heom":
-        progress_bar = None
-
     if e_ops is not None:
         base_options["store_states"] = False
         base_options["store_final_state"] = True
@@ -102,49 +95,43 @@ def compute_evolution(
         base_options["store_states"] = True
         solver_e_ops = []
 
-    times_array = np.asarray(compute_times_local(sim_oqs.simulation_config))
+    t_list = compute_times_local(sim_oqs.simulation_config)
     current_state = sim_oqs.initial_state
     solver = sim_oqs.evo_obj
     if solver_name == "heom":
-        run_kwargs: dict = dict(getattr(sim_oqs, "_heom_run_kwargs", {}))
+        max_depth, coupling_ops, bath_env, options, run_kwargs = sim_oqs._collect_heom_inputs()
+        if progress_bar is not None:
+            run_kwargs['progress_bar'] = progress_bar
 
-        if (
-            "args" in run_kwargs
-            and run_kwargs["args"] is not None
-            and not isinstance(run_kwargs["args"], Mapping)
-        ):
-            raise TypeError("HEOM run 'args' must be a mapping when using QuTiP 5.2.1.")
+        bath_list = list(zip([bath_env] if not isinstance(bath_env, (list, tuple)) else bath_env, coupling_ops))
+        res = heomsolve(
+            H=solver, 
+            bath=bath_list, 
+            max_depth=max_depth, 
+            state0=current_state, 
+            tlist=t_list, 
+            e_ops=solver_e_ops,
+            options={**options, **run_kwargs})
 
-        # think about replacing with from qutip.solver.heom import heomsolve
-        res = solver.run(current_state, times_array, e_ops=solver_e_ops, **run_kwargs)
-
-        if e_ops is not None:
-            data = res.expect[0]
-        else:
-            data = getattr(res, "states", None)
-            if data is None:
-                raise RuntimeError(
-                    "HEOM solver did not store system states. Ensure ``solver_options['heom']['options']['store_states']=True``."
-                )
     elif solver_name == "montecarlo":
+        ntraj = int(base_options.pop("ntraj"))
         mc_kwargs = dict(
             H=solver,
-            state=sim_oqs.initial_state,
-            tlist=times_array,
+            state=current_state,
+            tlist=t_list,
             c_ops=sim_oqs.decay_channels,
             e_ops=solver_e_ops,
             ntraj=ntraj,
-            options=base_options if base_options else None,
+            options=base_options,
         )
-        # Remove None-valued entries to avoid unexpected keyword errors
-        mc_kwargs = {k: v for k, v in mc_kwargs.items() if v is not None}
+        if progress_bar is not None:
+            mc_kwargs["progress_bar"] = progress_bar
         res = mcsolve(**mc_kwargs)
-        data = res.expect[0] if e_ops is not None else res.states
     else:
         mesolve_kwargs = dict(
             H=solver,
             rho0=current_state,
-            tlist=times_array,
+            tlist=t_list,
             e_ops=solver_e_ops,
             options=base_options,
         )
@@ -153,15 +140,15 @@ def compute_evolution(
 
         res = mesolve(**mesolve_kwargs)
 
-        data = res.expect[0] if e_ops is not None else res.states
+    data = res.expect[0] if e_ops is not None else res.states
 
     # If returning states and RWA was used, convert to lab frame
-    if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(times_array):
+    if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(t_list):
         data = from_rotating_frame_list(
-            data, np.array(times_array), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
+            data, np.array(t_list), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
         )
 
-    return np.array(times_array, dtype=float), data
+    return np.array(t_list, dtype=float), data
 
 
 def compute_polarization_over_window(
@@ -245,7 +232,7 @@ def _worker_P_phi_pair(
     t_det = compute_t_det(sim_oqs.simulation_config)
     t_det_a, P_total = compute_polarization_over_window(sim_oqs, t_det)
 
-    # Subtract signals from all subsets of size 1 and 2 pulses active
+    # Subtract signals from all subsets of size 1 pulses active
     P_sub_sum = np.zeros_like(P_total, dtype=np.complex128)
     n_pulses = len(sim_oqs.laser.pulses)
     import itertools
