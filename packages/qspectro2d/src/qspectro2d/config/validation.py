@@ -11,6 +11,7 @@ from .signal_processing import (
     RELATIVE_E0S,
     NEGATIVE_EIGVAL_THRESHOLD,
     TRACE_TOLERANCE,
+    SIGNAL_TYPES,
 )
 from .supported import (
     SUPPORTED_SOLVERS,
@@ -39,6 +40,7 @@ from .simulation import (
     ODE_SOLVER,
     SIM_TYPE,
     SOLVER_OPTIONS,
+    ALLOWED_SOLVER_OPTIONS,
 )
 from .bath_system import (
     BATH_TYPE,
@@ -78,7 +80,10 @@ def validate(params: dict) -> None:
     envelope_type = params.get("envelope_type", ENVELOPE_TYPE)
     coupling_cm = params.get("coupling_cm", COUPLING_CM)
     delta_inhomogen_cm = params.get("delta_inhomogen_cm", DELTA_INHOMOGEN_CM)
-    solver_options = params.get("solver_options", SOLVER_OPTIONS)
+    solver_defaults = SOLVER_OPTIONS.get(ode_solver, {})
+    solver_options = params.get("solver_options")
+    if solver_options is None:
+        solver_options = solver_defaults
     sim_type = params.get("sim_type", SIM_TYPE)
     max_workers = params.get("max_workers", 1)
     # Time/grid parameters
@@ -90,7 +95,7 @@ def validate(params: dict) -> None:
 
     # Sampling and signal types
     n_inhomogen = params.get("n_inhomogen", N_INHOMOGEN)
-    signal_types = params.get("signal_types", ["rephasing"])  # from signal_processing
+    signal_types = params.get("signal_types", SIGNAL_TYPES)
 
     # Validate solver
     if ode_solver not in SUPPORTED_SOLVERS:
@@ -199,10 +204,17 @@ def validate(params: dict) -> None:
         if nsteps is not None and nsteps <= 0:
             raise ValueError("solver_options.nsteps must be > 0")
 
-        heom_opts = solver_options.get("heom")
+        if ode_solver == "heom":
+            bath_cfg = solver_options.get("bath")
+            if bath_cfg is not None and not isinstance(bath_cfg, dict):
+                raise TypeError("solver_options['bath'] must be a dict when provided.")
 
-        if ode_solver == "HEOM" and heom_opts is not None and not isinstance(heom_opts, dict):
-            raise TypeError("solver_options['heom'] must be a dict when provided.")
+        allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(ode_solver, []))
+        unknown_keys = set(solver_options) - allowed_keys
+        if unknown_keys:
+            raise ValueError(
+                f"solver_options includes unsupported keys for {ode_solver}: {sorted(unknown_keys)}"
+            )
     else:
         raise TypeError("solver_options must be a dict")
 
