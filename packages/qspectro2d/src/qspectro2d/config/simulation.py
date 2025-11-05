@@ -7,22 +7,21 @@ ODE_SOLVER = "redfield"  # ODE solver to use
 SIM_TYPE = "1d"
 SOLVER_OPTIONS = {
     "heom": {
-        "max_depth": 2,
-        "bath": {
-            "approx_method": "prony",
-            "Ni": 5,
-            "Nr": 5,
-            "combine": True,
-            "n_t": 1000,
-        },
+        "max_depth": 1,  # 1 for redfield limit, higher more accurate
         "atol": 1e-5,
         "rtol": 1e-3,
         "nsteps": 200000,
         "method": "bdf",
+        # BATH Approximation options
+        "approx_method": "prony",
+        "Ni": 5,  # good approximation
+        "Nr": 5,
+        "combine": True,
+        "n_t": 1000,
+        "t_max": 500.0,
     },
     "redfield": {
         "sec_cutoff": -1,
-        "br_computation_method": "sparse",
         "atol": 1e-4,
         "rtol": 1e-3,
         "nsteps": 200000,
@@ -59,7 +58,6 @@ ALLOWED_SOLVER_OPTIONS = {
         "max_step",
         "min_step",
         "sec_cutoff",
-        "br_computation_method",
     ],
     "montecarlo": [
         "atol",
@@ -73,7 +71,6 @@ ALLOWED_SOLVER_OPTIONS = {
     ],
     "heom": [
         "max_depth",
-        "bath",
         "w_min",
         "w_max",
         "w_max_factor",

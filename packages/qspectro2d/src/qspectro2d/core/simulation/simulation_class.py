@@ -9,8 +9,9 @@ from collections.abc import Mapping
 import numpy as np
 from qutip import Qobj, QobjEvo, ket2dm, mesolve, brmesolve, liouvillian, BosonicEnvironment
 from qutip.core.blochredfield import bloch_redfield_tensor
-from qutip.solver.heom import HEOMSolver
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+from sympy import solve
 
 from ..atomic_system import AtomicSystem
 from ..laser_system import e_pulses, epsilon_pulses, LaserPulseSequence
@@ -27,156 +28,103 @@ class SimulationModuleOQS:
     bath: BosonicEnvironment
 
     sb_coupling: AtomBathCoupling = field(init=False)
-    _heom_run_kwargs: Dict[str, Any] = field(init=False, default_factory=dict, repr=False)
-    _heom_bath_fit_info: Optional[Dict[str, Any]] = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.sb_coupling = AtomBathCoupling(self.system, self.bath)
         if self.simulation_config.t_coh_current is None:
             self.simulation_config.t_coh_current = float(self.simulation_config.t_coh_max)
 
-    def _collect_heom_inputs(self) -> Tuple[int, List[Qobj], Any, Dict[str, Any], Dict[str, Any]]:
-        """Gather HEOM parameters using a lightweight, dictionary-based layout."""
+    # --- tiny, strict splitter (incl. HEOM) ---------------------------------------
+    def _solver_split(self) -> tuple[dict, dict, str]:
+        """
+        Split self.simulation_config.solver_options into:
+        run_kwargs  -> solver call
+        options     -> ODE options (passed as options=...)
+        solver_key  -> {'linblad','redfield','montecarlo','heom'}
+        """
+        key = str(self.simulation_config.ode_solver).lower().strip()
+        src = dict(self.simulation_config.solver_options or {})
 
-        solver_opts = self.simulation_config.solver_options
-        if solver_opts is not None and not isinstance(solver_opts, Mapping):
-            raise TypeError("SimulationConfig.solver_options must be a mapping when using HEOM.")
+        # universal ODE options
+        opt_keys = ("method", "atol", "rtol", "nsteps", "max_step", "min_step", "progress_bar")
+        options = {k: src.pop(k) for k in opt_keys if k in src}
 
-        if isinstance(solver_opts, Mapping):
-            nested_cfg = solver_opts.get("heom")
-            if isinstance(nested_cfg, Mapping):
-                working_cfg: Dict[str, Any] = dict(nested_cfg)
-            else:
-                working_cfg = dict(solver_opts)
-        else:
-            working_cfg = {}
+        if key in {"linblad", "lindblad", "mesolve"}:
+            key = "linblad"
+            return {}, options, key
 
-        def pop_key(target: Dict[str, Any], key: str, default: Any = None) -> Any:
-            if key in target:
-                return target.pop(key)
-            return default
+        if key in {"redfield", "brmesolve", "blochredfield"}:
+            run = {}
+            if "sec_cutoff" in src:
+                run["sec_cutoff"] = src.pop("sec_cutoff")
+            return run, options, "redfield"
 
-        max_depth = int(pop_key(working_cfg, "max_depth", 0))
-        if max_depth < 0:
-            raise ValueError("HEOM solver requires max_depth >= 0.")
+        if key in {"montecarlo", "mcsolve"}:
+            run = {}
+            if "ntraj" in src:
+                run["ntraj"] = int(src.pop("ntraj"))
+            return run, options, "montecarlo"
+
+        if key == "heom":
+            # only runtime kw that goes to heomsolve; bath fit handled below
+            run = {}
+            if "max_depth" in src:
+                run["max_depth"] = int(src.pop("max_depth"))
+            # keep remaining keys in src for HEOM fit (_collect_heom_inputs consumes them)
+            self._heom_src_cache = src  # stash local leftovers for the collector
+            return run, options, "heom"
+
+        raise ValueError(f"unknown solver '{key}'")
+
+    def _collect_heom_inputs(self) -> tuple[int, list[Qobj], Any, dict, dict]:
+        """
+        Build HEOM inputs:
+        return max_depth, coupling_ops, bath_env, options, run_kwargs
+        """
+        # pull remaining solver keys captured in _solver_split
+        src = getattr(self, "_heom_src_cache", {}) or dict(
+            self.simulation_config.solver_options or {}
+        )
 
         coupling_ops = self.sb_coupling.heom_coupling_ops()
-        if not coupling_ops:
-            raise ValueError("HEOM configuration produced no coupling operators.")
 
-        bath_cfg_raw = pop_key(working_cfg, "bath")
-        if bath_cfg_raw is None:
-            bath_cfg_raw = {}
-        if not isinstance(bath_cfg_raw, Mapping):
-            raise TypeError("solver_options['bath'] must be a mapping when provided for HEOM.")
-        bath_cfg = dict(bath_cfg_raw)
-
-        method = str(bath_cfg.get("approx_method", "prony"))
-        if method not in {"sd", "prony"}:
-            raise ValueError(f"Unsupported HEOM bath approximation method '{method}'.")
-
-        w_min = float(pop_key(working_cfg, "w_min", 0.0))
-        w_max_factor = float(pop_key(working_cfg, "w_max_factor", 10.0))
-
-        if self.bath.tag == "ohmic":
-            cutoff_val = self.bath.wc
-        elif self.bath.tag == "drudelorentz":
-            cutoff_val = self.bath.gamma
-        else:
-            raise ValueError(f"Unsupported bath type: {self.bath.tag}")
+        # frequency window
+        w_min = float(src.pop("w_min"))
+        w_max_factor = float(src.pop("w_max_factor"))
+        cutoff_val = (
+            self.bath.wc
+            if getattr(self.bath, "tag", "") == "ohmic"
+            else getattr(self.bath, "gamma", 1.0)
+        )
         w_max = float(cutoff_val) * float(w_max_factor)
-
         if w_max <= w_min:
             w_max = w_min * 10.0
 
-        n_points = max(int(pop_key(working_cfg, "n_points", 200)), 2)
-        n_exp = max(int(pop_key(working_cfg, "n_exp", 3)), 1)
+        # time grid for env approximation
+        t_max = float(src.pop("t_max"))
+        n_t = int(src.pop("n_t"))
+        tlist = np.linspace(0.0, t_max, n_t, dtype=float)
 
-        if method == "sd":
-            wlist = np.linspace(w_min, w_max, n_points, dtype=float)
-            Nk = max(int(pop_key(bath_cfg, "Nk", n_exp)), 1)
-            approx_kwargs: Dict[str, Any] = {
-                "method": method,
-                "wlist": wlist,
-                "Nmax": n_exp,
-                "Nk": Nk,
-                "combine": bool(pop_key(bath_cfg, "combine", True)),
-            }
-            target_rmse = pop_key(bath_cfg, "target_rmse")
-            if target_rmse is not None:
-                approx_kwargs["target_rmse"] = float(target_rmse)
-            sigma = pop_key(bath_cfg, "sigma")
-            if sigma is not None:
-                approx_kwargs["sigma"] = sigma
-        else:  # method == "prony"
-            Nr = max(int(pop_key(bath_cfg, "Nr", n_exp)), 1)
-            Ni = max(int(pop_key(bath_cfg, "Ni", n_exp)), 1)
-            t_max = float(pop_key(bath_cfg, "t_max", 10.0 / cutoff_val))
-            n_t = max(int(pop_key(bath_cfg, "n_t", 1000)), 2)
-            tlist = np.linspace(0.0, t_max, n_t, dtype=float)
-            approx_kwargs = {
-                "method": method,
-                "tlist": tlist,
-                "Nr": Nr,
-                "Ni": Ni,
-                "separate": bool(pop_key(bath_cfg, "separate", True)),
-                "combine": bool(pop_key(bath_cfg, "combine", True)),
-            }
-            target_rmse = pop_key(bath_cfg, "target_rmse")
-            if target_rmse is not None:
-                approx_kwargs["target_rmse"] = float(target_rmse)
-
-        tag = pop_key(bath_cfg, "tag")
+        approx_kwargs = dict(
+            method=str(src.pop("approx_method")),
+            tlist=tlist,
+            Nr=int(src.pop("Nr")),
+            Ni=int(src.pop("Ni")),
+            separate=bool(src.pop("separate")),
+            combine=bool(src.pop("combine")),
+        )
+        tag = src.pop("tag", None)
         if tag is not None:
             approx_kwargs["tag"] = tag
 
-        bath_env, fit_info = self.bath.approximate(**approx_kwargs)
-        self._heom_bath_fit_info = fit_info
+        bath_env, _fit = self.bath.approximate(**approx_kwargs)
 
-        options = {}
-
-        # Extract ODE options from working_cfg
-        ode_keys = [
-            "atol",
-            "rtol",
-            "nsteps",
-            "method",
-            "max_step",
-            "min_step",
-        ]
-        options = {key: working_cfg.pop(key) for key in ode_keys if key in working_cfg}
-
-        # Map method to method for HEOMSolver
-        if "method" in options:
-            options["method"] = options.pop("method")
-
-        dt = float(self.simulation_config.dt)
-        if "max_step" not in options:
-            options["max_step"] = dt
-        if "min_step" in options:
-            if options["min_step"] is None:
-                options.pop("min_step")
-
-        run_kwargs = {}
-
+        # max_depth is passed via run_kwargs; default to 1 if not set earlier
+        max_depth = int(src.pop("max_depth", 1))
+        run_kwargs = {"max_depth": max_depth}
+        options = {}  # ODE options come from _solver_split
         return max_depth, coupling_ops, bath_env, options, run_kwargs
 
-    def _build_heom_solver(self) -> Tuple[Any, Dict[str, Any]]:
-        max_depth, coupling_ops, bath_env, options, run_kwargs = self._collect_heom_inputs()
-
-        bath_specs = [(bath_env, op) for op in coupling_ops]
-
-        H_evo = QobjEvo(self.H_total_t)
-
-        solver = HEOMSolver(
-            H=H_evo,
-            bath=bath_specs,
-            max_depth=max_depth,
-            options=options,
-        )
-        return solver, run_kwargs
-
-    # --- Deferred solver-dependent initialization ---------------------------------
     @property
     def evo_obj(self) -> Union[Qobj, QobjEvo, Any]:
         solver = self.simulation_config.ode_solver
@@ -184,34 +132,8 @@ class SimulationModuleOQS:
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
 
             evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
-        elif solver == "linblad":
-            H_evo = QobjEvo(self.H_total_t)
-            c_ops = self.sb_coupling.me_decay_channels
-            evo_obj = liouvillian(H_evo, c_ops)
-        elif solver == "redfield":
-            H_evo = QobjEvo(self.H_total_t)
-            solver_opts = (self.simulation_config.solver_options or {}).copy()
-            sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
-            if sec_cutoff is None:
-                sec_cutoff = 0.1
-            sec_cutoff = float(sec_cutoff)
-            method_hint = solver_opts.pop("br_computation_method", "sparse")
-            a_ops = self.sb_coupling.br_decay_channels
-            tensor_kwargs = {"fock_basis": True, "br_computation_method": method_hint}
-            evo_obj = bloch_redfield_tensor(
-                H_evo,
-                a_ops=a_ops,
-                sec_cutoff=sec_cutoff,
-                **tensor_kwargs,
-            )
-        elif solver == "montecarlo":
+        else:  # solver == "linblad", "redfield", "montecarlo" or "heom":
             evo_obj = QobjEvo(self.H_total_t)
-        elif solver == "heom":
-            heom_solver, run_kwargs = self._build_heom_solver()
-            self._heom_run_kwargs = run_kwargs
-            evo_obj = heom_solver
-        else:  # Fallback: create evolution without lasers
-            evo_obj = liouvillian(self.H0_diagonalized)
         return evo_obj
 
     @property
@@ -221,6 +143,8 @@ class SimulationModuleOQS:
             decay_channels = self.sb_coupling.me_decay_channels
         elif solver == "redfield":
             decay_channels = self.sb_coupling.br_decay_channels
+        elif solver == "heom":
+            decay_channels = self.sb_coupling.heom_coupling_ops()
         else:  # for paper_eqs & Fallback: create generic evolution with no decay channels.
             decay_channels = []
         return decay_channels
@@ -235,77 +159,29 @@ class SimulationModuleOQS:
         if init_choice == "thermal":
             initial_state = self._thermal_state()
 
-        if not initial_state:
-            raise ValueError(
-                f"Unsupported initial_state '{init_choice}'. Expected 'ground' or 'thermal'."
-            )
         return self.system.to_eigenbasis(initial_state)
 
     def _thermal_state(self) -> Qobj:
-        """Return the Gibbs state associated with the system Hamiltonian and bath temperature."""
+        """Return the Gibbs state associated with the system Hamiltonian and bath temperature.
+        TODO implement properly"""
         temperature = getattr(self.bath, "T", None)
         if temperature is None or temperature <= 0:
             return self.system.ground_state_dm()
 
-        # Use Bloch-Redfield evolution to relax into the steady state.
         tlist = np.linspace(0.0, 10000.0, 100)
-        H = self.H0_diagonalized
-        decay_channels = self.decay_channels
-        if not decay_channels:  # No bath present -> return ground state
-            return self.system.ground_state_dm()
-
+        H = self.system.hamiltonian
         rho0 = self.system.ground_state_dm()
 
-        solver_opts = dict(self.simulation_config.solver_options or {})
-        solver_opts.pop("heom", None)
-        solver_opts.update({"store_states": False, "store_final_state": True})
-
-        ode_solver = self.simulation_config.ode_solver or "linblad"
-
-        if ode_solver == "redfield":
-            sec_cutoff = solver_opts.pop("sec_cutoff", 0.1)
-            if sec_cutoff is None:
-                sec_cutoff = 0.1
-            method_hint = solver_opts.pop("br_computation_method", None)
-            if method_hint is not None and not (
-                "br_computation_method" in inspect.signature(bloch_redfield_tensor).parameters
-            ):
-                print(
-                    "⚠️  bloch_redfield_tensor() does not support 'br_computation_method' for this QuTiP version."
-                )
-
-            res = brmesolve(
-                H,
-                rho0,
-                tlist,
-                a_ops=decay_channels,
-                sec_cutoff=float(sec_cutoff),
-                options=solver_opts,
-            )
-        elif ode_solver == "heom":
-            raise NotImplementedError(
-                "Thermal state preparation via HEOM is not implemented. "
-                "Set initial_state='ground' or provide a custom density matrix."
-            )
-        else:
-            # Remove redfield-only knobs before calling mesolve
-            solver_opts.pop("sec_cutoff", None)
-            solver_opts.pop("br_computation_method", None)
-
-            res = mesolve(
-                H,
-                rho0,
-                tlist,
-                c_ops=decay_channels,
-                options=solver_opts,
-            )
-        rho_ss = getattr(res, "final_state", None)
-        if rho_ss is None:
-            raise ValueError("Thermal state computation failed: solver returned no state.")
-        trace = rho_ss.tr()
-        if np.isclose(trace, 0.0):
-            raise ValueError("Thermal state computation failed: steady state has zero trace.")
-        return rho_ss / trace
+        all_ops = {}
+        all_ops.update({"store_states": False, "store_final_state": True})
+        res = mesolve(
+            H=H,
+            rho0=rho0,
+            tlist=tlist,
+            c_ops=self.me_decay_channels,
+            options=all_ops,
+        )
+        return res.final_state
 
     # --- Hamiltonians & Evolutions -------------------------------------------------
     @property
