@@ -206,12 +206,12 @@ def power_spectrum_func_paper(w: float | ArrayLike, **args) -> float | ArrayLike
     return 2 * result
 
 
-# Convert bath coupling constant alpha to linblad rates and vice versa
+# Convert bath coupling constant alpha to lindblad rates and vice versa
 def bath_to_rates(
     env: BosonicEnvironment, w: float = None, mode: str = "decay"
 ) -> tuple[float, float] | float:
     """
-    Wrapper to convert bath coupling constant alpha to linblad rates.
+    Wrapper to convert bath coupling constant alpha to lindblad rates.
     Args:
         alpha: Coupling constant of the bath.
         env: BosonicEnvironment instance with the bath parameters.
@@ -238,7 +238,7 @@ def rates_to_alpha(
     mode: str = "decay",
 ) -> float:
     """
-    Wrapper to convert linblad rates to bath coupling constant alpha.
+    Wrapper to convert lindblad rates to bath coupling constant alpha.
     Args:
         rate: Decay rates (emission_rate, gamma_absorption) or dephasing rate (deph_rate).
         env: BosonicEnvironment instance with the bath parameters.
@@ -261,7 +261,7 @@ def rates_to_alpha(
 
 def bath_to_decay_rates(env: BosonicEnvironment, w: float) -> tuple[float, float]:
     """
-    Convert bath coupling constant alpha to linblad decay channel rates.
+    Convert bath coupling constant alpha to lindblad decay channel rates.
     Args:
         alpha: Coupling constant of the bath.
         env: BosonicEnvironment instance with the bath parameters.
@@ -279,7 +279,7 @@ def decay_rates_to_alpha(
     emission_rate: float, env: BosonicEnvironment, w: float, wc: float
 ) -> float:
     """
-    Convert linblad decay channel rates to bath coupling constant alpha.
+    Convert lindblad decay channel rates to bath coupling constant alpha.
     Args:
         emission_rate: Spontaneous emission rate.
         env: BosonicEnvironment instance with the bath parameters.
@@ -305,7 +305,7 @@ def decay_rates_to_alpha(
 
 def bath_to_dephasing_rate(env: BosonicEnvironment) -> float:
     """
-    Convert bath coupling constant alpha to linblad dephasing rate.
+    Convert bath coupling constant alpha to lindblad dephasing rate.
     Args:
         alpha: Coupling constant of the bath.
         env: BosonicEnvironment instance with the bath parameters.
@@ -319,7 +319,7 @@ def bath_to_dephasing_rate(env: BosonicEnvironment) -> float:
 
 def dephasing_rate_to_alpha(deph_rate: float, env: BosonicEnvironment) -> float:
     """
-    Convert linblad dephasing rate to bath coupling constant alpha.
+    Convert lindblad dephasing rate to bath coupling constant alpha.
     Args:
         deph_rate: Pure dephasing rate.
         env: BosonicEnvironment instance with the bath parameters.

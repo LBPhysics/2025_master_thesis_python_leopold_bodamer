@@ -8,7 +8,7 @@ Steps:
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
 - P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
 
-Supports linblad, redfield, and Monte Carlo solvers via the internals of SimulationModuleOQS.
+Supports lindblad, redfield, and Monte Carlo solvers via the internals of SimulationModuleOQS.
 """
 
 from __future__ import annotations
@@ -78,8 +78,11 @@ def compute_evolution(
     state0 = sim_oqs.initial_state
     H = sim_oqs.evo_obj
 
-    run_kwargs, options, solver = sim_oqs._solver_split()
+    solver = sim_oqs.simulation_config.ode_solver
+    run_kwargs, options = sim_oqs._solver_split()
     options.update(override_options or {})
+    # Silence QuTiP solver progress output unless explicitly overridden
+    options.setdefault("progress_bar", False)
 
     if e_ops is not None:
         options.setdefault("store_states", False)
@@ -89,7 +92,7 @@ def compute_evolution(
 
     if solver == "heom":
         # build bath expansion + couple
-        _md, coupling_ops, bath_env, _opt_ignored, heom_run = sim_oqs._collect_heom_inputs()
+        coupling_ops, bath_env, heom_run = sim_oqs._collect_heom_inputs()
         run_kwargs.setdefault("max_depth", heom_run["max_depth"])
         bath_specs = [(bath_env, op) for op in coupling_ops]
         res = heomsolve(
@@ -124,7 +127,7 @@ def compute_evolution(
             **run_kwargs,
         )
 
-    else:  # "linblad"
+    else:  # "lindblad"
         res = mesolve(
             H=H,
             rho0=state0,

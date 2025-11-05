@@ -17,6 +17,7 @@ SOLVER_OPTIONS = {
         "Ni": 5,  # good approximation
         "Nr": 5,
         "combine": True,
+        "separate": True,
         "n_t": 1000,
         "t_max": 500.0,
     },
@@ -28,13 +29,13 @@ SOLVER_OPTIONS = {
         "method": "bdf",
     },
     "montecarlo": {
-        "ntraj": 64,
+        "ntraj": 2,
         "atol": 1e-5,
         "rtol": 1e-3,
         "nsteps": 200000,
         "method": "bdf",
     },
-    "linblad": {
+    "lindblad": {
         "atol": 1e-5,
         "rtol": 1e-3,
         "nsteps": 200000,
@@ -42,7 +43,7 @@ SOLVER_OPTIONS = {
     },
 }
 ALLOWED_SOLVER_OPTIONS = {
-    "linblad": [
+    "lindblad": [
         "atol",
         "rtol",
         "nsteps",
@@ -71,17 +72,22 @@ ALLOWED_SOLVER_OPTIONS = {
     ],
     "heom": [
         "max_depth",
-        "w_min",
-        "w_max",
-        "w_max_factor",
-        "n_points",
+        "approx_method",
         "n_exp",
+        "Ni",
+        "Nr",
+        "combine",
+        "separate",
+        "n_t",
+        "t_max",
+        "tag",
         "atol",
         "rtol",
         "nsteps",
         "method",
         "max_step",
         "min_step",
+        "progress_bar",
     ],
     "paper_eqs": [],
 }

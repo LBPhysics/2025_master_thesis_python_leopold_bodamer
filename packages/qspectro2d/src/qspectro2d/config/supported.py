@@ -3,7 +3,7 @@ Supported options for qspectro2d.
 """
 
 # supported solvers and bath models
-SUPPORTED_SOLVERS = ["linblad", "redfield", "paper_eqs", "heom", "montecarlo"]
+SUPPORTED_SOLVERS = ["lindblad", "redfield", "paper_eqs", "heom", "montecarlo"]
 
 SUPPORTED_BATHS = ["ohmic", "drudelorentz"]
 
