@@ -92,7 +92,7 @@ def load_simulation_config(
     rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
     initial_state = str(config_cfg.get("initial_state", dflt.INITIAL_STATE))
     solver_options_cfg = config_cfg.get("solver_options", {})
-    solver_options = dict(dflt.SOLVER_OPTIONS.get(ode_solver, {}))
+    solver_options = dict(dflt.SOLVER_OPTIONS.get(ode_solver))
     if isinstance(solver_options_cfg, Mapping):
         solver_options.update(solver_options_cfg)
     # Normalize CLI/YAML numeric strings (e.g. "1e-6") into numbers for validation downstream.

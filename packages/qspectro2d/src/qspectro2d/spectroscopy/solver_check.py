@@ -53,19 +53,6 @@ def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
         print(f"Initial eigenvalues range: [{ini_eigvals.min():.6f}, {ini_eigvals.max():.6f}]")
         print(f"Initial min eigenvalue: {ini_eigvals.min():.10f}")
 
-    # System Hamiltonian diagnostics
-    try:
-        if hasattr(sim_oqs, "evo_obj") and sim_oqs.evo_obj is not None:
-            H_tot_t = sim_oqs.evo_obj
-            if hasattr(H_tot_t, "dims"):
-                print(f"Total Hamiltonian dims: {H_tot_t.dims}")
-            print(f"Total Hamiltonian type: {type(H_tot_t)}")
-
-        if hasattr(sim_oqs, "decay_channels") and sim_oqs.decay_channels:
-            print(f"Number of decay channels: {len(sim_oqs.decay_channels)}")
-    except Exception as e:
-        print(f"Could not analyze Hamiltonian: {e}")
-
 
 def _check_density_matrix_properties(
     states: List[Qobj], times: np.ndarray
@@ -192,7 +179,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     # INPUT VALIDATION
     _validate_simulation_input(copy_sim_oqs)
 
-    times_result, states = compute_evolution(copy_sim_oqs, progress_bar="text")
+    times_result, states = compute_evolution(copy_sim_oqs, progress_bar="enhanced")
 
     # CHECK THE RESULT
     if not isinstance(times_result, np.ndarray):
@@ -202,8 +189,8 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     if len(times_result) != len(times) or not np.allclose(times_result, times):
         print("Warning: Result times do not match input times exactly")
         print(f"Result times length: {len(times_result)}, input: {len(times)}")
-        #print(f"First few result times: {times_result[:10]}")
-        #print(f"First few input times: {times[:10]}")
+        # print(f"First few result times: {times_result[:10]}")
+        # print(f"First few input times: {times[:10]}")
         # Don't raise, as the evolution may have boundary overlaps
     if len(states) != len(times_result):
         raise ValueError("Number of output states does not match number of result time points")

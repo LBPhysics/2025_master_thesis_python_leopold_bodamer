@@ -215,8 +215,8 @@ def main() -> None:
             info_path,
             sim.system,
             sim.simulation_config,
-            bath=getattr(sim, "bath", None),
-            laser=getattr(sim, "laser", None),
+            bath=getattr(sim, "bath"),
+            laser=getattr(sim, "laser"),
             extra_payload=job_metadata,
         )
 

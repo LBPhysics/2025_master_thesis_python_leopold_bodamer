@@ -13,7 +13,7 @@ class SimulationConfig:
     Focused immutable configuration object; no legacy compatibility paths.
     """
 
-    ode_solver: str = "linblad"
+    ode_solver: str = "lindblad"
     # Solver and pulse/detection options
     solver_options: dict[str, Any] = field(default_factory=lambda: {})
     rwa_sl: bool = True

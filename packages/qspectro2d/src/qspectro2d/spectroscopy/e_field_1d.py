@@ -8,7 +8,7 @@ Steps:
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
 - P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
 
-Supports linblad, redfield, and Monte Carlo solvers via the internals of SimulationModuleOQS.
+Supports lindblad, redfield, and Monte Carlo solvers via the internals of SimulationModuleOQS.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import List, Sequence, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
-from qutip import mesolve, mcsolve
+from qutip import mesolve, mcsolve, brmesolve
 from qutip.solver.heom import heomsolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
@@ -69,86 +69,82 @@ def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.nd
 def compute_evolution(
     sim_oqs: SimulationModuleOQS,
     e_ops=None,
-    **solver_options: dict,
+    **override_options: dict,
 ) -> tuple[np.ndarray, list]:
     """
-    Compute the evolution of the quantum system for a given pulse sequence, handling overlapping pulses.
-    Returns (times, data) where data is list of expectation values if e_ops provided, else list of states.
+    Return (tlist, data). 'data' is expectations if e_ops else states.
     """
-    solver_name = sim_oqs.simulation_config.ode_solver
-    runtime_solver_options: dict = dict(solver_options)
-    progress_bar = runtime_solver_options.pop("progress_bar", False)
+    t_list = compute_times_local(sim_oqs.simulation_config)
+    state0 = sim_oqs.initial_state
+    H = sim_oqs.evo_obj
 
-    # Remove Bloch-Redfield specific knobs that QuTiP's mesolve does not understand.
-    base_options: dict = dict(sim_oqs.simulation_config.solver_options)
-    base_options.update(runtime_solver_options)
-    base_options.pop("heom", None)
-    base_options.pop("sec_cutoff", None)
-    base_options.pop("br_computation_method", None)
-    base_options.pop("progress_bar", None)
+    solver = sim_oqs.simulation_config.ode_solver
+    run_kwargs, options = sim_oqs._solver_split()
+    options.update(override_options or {})
+    # Silence QuTiP solver progress output unless explicitly overridden
+    options.setdefault("progress_bar", False)
 
     if e_ops is not None:
-        base_options["store_states"] = False
-        base_options["store_final_state"] = True
-        solver_e_ops = e_ops
+        options.setdefault("store_states", False)
+        options.setdefault("store_final_state", True)
     else:
-        base_options["store_states"] = True
-        solver_e_ops = []
+        options.setdefault("store_states", True)
 
-    t_list = compute_times_local(sim_oqs.simulation_config)
-    current_state = sim_oqs.initial_state
-    solver = sim_oqs.evo_obj
-    if solver_name == "heom":
-        max_depth, coupling_ops, bath_env, options, run_kwargs = sim_oqs._collect_heom_inputs()
-        if progress_bar is not None:
-            run_kwargs['progress_bar'] = progress_bar
-
-        bath_list = list(zip([bath_env] if not isinstance(bath_env, (list, tuple)) else bath_env, coupling_ops))
+    if solver == "heom":
+        # build bath expansion + couple
+        coupling_ops, bath_env, heom_run = sim_oqs._collect_heom_inputs()
+        run_kwargs.setdefault("max_depth", heom_run["max_depth"])
+        bath_specs = [(bath_env, op) for op in coupling_ops]
         res = heomsolve(
-            H=solver, 
-            bath=bath_list, 
-            max_depth=max_depth, 
-            state0=current_state, 
-            tlist=t_list, 
-            e_ops=solver_e_ops,
-            options={**options, **run_kwargs})
+            H=H,
+            bath=bath_specs,
+            state0=state0,
+            tlist=t_list,
+            e_ops=e_ops,
+            options=options,
+            **run_kwargs,
+        )
 
-    elif solver_name == "montecarlo":
-        ntraj = int(base_options.pop("ntraj"))
-        mc_kwargs = dict(
-            H=solver,
-            state=current_state,
+    elif solver == "montecarlo":
+        res = mcsolve(
+            H=H,
+            state=state0,
             tlist=t_list,
             c_ops=sim_oqs.decay_channels,
-            e_ops=solver_e_ops,
-            ntraj=ntraj,
-            options=base_options,
+            e_ops=e_ops,
+            options=options,
+            **run_kwargs,
         )
-        if progress_bar is not None:
-            mc_kwargs["progress_bar"] = progress_bar
-        res = mcsolve(**mc_kwargs)
-    else:
-        mesolve_kwargs = dict(
-            H=solver,
-            rho0=current_state,
-            tlist=t_list,
-            e_ops=solver_e_ops,
-            options=base_options,
-        )
-        if progress_bar is not None:
-            mesolve_kwargs["progress_bar"] = progress_bar
 
-        res = mesolve(**mesolve_kwargs)
+    elif solver == "redfield":
+        res = brmesolve(
+            H=H,
+            psi0=state0,
+            tlist=t_list,
+            a_ops=sim_oqs.decay_channels,
+            e_ops=e_ops,
+            options=options,
+            **run_kwargs,
+        )
+
+    else:  # "lindblad"
+        res = mesolve(
+            H=H,
+            rho0=state0,
+            tlist=t_list,
+            c_ops=sim_oqs.decay_channels,
+            e_ops=e_ops,
+            options=options,
+        )
 
     data = res.expect[0] if e_ops is not None else res.states
 
-    # If returning states and RWA was used, convert to lab frame
     if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(t_list):
         data = from_rotating_frame_list(
             data, np.array(t_list), sim_oqs.system.n_atoms, sim_oqs.laser.carrier_freq_fs
         )
 
-    return np.array(t_list, dtype=float), data
+    return np.array(t_list, float), data
 
 
 def compute_polarization_over_window(
