@@ -61,10 +61,10 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    ...
    Completed 1 combination(s) in 3.26 s
    Latest artifact:
-   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
+   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
 
    🎯 Next step:
-      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ================================================================================
    DONE
    ```
@@ -73,13 +73,13 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    **Example:**
 
    ```bash
-   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ```
 
    ```
    ...
    🎯 Plot with:
-   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
 4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `EXTEND` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
@@ -87,7 +87,7 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    **Example:**
 
    ```bash
-   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/linblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
    -> find the figures under `figures/...`
@@ -117,8 +117,58 @@ python scripts/hpc_plot_datas.py --job_dir scripts/batch_jobs/<label>
 
 Logs from batch submissions stay in the same directories referenced by the HPC helper scripts.
 
-## Persisting Problems:
+## Future implementation idea:
 
-- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234504/930650/ — The 2d spectra is at the same position as in the article, but I would say that the features are not exactly the same shape.
+### Spectral Diffusion
+### 1. What it is
 
-- Reproducing Fig. 3 of https://pubs.aip.org/jcp/article/124/23/234505/930637/ —  Again the position of the spectral features look good, but in my simulation, both the real and imaginary parts show sign changes, while in the paper the real part only shows positive contributions. the features of every pulse appear to be rotated by $90^{\circ}$ compared to the reference. They are aligned along the anti-diagonal, while in the papers they are always aligned along the diagonal.
+Each molecule has a transition frequency
+
+\[
+\omega_{\mathrm{eg}}(t) = \bar{\omega}_{\mathrm{eg}} + \delta \omega(t)
+\]
+
+that drifts in time because its local surroundings slightly change — e.g. molecular reorientation, vibrations, or solvent polarization relaxation.
+
+If \(\delta \omega(t)\) changes slowly, the system is inhomogeneously broadened: each molecule has a fixed but different frequency → static disorder.
+
+If \(\delta \omega(t)\) changes fast, the environment “averages out” → homogeneous broadening.
+
+When \(\delta \omega(t)\) changes on intermediate timescales (tens of fs–ps), the frequency correlation decays in time — that decay is spectral diffusion.
+
+Mathematically it is described by a correlation function
+
+\[
+C(t) = \langle \delta \omega(t) \, \delta \omega(0) \rangle
+\]
+
+and a correlation time \(\tau_c\).
+
+A fixed homogeneous linewidth corresponds to memoryless (Markovian) dephasing.
+Spectral diffusion introduces finite memory: correlation decays on ps or fs scales, affecting the shape and orientation of 2D peaks. Modeling it is therefore essential when:
+
+the bath correlation time ≈ the waiting-time range of the experiment,
+
+you want to extract dynamical information (protein relaxation, solvent reorganization, etc.).
+
+For molecule \( n \): the energy gap \( \omega_{\mathrm{eg}}^{(n)}(t) \) fluctuates with correlation
+
+\[
+C(t) = \langle \delta \omega(t) \, \delta \omega(0) \rangle
+\]
+
+(their Eq. 30).
+
+Pick a stationary stochastic model with that \( C(t) \). The standard choice is Ornstein–Uhlenbeck (OU) with correlation time \( \tau_{\mathrm{corr}} \):
+
+\[
+d\omega = -\frac{\omega - \bar{\omega}}{\tau_{\mathrm{corr}}} \, dt + \sqrt{\frac{2\sigma^2}{\tau_{\mathrm{corr}}}} \, dW_t, \quad C(t) = \sigma^2 e^{-|t|/\tau_{\mathrm{corr}}}.
+\]
+
+Build a time-dependent Hamiltonian for each molecule,
+
+\[
+H_n(t) = H_0 + \hbar \, \delta \omega_n(t) \, |e\rangle\langle e|.
+\]
+
+Compute the third-order response (rephasing and non-rephasing) for your pulse sequence for each realization, then average over many molecules/realizations. As the waiting time \( T \) grows, the distribution “diffuses,” rotating and symmetrizing the 2D lineshape.

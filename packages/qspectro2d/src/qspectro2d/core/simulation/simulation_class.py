@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass, field
 from functools import cached_property
 from collections.abc import Mapping
+from os import sep
 import numpy as np
 from qutip import Qobj, QobjEvo, ket2dm, mesolve, brmesolve, liouvillian, BosonicEnvironment
 from qutip.core.blochredfield import bloch_redfield_tensor
@@ -40,80 +41,60 @@ class SimulationModuleOQS:
         Split self.simulation_config.solver_options into:
         run_kwargs  -> solver call
         options     -> ODE options (passed as options=...)
-        solver_key  -> {'linblad','redfield','montecarlo','heom'}
+        solver_key  -> {'lindblad','redfield','montecarlo','heom'}
         """
-        key = str(self.simulation_config.ode_solver).lower().strip()
-        src = dict(self.simulation_config.solver_options or {})
+        key = str(self.simulation_config.ode_solver)
+        src = dict(self.simulation_config.solver_options)
 
         # universal ODE options
         opt_keys = ("method", "atol", "rtol", "nsteps", "max_step", "min_step", "progress_bar")
         options = {k: src.pop(k) for k in opt_keys if k in src}
 
-        if key in {"linblad", "lindblad", "mesolve"}:
-            key = "linblad"
-            return {}, options, key
-
-        if key in {"redfield", "brmesolve", "blochredfield"}:
+        if key == "lindblad":
+            return {}, options
+        elif key == "redfield":
             run = {}
             if "sec_cutoff" in src:
                 run["sec_cutoff"] = src.pop("sec_cutoff")
-            return run, options, "redfield"
-
-        if key in {"montecarlo", "mcsolve"}:
+            return run, options
+        elif key == "montecarlo":
             run = {}
             if "ntraj" in src:
                 run["ntraj"] = int(src.pop("ntraj"))
-            return run, options, "montecarlo"
+            return run, options
 
-        if key == "heom":
+        elif key == "heom":
             # only runtime kw that goes to heomsolve; bath fit handled below
             run = {}
             if "max_depth" in src:
                 run["max_depth"] = int(src.pop("max_depth"))
             # keep remaining keys in src for HEOM fit (_collect_heom_inputs consumes them)
-            self._heom_src_cache = src  # stash local leftovers for the collector
-            return run, options, "heom"
+            return run, options
 
-        raise ValueError(f"unknown solver '{key}'")
+        else:
+            return {}, options
 
-    def _collect_heom_inputs(self) -> tuple[int, list[Qobj], Any, dict, dict]:
-        """
-        Build HEOM inputs:
-        return max_depth, coupling_ops, bath_env, options, run_kwargs
-        """
+    def _collect_heom_inputs(self) -> tuple[list[Qobj], BosonicEnvironment, dict[str, Any]]:
+        """Assemble HEOM coupling operators, bath approximation, and run kwargs."""
         # pull remaining solver keys captured in _solver_split
-        src = getattr(self, "_heom_src_cache", {}) or dict(
-            self.simulation_config.solver_options or {}
-        )
+        src = self.simulation_config.solver_options
 
         coupling_ops = self.sb_coupling.heom_coupling_ops()
 
-        # frequency window
-        w_min = float(src.pop("w_min"))
-        w_max_factor = float(src.pop("w_max_factor"))
-        cutoff_val = (
-            self.bath.wc
-            if getattr(self.bath, "tag", "") == "ohmic"
-            else getattr(self.bath, "gamma", 1.0)
-        )
-        w_max = float(cutoff_val) * float(w_max_factor)
-        if w_max <= w_min:
-            w_max = w_min * 10.0
-
         # time grid for env approximation
-        t_max = float(src.pop("t_max"))
-        n_t = int(src.pop("n_t"))
+        n_t = int(src.get("n_t"))
+        t_max = float(src.get("t_max"))
         tlist = np.linspace(0.0, t_max, n_t, dtype=float)
 
         approx_kwargs = dict(
-            method=str(src.pop("approx_method")),
+            method=str(src.get("approx_method")),
             tlist=tlist,
-            Nr=int(src.pop("Nr")),
-            Ni=int(src.pop("Ni")),
-            separate=bool(src.pop("separate")),
-            combine=bool(src.pop("combine")),
+            Nr=int(src.get("Nr")),
+            Ni=int(src.get("Ni")),
+            combine=bool(src.get("combine")),
+            separate=bool(src.get("separate")),
         )
-        tag = src.pop("tag", None)
+        tag = src.get("tag", None)
         if tag is not None:
             approx_kwargs["tag"] = tag
 
@@ -122,8 +103,7 @@ class SimulationModuleOQS:
         # max_depth is passed via run_kwargs; default to 1 if not set earlier
         max_depth = int(src.pop("max_depth", 1))
         run_kwargs = {"max_depth": max_depth}
-        options = {}  # ODE options come from _solver_split
-        return max_depth, coupling_ops, bath_env, options, run_kwargs
+        return coupling_ops, bath_env, run_kwargs
 
     @property
     def evo_obj(self) -> Union[Qobj, QobjEvo, Any]:
@@ -132,14 +112,14 @@ class SimulationModuleOQS:
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
 
             evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
-        else:  # solver == "linblad", "redfield", "montecarlo" or "heom":
+        else:  # solver == "lindblad", "redfield", "montecarlo" or "heom":
             evo_obj = QobjEvo(self.H_total_t)
         return evo_obj
 
     @property
     def decay_channels(self) -> list[Qobj] | list[tuple[Qobj, BosonicEnvironment]]:
         solver = self.simulation_config.ode_solver
-        if solver in {"linblad", "montecarlo"}:
+        if solver in {"lindblad", "montecarlo"}:
             decay_channels = self.sb_coupling.me_decay_channels
         elif solver == "redfield":
             decay_channels = self.sb_coupling.br_decay_channels
