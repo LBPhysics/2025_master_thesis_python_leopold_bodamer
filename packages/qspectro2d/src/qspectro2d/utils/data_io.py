@@ -169,8 +169,8 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     info_path = _info_path(directory, prefix)
     info = load_info_file(info_path)
 
-    sim_cfg = info.get("sim_config", {})
-    system = info.get("system", {})
+    sim_cfg = info.get("sim_config")
+    system = info.get("system")
     laser = info.get("laser")
     bath = info.get("bath")
     job_metadata = {
@@ -210,7 +210,7 @@ def load_simulation_data(abs_path: Path | str) -> dict:
     """Load and unpack a run artifact produced by :func:`save_run_artifact`."""
 
     artifact = load_run_artifact(abs_path)
-    signals = artifact.get("signals", {})
+    signals = artifact.get("signals")
     bundle = dict(artifact)
     bundle["signal_types"] = list(signals.keys())
 

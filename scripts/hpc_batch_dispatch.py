@@ -50,7 +50,7 @@ def estimate_slurm_resources(
     *,
     workers: int = 1,
     N_dim: int,
-    solver: str = "linblad",
+    solver: str = "lindblad",
     mem_safety: float = 100.0,
     base_mb: int = 500,
     time_safety: float = 10,
@@ -73,14 +73,16 @@ def estimate_slurm_resources(
     combos_total = n_inhom * n_t_coh
     combos_per_batch = max(1, combos_total // max(1, n_batches))
 
-    # Empirical baseline: base_time s per combo for linblad, 1 atom, n_times=1000, N=2
-    t0 = 0.03  # basic case for pessimistic linblad
+    # Empirical baseline: base_time s per combo for lindblad, 1 atom, n_times=1000, N=2
+    t0 = 0.03  # basic case for pessimistic lindblad
     if solver == "paper_eqs":
         t0 *= 3.0  # slower solver
     elif solver == "redfield":
         t0 *= 5.0  # slower solver
+    elif solver == "montecarlo":
+        t0 *= 15.0  # much slower: TODO * n_traj? 
     elif solver == "heom":
-        t0 *= 100.0  # HEOM is much slower
+        t0 *= 30.0  # HEOM is much slower TODO depends on max_depth etc.
     if not rwa_sl:
         t0 *= 5.0  # non-RWA is WAY slower
     base_t = t0
@@ -311,8 +313,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             info_path,
             sim.system,
             sim.simulation_config,
-            bath=getattr(sim, "bath", None),
-            laser=getattr(sim, "laser", None),
+            bath=getattr(sim, "bath"),
+            laser=getattr(sim, "laser"),
             extra_payload=job_metadata,
         )
 
