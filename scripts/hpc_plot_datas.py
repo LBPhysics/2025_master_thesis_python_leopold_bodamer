@@ -110,7 +110,7 @@ def _render_slurm_script(
             "status=$?",
             "set -e",
             "set -o pipefail",
-            "if [ $status -ne 0 ] || [ -z \"$final_path\" ]; then",
+            'if [ $status -ne 0 ] || [ -z "$final_path" ]; then',
             "  echo 'Failed to locate processed artifact. Check process_datas output above.' >&2",
             "  exit 1",
             "fi",

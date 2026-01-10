@@ -80,7 +80,7 @@ def estimate_slurm_resources(
     elif solver == "redfield":
         t0 *= 5.0  # slower solver
     elif solver == "montecarlo":
-        t0 *= 15.0  # much slower: TODO * n_traj? 
+        t0 *= 15.0  # much slower: TODO * n_traj?
     elif solver == "heom":
         t0 *= 30.0  # HEOM is much slower TODO depends on max_depth etc.
     if not rwa_sl:

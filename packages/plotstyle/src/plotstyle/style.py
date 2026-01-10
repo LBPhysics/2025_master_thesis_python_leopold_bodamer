@@ -16,7 +16,7 @@ import sys
 import shutil
 import math
 from pathlib import Path
-from typing import Optional, Iterable, Sequence, Union, List, Tuple, TYPE_CHECKING
+from typing import Optional, Iterable, Sequence, Union, List, Tuple, TYPE_CHECKING, Mapping
 import matplotlib as mpl
 from .constants import (
     LATEX_DOC_WIDTH,
@@ -53,7 +53,11 @@ _LATEX_PROBE_DONE = False
 
 
 # TODO only init_style and save_fig and set_size should be public
-def init_style(quiet: bool = True, theme: "PlotTheme | None" = None) -> None:
+def init_style(
+    quiet: bool = True,
+    theme: "PlotTheme | None" = None,
+    rc_overrides: "Mapping[str, object] | None" = None,
+) -> None:
     """Initialize matplotlib rcParams once (idempotent) for thesis-quality plots.
 
     Parameters
@@ -63,6 +67,8 @@ def init_style(quiet: bool = True, theme: "PlotTheme | None" = None) -> None:
     theme:
         Optional :class:`plotstyle.theme.PlotTheme` used to customize the rcParams
         dictionary.  When ``None`` the package level :data:`DEFAULT_THEME` is used.
+    rc_overrides:
+        Optional rcParams overrides applied after the theme defaults.
     """
     _setup_backend()
     active_theme = theme or DEFAULT_THEME
@@ -71,6 +77,9 @@ def init_style(quiet: bool = True, theme: "PlotTheme | None" = None) -> None:
     base_settings = active_theme.build_rcparams(latex_enabled=latex_available)
 
     mpl.rcParams.update(base_settings)
+
+    if rc_overrides:
+        mpl.rcParams.update(dict(rc_overrides))
     if not quiet:
         print("[plotstyle.init_style] matplotlib style initialized")
         print("latex used:", latex_available, "and backend used:", mpl.get_backend())

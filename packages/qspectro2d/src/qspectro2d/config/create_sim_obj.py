@@ -19,17 +19,39 @@ from __future__ import annotations
 
 import os
 import numpy as np
-import psutil
 from pathlib import Path
 from typing import Any, Mapping, Optional
 from qutip import OhmicEnvironment, DrudeLorentzEnvironment
+from qutip.core.environment import BosonicEnvironment
 import yaml
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.sim_config import SimulationConfig
 from ..core.laser_system.laser_class import LaserPulseSequence
 from ..core.atomic_system.system_class import AtomicSystem
-from . import default_simulation_params as dflt
+from ..utils.constants import convert_cm_to_fs
+from .atomic_system import (
+    COUPLING_CM,
+    DELTA_INHOMOGEN_CM,
+    DIP_MOMENTS,
+    FREQUENCIES_CM,
+    MAX_EXCITATION,
+    N_ATOMS,
+    N_CHAINS,
+    N_INHOMOGEN,
+)
+from .bath_system import BATH_COUPLING, BATH_CUTOFF, BATH_TEMP, BATH_TYPE
+from .defaults import DT, INITIAL_STATE, SUPPORTED_BATHS, T_DET_MAX, T_WAIT
+from .laser_system import (
+    BASE_AMPLITUDE,
+    CARRIER_FREQ_CM,
+    ENVELOPE_TYPE,
+    PULSE_FWHM_FS,
+    RWA_SL,
+)
+from .signal_processing import N_PHASES, RELATIVE_E0S, SIGNAL_TYPES
+from .simulation import ALLOWED_SOLVER_OPTIONS, ODE_SOLVER, SIM_TYPE, SOLVER_OPTIONS
+from .validation import validate
 
 __all__ = [
     "load_simulation",
@@ -75,24 +97,24 @@ def load_simulation_config(
     config_cfg = _get_section(cfg_root, "config")
 
     # Extract values
-    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
-    t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
+    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", PULSE_FWHM_FS))
+    t_det_max = float(config_cfg.get("t_det_max", T_DET_MAX))
     t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
     t_coh_value = config_cfg.get("t_coh")
     t_coh_current = float(t_coh_value) if t_coh_value is not None else None
-    t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
-    dt = float(config_cfg.get("dt", dflt.DT))
-    n_phases = int(config_cfg.get("n_phases", dflt.N_PHASES))
-    n_inhomogen = int(atomic_cfg.get("n_inhomogen", dflt.N_INHOMOGEN))
-    ode_solver = str(config_cfg.get("solver", dflt.ODE_SOLVER))
-    signal_types = list(config_cfg.get("signal_types", dflt.SIGNAL_TYPES))
-    sim_type = str(config_cfg.get("sim_type", dflt.SIM_TYPE))
+    t_wait = float(config_cfg.get("t_wait", T_WAIT))
+    dt = float(config_cfg.get("dt", DT))
+    n_phases = int(config_cfg.get("n_phases", N_PHASES))
+    n_inhomogen = int(atomic_cfg.get("n_inhomogen", N_INHOMOGEN))
+    ode_solver = str(config_cfg.get("solver", ODE_SOLVER))
+    signal_types = list(config_cfg.get("signal_types", SIGNAL_TYPES))
+    sim_type = str(config_cfg.get("sim_type", SIM_TYPE))
     if sim_type in {"0d", "1d"} and t_coh_current is None:
         t_coh_current = t_coh_max
-    rwa_sl = bool(laser_cfg.get("rwa_sl", dflt.RWA_SL))
-    initial_state = str(config_cfg.get("initial_state", dflt.INITIAL_STATE))
+    rwa_sl = bool(laser_cfg.get("rwa_sl", RWA_SL))
+    initial_state = str(config_cfg.get("initial_state", INITIAL_STATE))
     solver_options_cfg = config_cfg.get("solver_options", {})
-    solver_options = dict(dflt.SOLVER_OPTIONS.get(ode_solver))
+    solver_options = dict(SOLVER_OPTIONS.get(ode_solver))
     if isinstance(solver_options_cfg, Mapping):
         solver_options.update(solver_options_cfg)
     # Normalize CLI/YAML numeric strings (e.g. "1e-6") into numbers for validation downstream.
@@ -114,7 +136,7 @@ def load_simulation_config(
     solver_options = normalized_solver_opts
 
     # Filter to only allowed options for the current solver
-    allowed_keys = dflt.ALLOWED_SOLVER_OPTIONS.get(ode_solver, [])
+    allowed_keys = ALLOWED_SOLVER_OPTIONS.get(ode_solver, [])
     solver_options = {k: v for k, v in solver_options.items() if k in allowed_keys}
 
     max_workers = get_max_workers()
@@ -153,15 +175,15 @@ def load_simulation_laser(
     config_cfg = _get_section(cfg_root, "config")
 
     # Extract values
-    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", dflt.PULSE_FWHM_FS))
-    base_amp = float(laser_cfg.get("base_amplitude", dflt.BASE_AMPLITUDE))
-    envelope = str(laser_cfg.get("envelope_type", dflt.ENVELOPE_TYPE))
-    carrier_cm = float(laser_cfg.get("carrier_freq_cm", dflt.CARRIER_FREQ_CM))
-    relative_e0s = dflt.RELATIVE_E0S
-    t_wait = float(config_cfg.get("t_wait", dflt.T_WAIT))
+    pulse_fwhm_fs = float(laser_cfg.get("pulse_fwhm_fs", PULSE_FWHM_FS))
+    base_amp = float(laser_cfg.get("base_amplitude", BASE_AMPLITUDE))
+    envelope = str(laser_cfg.get("envelope_type", ENVELOPE_TYPE))
+    carrier_cm = float(laser_cfg.get("carrier_freq_cm", CARRIER_FREQ_CM))
+    relative_e0s = RELATIVE_E0S
+    t_wait = float(config_cfg.get("t_wait", T_WAIT))
 
     # Create laser with initial delays
-    t_det_max = float(config_cfg.get("t_det_max", dflt.T_DET_MAX))
+    t_det_max = float(config_cfg.get("t_det_max", T_DET_MAX))
     t_coh_max = float(config_cfg.get("t_coh_max", t_det_max))
     t_coh_value = config_cfg.get("t_coh")
     t_coh_current = float(t_coh_value) if t_coh_value is not None else None
@@ -195,13 +217,13 @@ def load_simulation_atomic_system(
 
     # ATOMIC SYSTEM
     atomic_cfg = _get_section(cfg_root, "atomic")
-    n_atoms = int(atomic_cfg.get("n_atoms", dflt.N_ATOMS))
-    n_chains = int(atomic_cfg.get("n_chains", dflt.N_CHAINS))
-    freqs_cm = list(atomic_cfg.get("frequencies_cm", dflt.FREQUENCIES_CM))
-    dip_moments = list(atomic_cfg.get("dip_moments", dflt.DIP_MOMENTS))
-    coupling_cm = float(atomic_cfg.get("coupling_cm", dflt.COUPLING_CM))
-    delta_inhomogen_cm = float(atomic_cfg.get("delta_inhomogen_cm", dflt.DELTA_INHOMOGEN_CM))
-    max_excitation = int(atomic_cfg.get("max_excitation", dflt.MAX_EXCITATION))
+    n_atoms = int(atomic_cfg.get("n_atoms", N_ATOMS))
+    n_chains = int(atomic_cfg.get("n_chains", N_CHAINS))
+    freqs_cm = list(atomic_cfg.get("frequencies_cm", FREQUENCIES_CM))
+    dip_moments = list(atomic_cfg.get("dip_moments", DIP_MOMENTS))
+    coupling_cm = float(atomic_cfg.get("coupling_cm", COUPLING_CM))
+    delta_inhomogen_cm = float(atomic_cfg.get("delta_inhomogen_cm", DELTA_INHOMOGEN_CM))
+    max_excitation = int(atomic_cfg.get("max_excitation", MAX_EXCITATION))
 
     atomic_system = AtomicSystem(
         n_atoms=n_atoms,
@@ -219,7 +241,23 @@ def load_simulation_atomic_system(
 def load_simulation_bath(
     path: Optional[str | Path] = None,
 ) -> OhmicEnvironment:
-    """Load BosonicEnvironment from a YAML file or defaults."""
+    """Load BosonicEnvironment from a YAML file or defaults.
+
+    Unit convention
+    ---------------
+    This codebase stores input transition frequencies in `atomic.frequencies_cm` (cm⁻¹),
+    but the `AtomicSystem` converts them internally to fs⁻¹ for the dynamics.
+
+    To keep YAML configs simple and comparable across systems, bath parameters are
+    always interpreted as *dimensionless multiples* of
+        ω0̄ = mean(system transition frequencies)
+    (computed in the same internal units as the Hamiltonian, i.e. fs⁻¹).
+
+    Concretely:
+        - `bath.temperature` means T/ω0̄
+        - `bath.cutoff` means ωc/ω0̄
+        - `bath.coupling` means coupling/ω0̄
+    """
     # LOAD / FALLBACK
     if path is None:
         cfg_root = {}
@@ -228,10 +266,45 @@ def load_simulation_bath(
 
     # BATH (qutip BosonicEnvironment)
     bath_cfg = _get_section(cfg_root, "bath")
-    temperature = float(bath_cfg.get("temperature", dflt.BATH_TEMP))
-    cutoff = float(bath_cfg.get("cutoff", dflt.BATH_CUTOFF))
-    coupling = float(bath_cfg.get("coupling", dflt.BATH_COUPLING))
-    bath_type = str(bath_cfg.get("bath_type", dflt.BATH_TYPE))
+    temperature = float(bath_cfg.get("temperature", BATH_TEMP))
+    cutoff = float(bath_cfg.get("cutoff", BATH_CUTOFF))
+    coupling = float(bath_cfg.get("coupling", BATH_COUPLING))
+    bath_type = str(bath_cfg.get("bath_type", BATH_TYPE))
+
+    # Controls the internal frequency cutoff used by QuTiP when constructing
+    # BosonicEnvironment objects from a spectral density.
+    # In internal units, we use: wMax = wmax_factor * cutoff.
+    wmax_factor = float(bath_cfg.get("wmax_factor", 10.0))
+    if wmax_factor <= 0:
+        raise ValueError("bath.wmax_factor must be > 0")
+
+    # Optional Lorentzian peak parameters (only used for "+lorentzian" bath types)
+    # Normalized (dimensionless) YAML inputs:
+    #   peak_width:    gamma / w0_bar
+    #   peak_strength: strength / coupling
+    #   peak_center:   omega_center / w0_bar
+    peak_strength = float(bath_cfg.get("peak_strength", 0.0))
+    peak_width = float(bath_cfg.get("peak_width", 1.0))
+    peak_center = float(bath_cfg.get("peak_center", 0.0))
+
+    # Scale bath parameters by ω0̄ (mean system frequency) in internal fs⁻¹ units.
+    atomic_cfg = _get_section(cfg_root, "atomic")
+    freqs_cm = list(atomic_cfg.get("frequencies_cm", FREQUENCIES_CM))
+    if not freqs_cm:
+        raise ValueError("Missing `atomic.frequencies_cm`; cannot determine ω0̄ for bath scaling.")
+    freqs_fs = np.asarray(convert_cm_to_fs(freqs_cm), dtype=float)
+    w0_bar_fs = float(np.mean(freqs_fs))
+
+    temperature *= w0_bar_fs
+    cutoff *= w0_bar_fs
+    coupling *= w0_bar_fs
+
+    w_max = wmax_factor * cutoff
+
+    # Scale Lorentzian peak parameters into internal units (fs^-1 and the same coupling units as the base bath)
+    peak_width = peak_width * w0_bar_fs
+    peak_center = peak_center * w0_bar_fs
+    peak_strength = peak_strength * coupling
 
     if bath_type == "ohmic":
         bath_env = OhmicEnvironment(
@@ -241,22 +314,84 @@ def load_simulation_bath(
             s=1.0,
             tag=bath_type,
         )
+    # To match the Ohmic bath at low frequencies, adjust lam for Drude-Lorentz:
+    # For Ohmic s=1: J(ω) ≈ α ω (at low ω)
+    # For Drude-Lorentz: J(ω) ≈ 2 λ ω / γ (at low ω)
+    # So set λ = α γ / 2 to approximate the same low-ω behavior
     elif bath_type == "drudelorentz":
         bath_env = DrudeLorentzEnvironment(
             T=temperature,
             gamma=cutoff,
-            lam=coupling,
+            lam=coupling * cutoff / 2,
             tag=bath_type,
         )
+
+    elif bath_type in {"ohmic+lorentzian", "drudelorentz+lorentzian"}:
+        if peak_strength < 0:
+            raise ValueError("bath.peak_strength must be >= 0")
+        if peak_width <= 0:
+            raise ValueError("bath.peak_width must be > 0")
+        if peak_center < 0:
+            raise ValueError("bath.peak_center must be >= 0")
+
+        # Base environment (used for its spectral density definition).
+        if bath_type.startswith("ohmic"):
+            bath_base = OhmicEnvironment(
+                T=temperature,
+                alpha=coupling,
+                wc=cutoff,
+                s=1.0,
+                tag="ohmic",
+            )
+        else:
+            bath_base = DrudeLorentzEnvironment(
+                T=temperature,
+                gamma=cutoff,
+                lam=coupling * cutoff / 2,
+                tag="drudelorentz",
+            )
+
+        def J_lorentz_peak(w, center=peak_center, gamma=peak_width, strength=peak_strength):
+            """Low-frequency Lorentzian-weighted contribution to J(ω) (ω>0 only).
+
+            Important: for bosonic baths, making J(0) finite leads to a divergent power
+            spectrum S(ω) as ω→0 at finite temperature. To boost pure dephasing while
+            keeping S(0) finite, this term scales ~ω near ω=0.
+            """
+            w_arr = np.asarray(w, dtype=float)
+            J = np.zeros_like(w_arr)
+            pos = w_arr > 0
+            wp = w_arr[pos]
+            J[pos] = strength * wp * (gamma**2) / ((wp - center) ** 2 + gamma**2)
+            return float(J) if np.isscalar(w) else J
+
+        def J_base_plus_peak(w):
+            return bath_base.spectral_density(w) + J_lorentz_peak(w)
+
+        bath_env = BosonicEnvironment.from_spectral_density(
+            J_base_plus_peak,
+            T=temperature,
+            wMax=w_max,
+            tag=bath_type,
+        )
+
+        # Attach base parameters so downstream validation and reporting can reuse them.
+        if bath_type.startswith("ohmic"):
+            bath_env.wc = cutoff
+            bath_env.alpha = coupling
+        else:
+            bath_env.gamma = cutoff
+            bath_env.lam = coupling * cutoff / 2
+
     else:
-        raise ValueError(f"Unsupported bath_type: {bath_type}. Supported: {dflt.SUPPORTED_BATHS}")
+        raise ValueError(f"Unsupported bath_type: {bath_type}. Supported: {SUPPORTED_BATHS}")
 
     return bath_env
 
 
 def load_simulation(
     path: Optional[str | Path] = None,
-    validate: bool = False,
+    run_validation: bool = False,
 ) -> SimulationModuleOQS:
     """Create a `SimulationModuleOQS` directly from a YAML file or defaults.
 
@@ -270,10 +405,9 @@ def load_simulation(
     Parameters
     ----------
     path: str | Path | None
-        YAML configuration file. If None, defaults from
-        `default_simulation_params` are used.
-    validate: bool
-        If True (default) run physics validation via `default_simulation_params.validate`.
+        YAML configuration file. If None, module defaults are used.
+    run_validation: bool
+        If True run physics validation via `qspectro2d.config.validation.validate`.
     t_coh_override, t_wait_override, t_det_max_override, dt_override, ode_solver_override:
         Optional scalar overrides for timing / solver settings.
     """
@@ -286,12 +420,12 @@ def load_simulation(
     # -----------------
     # VALIDATION (physics-level) BEFORE FINAL ASSEMBLY
     # -----------------
-    if validate:
+    if run_validation:
         # Handle bath-specific attributes
-        if bath_env.tag == "ohmic":
+        if bath_env.tag in {"ohmic", "ohmic+lorentzian"}:
             cutoff_val = bath_env.wc
             coupling_val = bath_env.alpha
-        elif bath_env.tag == "drudelorentz":
+        elif bath_env.tag in {"drudelorentz", "drudelorentz+lorentzian"}:
             cutoff_val = bath_env.gamma
             coupling_val = bath_env.lam
         else:
@@ -309,7 +443,7 @@ def load_simulation(
             "n_phases": sim_config.n_phases,
             "max_excitation": atomic_system.max_excitation,
             "n_chains": atomic_system.n_chains,
-            "relative_e0s": dflt.RELATIVE_E0S,
+            "relative_e0s": RELATIVE_E0S,
             "rwa_sl": sim_config.rwa_sl,
             "carrier_freq_cm": laser_sequence.carrier_freq_cm,
             "signal_types": sim_config.signal_types,
@@ -329,7 +463,7 @@ def load_simulation(
             "sim_type": sim_config.sim_type,
             "max_workers": sim_config.max_workers,
         }
-        dflt.validate(params)
+        validate(params)
 
     # -----------------
     # ASSEMBLE
@@ -358,7 +492,7 @@ def create_base_sim_oqs(
     # Gather overrides from args once and pass into loader (done earlier now)
     sim = load_simulation(
         config_path,
-        validate=True,
+        run_validation=True,
     )
 
     print("🔧 Base simulation created from config (overrides applied early).")
@@ -399,5 +533,5 @@ def get_max_workers() -> int:
     except ValueError:
         slurm_cpus = 0
 
-    local_cpus = psutil.cpu_count(logical=True) or 1
-    return slurm_cpus if slurm_cpus > 0 else local_cpus
+    local_cpus = os.cpu_count() or 1
+    return slurm_cpus if slurm_cpus > 0 else int(local_cpus)

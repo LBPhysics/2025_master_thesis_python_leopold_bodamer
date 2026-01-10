@@ -65,10 +65,7 @@ def _check_density_matrix_properties(
     """
     error_messages = []
     time_cut = np.inf
-    from qspectro2d.config.default_simulation_params import (
-        NEGATIVE_EIGVAL_THRESHOLD,
-        TRACE_TOLERANCE,
-    )
+    from qspectro2d.config.signal_processing import NEGATIVE_EIGVAL_THRESHOLD, TRACE_TOLERANCE
 
     for index, state in enumerate(states):
         time = times[index]

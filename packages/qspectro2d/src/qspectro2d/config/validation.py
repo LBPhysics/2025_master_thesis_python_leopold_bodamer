@@ -1,23 +1,19 @@
-"""
-Validation and sanity checks for qspectro2d.
-"""
+"""Validation and sanity checks for qspectro2d."""
 
-import numpy as np
 import warnings
 
-from .constants import INITIAL_STATE
-from .signal_processing import (
-    N_PHASES,
-    RELATIVE_E0S,
-    NEGATIVE_EIGVAL_THRESHOLD,
-    TRACE_TOLERANCE,
-    SIGNAL_TYPES,
-)
-from .supported import (
+import numpy as np
+
+from .signal_processing import N_PHASES, RELATIVE_E0S, SIGNAL_TYPES
+from .defaults import (
     SUPPORTED_SOLVERS,
     SUPPORTED_BATHS,
     SUPPORTED_ENVELOPES,
     SUPPORTED_SIM_TYPES,
+    T_DET_MAX,
+    DT,
+    T_COH_MAX,
+    T_WAIT,
 )
 from .atomic_system import (
     N_ATOMS,
@@ -48,12 +44,7 @@ from .bath_system import (
     BATH_TEMP,
     BATH_COUPLING,
 )
-from .time_defaults import (
-    T_DET_MAX,
-    DT,
-    T_COH_MAX,
-    T_WAIT,
-)
+
 
 
 # VALIDATION AND SANITY CHECKS
@@ -97,15 +88,11 @@ def validate(params: dict) -> None:
     n_inhomogen = params.get("n_inhomogen", N_INHOMOGEN)
     signal_types = params.get("signal_types", SIGNAL_TYPES)
 
-    # Validate solver
-    if ode_solver not in SUPPORTED_SOLVERS:
-        raise ValueError(f"ODE_SOLVER '{ode_solver}' not in {SUPPORTED_SOLVERS}")
-
     # Validate bath type
     if bath_type not in SUPPORTED_BATHS:
         raise ValueError(f"BATH_TYPE '{bath_type}' not in {SUPPORTED_BATHS}")
 
-    # Improved solver validation
+    # Validate solver
     if ode_solver not in SUPPORTED_SOLVERS:
         raise ValueError(
             f"Invalid ode_solver '{ode_solver}'. Supported: {sorted(SUPPORTED_SOLVERS)}"
@@ -162,10 +149,6 @@ def validate(params: dict) -> None:
 
     if bath_coupling <= 0:
         raise ValueError("BATH_COUPLING must be positive")
-
-    # Validate phases
-    if n_phases <= 0:
-        raise ValueError("N_PHASES must be positive")
 
     # Validate excitation truncation
     if max_excitation not in (1, 2):

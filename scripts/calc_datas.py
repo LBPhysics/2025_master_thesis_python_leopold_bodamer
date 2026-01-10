@@ -114,7 +114,7 @@ def main() -> None:
     parser.add_argument(
         "--sim_type",
         choices=["0d", "1d", "2d"],
-        default="2d",
+        default="1d",
         help="Simulation dimensionality",
     )
     parser.add_argument(
@@ -131,7 +131,7 @@ def main() -> None:
     print("LOCAL ALL-COMBINATIONS RUNNER")
     print(f"Config path: {config_path}")
 
-    sim = load_simulation(config_path, validate=True)
+    sim = load_simulation(config_path, run_validation=True)
     print("✅ Simulation object constructed.")
 
     time_cut = check_the_solver(sim)
