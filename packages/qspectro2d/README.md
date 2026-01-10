@@ -54,7 +54,8 @@ qspectro2d/
 
 ## Installation
 
-The package targets Python ≥ 3.11. It depends on NumPy, SciPy, Matplotlib, Qutip, psutil, PyYAML, and optional extras for plotting.
+The package targets Python ≥ 3.11. It depends on NumPy, SciPy, Matplotlib, Qutip, PyYAML, and optional extras for plotting.
+
 
 ### User installation
 ```bash
@@ -106,7 +107,7 @@ simulation = SimulationModuleOQS(
 
 ## Configuration-driven workflow
 
-1. Describe system, laser, bath, and solver blocks in YAML (values omitted fall back to `default_simulation_params`).
+1. Describe system, laser, bath, and solver blocks in YAML (values omitted fall back to module defaults in `qspectro2d.config`).
 2. Call `create_sim_obj(path_to_yaml)` to obtain a validated `SimulationModuleOQS` instance, with cutoff time (where the simulation becomes unphysical).
 
 ### Loading and validating configuration
@@ -122,7 +123,72 @@ sim, time_cut = create_base_sim_oqs(Path("config/dimer.yaml"))
 print(f"Usable detection window: {time_cut:.1f} fs")
 ```
 
-The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `default_simulation_params.validate`).
+The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `qspectro2d.config.validation.validate`).
+
+### Solver options
+
+You can pass solver-specific knobs under `config.solver_options`. These are forwarded to the selected QuTiP solver backend.
+
+Defaults live in `qspectro2d.config.simulation.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validation.validate`.
+Unknown keys raise an error to avoid silently ignored typos.
+
+Common keys (for the solvers that support them):
+- `atol`, `rtol`: absolute/relative tolerances (must be > 0)
+- `nsteps`: maximum allowed internal steps (must be > 0)
+- `method`: ODE method string (e.g. `"bdf"`)
+- `max_step`, `min_step`: optional step size limits
+- `progress_bar`: show QuTiP progress bar (supported by `montecarlo` and `heom`)
+
+Solver-specific keys:
+- `redfield`:
+	- `sec_cutoff`: controls the secular approximation in QuTiP `brmesolve`
+		- `sec_cutoff = -1` disables the secular approximation
+		- `sec_cutoff > 0` enables the secular approximation with that cutoff
+- `montecarlo`:
+	- `ntraj`: number of trajectories
+- `heom`:
+	- `max_depth`: hierarchy depth (1 approaches Redfield; higher is more accurate/costly)
+	- `approx_method`: bath decomposition method (e.g. `"prony"`)
+	- `n_exp`: number of exponentials in the decomposition (when supported by the chosen method)
+	- `Ni`, `Nr`: decomposition knobs (method-dependent)
+	- `combine`, `separate`: decomposition bookkeeping switches
+	- `n_t`, `t_max`: internal bath-fit grid size and max time
+	- `tag`: optional solver tag
+- `paper_eqs`: no `solver_options` (empty allow-list)
+
+Example (turn off secular approximation for Bloch–Redfield):
+
+```yaml
+config:
+	solver: redfield
+
+	# Solver-specific knobs. For QuTiP brmesolve:
+	#   sec_cutoff = -1 disables the secular approximation
+	#   sec_cutoff > 0 applies secular approximation with that cutoff
+	solver_options:
+		sec_cutoff: -1
+```
+
+## Bath configuration (normalized units)
+
+Bath parameters in YAML are interpreted as dimensionless multiples of
+$\bar\omega_0 = \mathrm{mean}(\texttt{atomic.frequencies_cm})$ (converted internally to fs⁻¹).
+
+Supported `bath.bath_type` values:
+- `ohmic`
+- `drudelorentz`
+- `ohmic+lorentzian`
+- `drudelorentz+lorentzian`
+
+For the `*+lorentzian` types, add a Lorentzian peak to the base spectral density using normalized inputs:
+- `bath.peak_width`: $\gamma / \bar\omega_0$
+- `bath.peak_strength`: $\text{strength} / \text{coupling}$
+- `bath.peak_center` (optional): $\omega_\mathrm{center}/\bar\omega_0$ (default `0.0`)
+- `bath.wmax_factor` (optional): `wMax = wmax_factor * cutoff` in internal units (default `10.0`)
+
+**Known limitation:** the `*+lorentzian` bath types are still experimental.
+Peaks very close to $\omega\approx 0$ (often used to boost pure dephasing) can make Bloch–Redfield rates highly sensitive to low-frequency details and may lead to slow/unstable numerics.
+For stable dephasing control, prefer the built-in Ohmic/Sub-Ohmic families, or analytic Drude–Lorentz / underdamped-mode environments.
 
 ## Working with results
 

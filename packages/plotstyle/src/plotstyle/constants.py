@@ -11,6 +11,7 @@ __all__ = [
     "LATEX_FONT_SIZE",
     "FONT_SIZE",
     "FIG_SIZE",
+    "LINE_WIDTH",
     "DPI",
     "FIG_FORMAT",
     "TRANSPARENCY",
@@ -21,8 +22,9 @@ __all__ = [
 # Document layout related defaults
 LATEX_DOC_WIDTH: float = 441.01775  # pt width of LaTeX document text block
 LATEX_FONT_SIZE: int = 11
-FONT_SIZE: int = 11
+FONT_SIZE: int = 15
 FIG_SIZE: Tuple[float, float] = (8, 6)
+LINE_WIDTH: float = 2.5
 DPI: int = 300
 FIG_FORMAT: str = "svg"  # change to "svg" if desired
 TRANSPARENCY: bool = True

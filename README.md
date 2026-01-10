@@ -32,6 +32,42 @@ conda activate m_env
 
 The environment file already performs the editable installs for my custom made `plotstyle` and `qspectro2d`.
 
+## Units: bath parameters
+
+Atomic transition frequencies are specified in cm⁻¹ via `atomic.frequencies_cm`.
+
+By default, bath parameters in YAML are interpreted as **dimensionless multiples** of
+$$\bar\omega_0 = \mathrm{mean}(\texttt{atomic.frequencies_cm})$$
+
+That is:
+- `bath.temperature` means $T/\bar\omega_0$
+- `bath.cutoff` means $\omega_c/\bar\omega_0$
+- `bath.coupling` means $\text{coupling}/\bar\omega_0$
+
+Internally, the code converts `atomic.frequencies_cm` to fs⁻¹ for the dynamics; the same
+$\bar\omega_0$ (in fs⁻¹) is used to scale these bath parameters.
+
+### Extra bath types: `*+lorentzian`
+
+Supported `bath.bath_type` values now include:
+- `ohmic`
+- `drudelorentz`
+- `ohmic+lorentzian`
+- `drudelorentz+lorentzian`
+
+For the `*+lorentzian` types, the Lorentzian peak is configured via **normalized (dimensionless)** YAML inputs:
+- `bath.peak_width`: $\gamma / \bar\omega_0$
+- `bath.peak_strength`: $\text{strength} / \text{coupling}$
+- `bath.peak_center` (optional): $\omega_\mathrm{center}/\bar\omega_0$ (default `0.0`)
+- `bath.wmax_factor` (optional): sets `wMax = wmax_factor * (bath.cutoff * \bar\omega_0)` (default `10.0`)
+
+Internally, the loader converts these as:
+$$\gamma = \texttt{peak_width}\,\bar\omega_0, \quad \text{strength} = \texttt{peak_strength}\,\text{coupling}.$$
+
+**Known limitation (important):** the `*+lorentzian` bath types are still experimental.
+In particular, trying to create a strong peak close to $\omega\approx 0$ (to boost pure dephasing) tends to be numerically fragile in the current QuTiP Bloch–Redfield workflow (rates become very sensitive to low-frequency behavior and the internal spectral integrations / interpolation can become unstable or slow).
+If you need robust low-frequency dephasing, prefer the built-in Ohmic/Sub-Ohmic families for now, or use an analytic Drude–Lorentz/underdamped-mode model instead of an ad-hoc near-zero peak.
+
 ## Workflow overview
 
 There are two main workflows: **local execution** (for small tests) and **HPC batching** (for large parameter sweeps). Both produce the same plots but differ in scaling and automation.

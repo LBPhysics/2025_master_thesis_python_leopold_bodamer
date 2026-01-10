@@ -21,10 +21,7 @@ from qutip.solver.heom import heomsolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local, compute_t_det
-from ..config.default_simulation_params import (
-    PHASE_CYCLING_PHASES,
-    COMPONENT_MAP,
-)
+from ..config.signal_processing import PHASE_CYCLING_PHASES, COMPONENT_MAP
 from qspectro2d.utils.rwa_utils import from_rotating_frame_list
 
 __all__ = [

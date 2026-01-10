@@ -14,6 +14,7 @@ from .constants import (
     FIG_SIZE,
     FONT_SIZE,
     LATEX_DOC_WIDTH,
+    LINE_WIDTH,
     LINE_STYLES,
     TRANSPARENCY,
 )
@@ -58,6 +59,7 @@ class PlotTheme:
             "font.serif": list(self.serif_fonts),
             "font.sans-serif": list(self.sans_fonts),
             "font.size": FONT_SIZE,
+            "lines.linewidth": LINE_WIDTH,
             "axes.titlesize": FONT_SIZE + 2,
             "axes.labelsize": FONT_SIZE + 2,
             "xtick.labelsize": FONT_SIZE,
