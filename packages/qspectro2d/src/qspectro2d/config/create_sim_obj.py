@@ -271,6 +271,19 @@ def load_simulation_bath(
     coupling = float(bath_cfg.get("coupling", BATH_COUPLING))
     bath_type = str(bath_cfg.get("bath_type", BATH_TYPE))
 
+    # Ohmic-family exponent (dimensionless). For convenience, sub/super-Ohmic
+    # are treated as tagged Ohmic environments with different default exponents.
+    bath_s_raw = bath_cfg.get("s", None)
+    if bath_type.startswith("subohmic"):
+        bath_s_default = 0.8
+    elif bath_type.startswith("superohmic"):
+        bath_s_default = 1.2
+    else:
+        bath_s_default = 1.0
+    bath_s = float(bath_s_default if bath_s_raw is None else bath_s_raw)
+    if bath_s <= 0:
+        raise ValueError("bath.s must be > 0")
+
     # Controls the internal frequency cutoff used by QuTiP when constructing
     # BosonicEnvironment objects from a spectral density.
     # In internal units, we use: wMax = wmax_factor * cutoff.
@@ -306,12 +319,12 @@ def load_simulation_bath(
     peak_center = peak_center * w0_bar_fs
     peak_strength = peak_strength * coupling
 
-    if bath_type == "ohmic":
+    if bath_type in {"ohmic", "subohmic", "superohmic"}:
         bath_env = OhmicEnvironment(
             T=temperature,
             alpha=coupling,
             wc=cutoff,
-            s=1.0,
+            s=bath_s,
             tag=bath_type,
         )
     # To match the Ohmic bath at low frequencies, adjust lam for Drude-Lorentz:
@@ -326,7 +339,12 @@ def load_simulation_bath(
             tag=bath_type,
         )
 
-    elif bath_type in {"ohmic+lorentzian", "drudelorentz+lorentzian"}:
+    elif bath_type in {
+        "ohmic+lorentzian",
+        "subohmic+lorentzian",
+        "superohmic+lorentzian",
+        "drudelorentz+lorentzian",
+    }:
         if peak_strength < 0:
             raise ValueError("bath.peak_strength must be >= 0")
         if peak_width <= 0:
@@ -335,13 +353,13 @@ def load_simulation_bath(
             raise ValueError("bath.peak_center must be >= 0")
 
         # Base environment (used for its spectral density definition).
-        if bath_type.startswith("ohmic"):
+        if bath_type.startswith(("ohmic", "subohmic", "superohmic")):
             bath_base = OhmicEnvironment(
                 T=temperature,
                 alpha=coupling,
                 wc=cutoff,
-                s=1.0,
-                tag="ohmic",
+                s=bath_s,
+                tag=bath_type.split("+", 1)[0],
             )
         else:
             bath_base = DrudeLorentzEnvironment(
@@ -376,9 +394,10 @@ def load_simulation_bath(
         )
 
         # Attach base parameters so downstream validation and reporting can reuse them.
-        if bath_type.startswith("ohmic"):
+        if bath_type.startswith(("ohmic", "subohmic", "superohmic")):
             bath_env.wc = cutoff
             bath_env.alpha = coupling
+            bath_env.s = bath_s
         else:
             bath_env.gamma = cutoff
             bath_env.lam = coupling * cutoff / 2
@@ -422,12 +441,21 @@ def load_simulation(
     # -----------------
     if run_validation:
         # Handle bath-specific attributes
-        if bath_env.tag in {"ohmic", "ohmic+lorentzian"}:
+        if bath_env.tag in {
+            "ohmic",
+            "subohmic",
+            "superohmic",
+            "ohmic+lorentzian",
+            "subohmic+lorentzian",
+            "superohmic+lorentzian",
+        }:
             cutoff_val = bath_env.wc
             coupling_val = bath_env.alpha
+            bath_s_val = getattr(bath_env, "s", None)
         elif bath_env.tag in {"drudelorentz", "drudelorentz+lorentzian"}:
             cutoff_val = bath_env.gamma
             coupling_val = bath_env.lam
+            bath_s_val = None
         else:
             raise ValueError(f"Unsupported bath_type for validation: {bath_env.tag}")
 
@@ -440,6 +468,7 @@ def load_simulation(
             "temperature": bath_env.T,
             "cutoff": cutoff_val,
             "coupling": coupling_val,
+            "bath_s": bath_s_val,
             "n_phases": sim_config.n_phases,
             "max_excitation": atomic_system.max_excitation,
             "n_chains": atomic_system.n_chains,

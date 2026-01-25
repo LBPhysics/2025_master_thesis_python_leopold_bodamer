@@ -53,7 +53,7 @@ def estimate_slurm_resources(
     solver: str = "lindblad",
     mem_safety: float = 100.0,
     base_mb: int = 500,
-    time_safety: float = 10,
+    time_safety: float = 20,
     base_time: float = 300.0,
     rwa_sl: bool = True,
 ) -> tuple[str, str]:
@@ -91,10 +91,10 @@ def estimate_slurm_resources(
     time_per_combo = base_t * (n_t_coh / 1000) * ((N_dim) ** 2)
 
     # total time for one batch (divide by workers)
-    total_seconds = time_per_combo * combos_per_batch * time_safety
+    total_seconds = time_per_combo * combos_per_batch
 
     # Ensure minimum time of 1 minute to avoid SLURM rejection
-    total_seconds = max(total_seconds, base_time)
+    total_seconds = total_seconds * time_safety + base_time
 
     # convert to HH:MM:SS, clip to max 24h if needed
     h = int(total_seconds // 3600)
@@ -219,7 +219,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print("GENERALIZED HPC DISPATCHER")
     print(f"Config path: {config_path}")
 
-    sim = load_simulation(config_path, validate=True)
+    sim = load_simulation(config_path, run_validation=True)
     print("✅ Simulation object constructed.")
 
     time_cut = np.inf  # TODO ONLY CHECK LOCALLY check_the_solver(sim)
