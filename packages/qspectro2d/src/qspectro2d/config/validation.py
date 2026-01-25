@@ -59,6 +59,7 @@ def validate(params: dict) -> None:
     bath_temp = params.get("temperature", BATH_TEMP)
     bath_cutoff = params.get("cutoff", BATH_CUTOFF)
     bath_coupling = params.get("coupling", BATH_COUPLING)
+    bath_s = params.get("bath_s")
     n_phases = params.get("n_phases", N_PHASES)
     max_excitation = params.get("max_excitation", MAX_EXCITATION)
     n_chains = params.get("n_chains", N_CHAINS)
@@ -91,6 +92,18 @@ def validate(params: dict) -> None:
     # Validate bath type
     if bath_type not in SUPPORTED_BATHS:
         raise ValueError(f"BATH_TYPE '{bath_type}' not in {SUPPORTED_BATHS}")
+
+    # Validate Ohmic-family exponent (dimensionless). Only enforced when provided.
+    if bath_type in {
+        "ohmic",
+        "subohmic",
+        "superohmic",
+        "ohmic+lorentzian",
+        "subohmic+lorentzian",
+        "superohmic+lorentzian",
+    }:
+        if bath_s is not None and float(bath_s) <= 0:
+            raise ValueError("bath.s (bath_s) must be > 0")
 
     # Validate solver
     if ode_solver not in SUPPORTED_SOLVERS:

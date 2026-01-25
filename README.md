@@ -51,9 +51,19 @@ $\bar\omega_0$ (in fs⁻¹) is used to scale these bath parameters.
 
 Supported `bath.bath_type` values now include:
 - `ohmic`
+- `subohmic`
+- `superohmic`
 - `drudelorentz`
 - `ohmic+lorentzian`
+- `subohmic+lorentzian`
+- `superohmic+lorentzian`
 - `drudelorentz+lorentzian`
+
+For the Ohmic family (`ohmic`, `subohmic`, `superohmic`), you can optionally set an explicit
+power-law exponent via `bath.s` (dimensionless). If omitted, defaults are:
+- `ohmic`: `s = 1.0`
+- `subohmic`: `s = 0.8`
+- `superohmic`: `s = 1.2`
 
 For the `*+lorentzian` types, the Lorentzian peak is configured via **normalized (dimensionless)** YAML inputs:
 - `bath.peak_width`: $\gamma / \bar\omega_0$

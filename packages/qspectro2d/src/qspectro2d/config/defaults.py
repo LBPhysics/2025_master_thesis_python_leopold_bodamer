@@ -24,8 +24,12 @@ SUPPORTED_SOLVERS = ["lindblad", "redfield", "paper_eqs", "heom", "montecarlo"]
 
 SUPPORTED_BATHS = [
     "ohmic",
+    "subohmic",
+    "superohmic",
     "drudelorentz",
     "ohmic+lorentzian",
+    "subohmic+lorentzian",
+    "superohmic+lorentzian",
     "drudelorentz+lorentzian",
 ]
 
