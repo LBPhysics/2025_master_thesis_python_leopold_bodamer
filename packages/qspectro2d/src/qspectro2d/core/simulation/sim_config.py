@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, List
+import warnings
 from dataclasses import dataclass, field
 
 
@@ -43,8 +44,8 @@ class SimulationConfig:
     def __post_init__(self) -> None:
         # Enforce RWA for paper_eqs
         if self.ode_solver == "paper_eqs" and not self.rwa_sl:
-            print(
-                "⚠️  Warning: rwa_sl forced True for paper_eqs solver.",
+            warnings.warn(
+                "rwa_sl forced True for paper_eqs solver.",
                 category=UserWarning,
                 stacklevel=2,
             )
