@@ -38,7 +38,7 @@ from .laser_system import (
 )
 
 
-# WHOLE MODULE CLASS AND specific Paper SOLVER FUNCTIONS
+# Simulation module and configuration
 from .simulation import (
     SimulationModuleOQS,
     SimulationConfig,
@@ -64,12 +64,12 @@ __all__ = [
     # Simulation module and configuration
     "SimulationModuleOQS",
     "SimulationConfig",
+    # Solver functions
+    "matrix_ODE_paper",
     # LaserPulse field functions
     "pulse_envelopes",
     "e_pulses",
     "epsilon_pulses",
-    # Solver functions
-    "matrix_ODE_paper",
 ]
 
 

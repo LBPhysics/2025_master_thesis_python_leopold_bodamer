@@ -64,37 +64,33 @@ def estimate_slurm_resources(
     bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
     total_bytes = mem_safety * workers * bytes_per_solver
     mem_mb = base_mb + total_bytes / (1024**2)
-    if solver == "heom":
-        mem_mb *= N_dim  # HEOM is much heavier on memory
     requested_mem = f"{int(math.ceil(mem_mb))}M"
 
     # ---------------------- TIME ------------------------
     # Number of total independent simulations
     combos_total = n_inhom * n_t_coh
-    combos_per_batch = max(1, combos_total // max(1, n_batches))
+    combos_per_batch = max(1, int(math.ceil(combos_total / max(1, n_batches))))
 
     # Empirical baseline: base_time s per combo for lindblad, 1 atom, n_times=1000, N=2
-    t0 = 0.03  # basic case for pessimistic lindblad
-    if solver == "paper_eqs":
-        t0 *= 3.0  # slower solver
-    elif solver == "redfield":
-        t0 *= 5.0  # slower solver
-    elif solver == "montecarlo":
-        t0 *= 15.0  # much slower: TODO * n_traj?
-    elif solver == "heom":
-        t0 *= 30.0  # HEOM is much slower TODO depends on max_depth etc.
+    base_t = 0.03
+    solver_factor = {
+        "lindblad": 1.0,
+        "redfield": 5.0,
+        "paper_eqs": 3.0,
+    }
+    if solver not in solver_factor:
+        raise ValueError(f"Unsupported solver '{solver}'.")
     if not rwa_sl:
-        t0 *= 5.0  # non-RWA is WAY slower
-    base_t = t0
+        base_t *= 5.0  # non-RWA is WAY slower
 
     # scaling ~ n_times * N^2  (sparse regime)
-    time_per_combo = base_t * (n_t_coh / 1000) * ((N_dim) ** 2)
+    time_per_combo = base_t * solver_factor[solver] * (n_times / 1000) * (N_dim**2)
 
     # total time for one batch (divide by workers)
-    total_seconds = time_per_combo * combos_per_batch
+    total_seconds = time_per_combo * combos_per_batch * time_safety / max(1, workers)
 
     # Ensure minimum time of 1 minute to avoid SLURM rejection
-    total_seconds = total_seconds * time_safety + base_time
+    total_seconds = max(total_seconds, base_time)
 
     # convert to HH:MM:SS, clip to max 24h if needed
     h = int(total_seconds // 3600)

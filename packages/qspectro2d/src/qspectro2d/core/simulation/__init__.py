@@ -7,14 +7,13 @@ Modules
 -------
 sim_config        : SimulationConfig dataclass & validation
 builders          : Core helper functions (interaction Hamiltonians)
-liouvillian_paper : Paper specific time–dependent Liouvillian builders
 redfield          : Redfield tensor construction helpers
+liouvillian_paper : Paper specific time–dependent Liouvillian builders
 """
 
 from .sim_config import SimulationConfig
 from .simulation_class import SimulationModuleOQS
 from .liouvillian_paper import matrix_ODE_paper
-
 __all__ = [
     "SimulationConfig",
     "SimulationModuleOQS",
