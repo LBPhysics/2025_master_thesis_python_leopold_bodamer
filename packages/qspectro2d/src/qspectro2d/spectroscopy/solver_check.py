@@ -15,12 +15,12 @@ from typing import List
 
 # THIRD-PARTY IMPORTS
 import numpy as np
-from qutip import Qobj
+from qutip import Qobj, mesolve, brmesolve
 
 # LOCAL IMPORTS
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local
-from .e_field_1d import compute_evolution
+from qspectro2d.utils.rwa_utils import from_rotating_frame_op
 
 __all__ = ["check_the_solver"]
 
@@ -54,11 +54,15 @@ def _log_system_diagnostics(sim_oqs: SimulationModuleOQS) -> None:
         print(f"Initial min eigenvalue: {ini_eigvals.min():.10f}")
 
 
-def _check_density_matrix_properties(
-    states: List[Qobj], times: np.ndarray
+def _check_density_matrix_state(
+    state: Qobj,
+    time: float,
+    index: int,
+    total: int,
+    prev_state: Qobj | None = None,
 ) -> tuple[List[str], float]:
     """
-    Check density matrix properties for numerical stability.
+    Check density matrix properties for numerical stability at a single time step.
 
     Returns:
         tuple: (error_messages, time_cut)
@@ -67,63 +71,105 @@ def _check_density_matrix_properties(
     time_cut = np.inf
     from qspectro2d.config.signal_processing import NEGATIVE_EIGVAL_THRESHOLD, TRACE_TOLERANCE
 
-    for index, state in enumerate(states):
-        time = times[index]
-        # Check Hermiticity
-        if not state.isherm:
-            error_messages.append(f"Density matrix is not Hermitian after t = {time}")
-            print(f"Non-Hermitian density matrix at t = {time}")
-            print(f"  State details: trace={state.tr():.6f}, shape={state.shape}")
+    # Check Hermiticity
+    if not state.isherm:
+        error_messages.append(f"Density matrix is not Hermitian after t = {time}")
+        print(f"Non-Hermitian density matrix at t = {time}")
+        print(f"  State details: trace={state.tr():.6f}, shape={state.shape}")
 
-        # Check positive semidefiniteness
-        eigvals = state.eigenenergies()
-        min_eigval = eigvals.min()
+    # Check positive semidefiniteness
+    eigvals = state.eigenenergies()
+    min_eigval = eigvals.min()
 
-        if not np.all(eigvals >= NEGATIVE_EIGVAL_THRESHOLD):
-            error_messages.append(
-                f"Density matrix is not positive semidefinite after t = {time}: "
-                f"The lowest eigenvalue is {min_eigval}"
-            )
-            print(f"NEGATIVE EIGENVALUE DETECTED:")
-            print(f"  Time: {time:.6f}")
-            print(f"  Min eigenvalue: {min_eigval:.12f}")
-            print(f"  Threshold: {NEGATIVE_EIGVAL_THRESHOLD}")
-            print(f"  All eigenvalues: {eigvals[:5]}...")
-            print(f"  State trace: {state.tr():.10f}")
-            print(f"  State index: {index}/{len(states)}")
+    if not np.all(eigvals >= NEGATIVE_EIGVAL_THRESHOLD):
+        error_messages.append(
+            f"Density matrix is not positive semidefinite after t = {time}: "
+            f"The lowest eigenvalue is {min_eigval}"
+        )
+        print("NEGATIVE EIGENVALUE DETECTED:")
+        print(f"  Time: {time:.6f}")
+        print(f"  Min eigenvalue: {min_eigval:.12f}")
+        print(f"  Threshold: {NEGATIVE_EIGVAL_THRESHOLD}")
+        print(f"  All eigenvalues: {eigvals[:5]}...")
+        print(f"  State trace: {state.tr():.10f}")
+        print(f"  State index: {index}/{total}")
 
-            if index > 0:
-                prev_state = states[index - 1]
-                prev_eigvals = prev_state.eigenenergies()
-                print(f"  Previous state min eigval: {prev_eigvals.min():.12f}")
-                print(f"  Eigenvalue change: {min_eigval - prev_eigvals.min():.12f}")
+        if prev_state is not None:
+            prev_eigvals = prev_state.eigenenergies()
+            print(f"  Previous state min eigval: {prev_eigvals.min():.12f}")
+            print(f"  Eigenvalue change: {min_eigval - prev_eigvals.min():.12f}")
 
-            time_cut = time
+        time_cut = time
 
-        # Check trace preservation
-        trace_val = state.tr()
+    # Check trace preservation
+    trace_val = state.tr()
 
-        if not np.isclose(trace_val, 1.0, atol=TRACE_TOLERANCE):
-            error_messages.append(
-                f"Density matrix is not trace-preserving after t = {time}: "
-                f"The trace is {trace_val}"
-            )
-            print(f"TRACE VIOLATION:")
-            print(f"  Time: {time:.6f}")
-            print(f"  Trace: {trace_val:.10f}")
-            print(f"  Deviation from 1: {abs(trace_val - 1.0):.10f}")
-            print(f"  Tolerance: {TRACE_TOLERANCE}")
+    if not np.isclose(trace_val, 1.0, atol=TRACE_TOLERANCE):
+        error_messages.append(
+            f"Density matrix is not trace-preserving after t = {time}: "
+            f"The trace is {trace_val}"
+        )
+        print("TRACE VIOLATION:")
+        print(f"  Time: {time:.6f}")
+        print(f"  Trace: {trace_val:.10f}")
+        print(f"  Deviation from 1: {abs(trace_val - 1.0):.10f}")
+        print(f"  Tolerance: {TRACE_TOLERANCE}")
 
-            time_cut = min(time_cut, time)
+        time_cut = min(time_cut, time)
 
-        # Break on first error for detailed analysis
-        if error_messages:
-            print("=== FIRST ERROR ANALYSIS ===")
-            print(f"Stopping analysis at first error (state {index}, t={time:.6f})")
-            print("Density matrix validation failed: " + "; ".join(error_messages))
-            break
+    # Break on first error for detailed analysis
+    if error_messages:
+        print("=== FIRST ERROR ANALYSIS ===")
+        print(f"Stopping analysis at first error (state {index}, t={time:.6f})")
+        print("Density matrix validation failed: " + "; ".join(error_messages))
 
     return error_messages, time_cut
+
+
+def _evolve_single_step(
+    sim_oqs: SimulationModuleOQS,
+    state: Qobj,
+    t_prev: float,
+    t_curr: float,
+    options: dict,
+    run_kwargs: dict,
+) -> Qobj:
+    """Evolve one time step and return the updated state (lab frame if RWA enabled)."""
+    t_list = [t_prev, t_curr]
+    H = sim_oqs.evo_obj
+    solver = sim_oqs.simulation_config.ode_solver
+
+    if solver == "redfield":
+        res = brmesolve(
+            H=H,
+            psi0=state,
+            tlist=t_list,
+            a_ops=sim_oqs.decay_channels,
+            e_ops=None,
+            options=options,
+            **run_kwargs,
+        )
+    elif solver in {"lindblad", "paper_eqs"}:
+        res = mesolve(
+            H=H,
+            rho0=state,
+            tlist=t_list,
+            c_ops=sim_oqs.decay_channels,
+            e_ops=None,
+            options=options,
+        )
+    else:
+        raise ValueError(f"Unsupported solver '{solver}'.")
+
+    next_state = res.states[-1]
+    if sim_oqs.simulation_config.rwa_sl:
+        next_state = from_rotating_frame_op(
+            next_state,
+            t_curr,
+            sim_oqs.system.n_atoms,
+            sim_oqs.laser.carrier_freq_fs,
+        )
+    return next_state
 
 
 def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
@@ -154,7 +200,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     - Negative eigenvalues (non-physical states)
     - Trace deviation from 1.0
 
-    RWA conversion is automatically applied in compute_evolution if enabled.
+    RWA conversion is applied per step to keep diagnostics in the lab frame.
     """
     # print(f"Checking '{sim_oqs.simulation_config.ode_solver}' solver")
     copy_sim_oqs = deepcopy(sim_oqs)
@@ -176,32 +222,58 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     # INPUT VALIDATION
     _validate_simulation_input(copy_sim_oqs)
 
-    times_result, states = compute_evolution(copy_sim_oqs, progress_bar="enhanced")
+    # Prepare solver options for step-by-step evolution
+    run_kwargs, options = copy_sim_oqs._solver_split()
+    options.setdefault("progress_bar", False)
+    options.setdefault("store_states", True)
+    options.setdefault("store_final_state", True)
 
-    # CHECK THE RESULT
-    if not isinstance(times_result, np.ndarray):
-        raise TypeError("Times must be a numpy array")
-    if not isinstance(states, list):
-        raise TypeError("States must be a list")
-    if len(times_result) != len(times) or not np.allclose(times_result, times):
-        print("Warning: Result times do not match input times exactly")
-        print(f"Result times length: {len(times_result)}, input: {len(times)}")
-        # print(f"First few result times: {times_result[:10]}")
-        # print(f"First few input times: {times[:10]}")
-        # Don't raise, as the evolution may have boundary overlaps
-    if len(states) != len(times_result):
-        raise ValueError("Number of output states does not match number of result time points")
-
-    # CHECK DENSITY MATRIX PROPERTIES
-    # RWA conversion is already done in compute_evolution if needed
-
-    # Enhanced state checking with more diagnostics
+    # Step-by-step evolution with immediate checks
     print("\n \n=== STATE-BY-STATE ANALYSIS ===")
-    error_messages, time_cut = _check_density_matrix_properties(states, times_result)
+    prev_state = None
+    current_state = copy_sim_oqs.initial_state
+    time_cut = np.inf
+    error_messages: List[str] = []
 
-    if not error_messages:
+    for index, time in enumerate(times):
+        if index == 0:
+            state_to_check = (
+                from_rotating_frame_op(
+                    current_state,
+                    float(time),
+                    copy_sim_oqs.system.n_atoms,
+                    copy_sim_oqs.laser.carrier_freq_fs,
+                )
+                if copy_sim_oqs.simulation_config.rwa_sl
+                else current_state
+            )
+        else:
+            current_state = _evolve_single_step(
+                copy_sim_oqs,
+                current_state,
+                float(times[index - 1]),
+                float(time),
+                options,
+                run_kwargs,
+            )
+            state_to_check = current_state
+
+        error_messages, time_cut = _check_density_matrix_state(
+            state_to_check,
+            float(time),
+            index,
+            len(times),
+            prev_state=prev_state,
+        )
+
+        if error_messages:
+            break
+
+        prev_state = state_to_check
+
+    if not error_messages and prev_state is not None:
         print("✅ Checks passed. DM remains Hermitian and positive.")
-        print(f"Final state trace: {states[-1].tr():.6f}")
-        print(f"Final state min eigenvalue: {states[-1].eigenenergies().min():.10f}")
+        print(f"Final state trace: {prev_state.tr():.6f}")
+        print(f"Final state min eigenvalue: {prev_state.eigenenergies().min():.10f}")
 
     return time_cut
