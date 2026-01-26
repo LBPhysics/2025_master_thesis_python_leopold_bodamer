@@ -23,6 +23,15 @@ Modular tools for simulating 1D and 2D electronic four-wave mixing spectroscopy 
 
 The package underpins the numerical results of the Master’s thesis and is designed to be reusable for related projects.
 
+## Branch notes
+
+- **master**: stable baseline.
+	- Solvers: `lindblad`, `redfield`, `paper_eqs`.
+	- Bath models: `ohmic`, `drudelorentz`, `ohmic+lorentzian`, `drudelorentz+lorentzian`.
+- **ideas**: experimental extensions (currently unstable/problematic).
+	- Extra solvers: `heom`, `montecarlo`.
+	- Extra bath models: `subohmic`, `superohmic`, `subohmic+lorentzian`, `superohmic+lorentzian`.
+
 ## Core capabilities
 
 | Domain | Highlights |
@@ -30,7 +39,7 @@ The package underpins the numerical results of the Master’s thesis and is desi
 | Atomic & excitonic models | Cylindrical chain geometries, single/double excitation truncation, history-aware frequency updates |
 | Bath descriptions | Ohmic and Drude–Lorentz spectral densities, Qutip `OhmicEnvironment`, configurable coupling strengths |
 | Laser pulses | Gaussian and cos² envelopes, automatic pulse-delay synthesis, phase cycling presets |
-| Simulation engine | Factory to assemble `SimulationModuleOQS`, solver validation, support for Qutip solvers and paper-derived Liouvillians |
+| Simulation engine | Factory to assemble `SimulationModuleOQS`, solver validation, support for QuTiP solvers and paper-derived Liouvillians |
 | Spectroscopy utilities | Analytical polarization, solver sanity checks, FFT helpers, signal averaging and component selection |
 | Project utilities | Default parameter validation, file I/O helpers, thesis path conventions, plotting helpers |
 
@@ -132,28 +141,17 @@ You can pass solver-specific knobs under `config.solver_options`. These are forw
 Defaults live in `qspectro2d.config.simulation.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validation.validate`.
 Unknown keys raise an error to avoid silently ignored typos.
 
-Common keys (for the solvers that support them):
+Common keys (for the supported solvers):
 - `atol`, `rtol`: absolute/relative tolerances (must be > 0)
 - `nsteps`: maximum allowed internal steps (must be > 0)
 - `method`: ODE method string (e.g. `"bdf"`)
 - `max_step`, `min_step`: optional step size limits
-- `progress_bar`: show QuTiP progress bar (supported by `montecarlo` and `heom`)
 
 Solver-specific keys:
 - `redfield`:
 	- `sec_cutoff`: controls the secular approximation in QuTiP `brmesolve`
 		- `sec_cutoff = -1` disables the secular approximation
 		- `sec_cutoff > 0` enables the secular approximation with that cutoff
-- `montecarlo`:
-	- `ntraj`: number of trajectories
-- `heom`:
-	- `max_depth`: hierarchy depth (1 approaches Redfield; higher is more accurate/costly)
-	- `approx_method`: bath decomposition method (e.g. `"prony"`)
-	- `n_exp`: number of exponentials in the decomposition (when supported by the chosen method)
-	- `Ni`, `Nr`: decomposition knobs (method-dependent)
-	- `combine`, `separate`: decomposition bookkeeping switches
-	- `n_t`, `t_max`: internal bath-fit grid size and max time
-	- `tag`: optional solver tag
 - `paper_eqs`: no `solver_options` (empty allow-list)
 
 Example (turn off secular approximation for Bloch–Redfield):
