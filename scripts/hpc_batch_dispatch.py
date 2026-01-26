@@ -8,6 +8,7 @@ simulation locally before launching any jobs to an hpc cluster.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import shlex
 import shutil
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Sequence
 import numpy as np
 
-from qspectro2d.config.create_sim_obj import load_simulation
+from qspectro2d.config.create_sim_obj import load_simulation, load_simulation_config
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
@@ -52,13 +53,20 @@ def estimate_slurm_resources(
     N_dim: int,
     solver: str = "lindblad",
     mem_safety: float = 100.0,
-    base_mb: int = 500,
-    time_safety: float = 20,
-    base_time: float = 300.0,
+    base_mb: float = 500.0,
+    time_safety: float = 5.0,
+    base_time: float = 0.0,
     rwa_sl: bool = True,
-) -> tuple[str, str]:
+    summary_path: Path | None = None,
+ ) -> tuple[str, str]:
     """
-    Estimate SLURM memory and runtime for QuTiP mesolve evolutions.
+    Estimate SLURM memory and runtime for QuTiP evolutions.
+
+    Scaling model (per batch):
+        time ~ base_t * solver_factor * rwa_factor
+               * (n_times / 1000) * (N_dim**2)
+               * (combos_per_batch / workers)
+               * time_safety
     """
     # ---------------------- MEMORY ----------------------
     bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
@@ -69,22 +77,75 @@ def estimate_slurm_resources(
     # ---------------------- TIME ------------------------
     # Number of total independent simulations
     combos_total = n_inhom * n_t_coh
-    combos_per_batch = max(1, int(math.ceil(combos_total / max(1, n_batches))))
+    batches = max(1, n_batches)
+    combos_per_batch = max(1, int(math.ceil(combos_total / batches)))
 
-    # Empirical baseline: base_time s per combo for lindblad, 1 atom, n_times=1000, N=2
-    base_t = 0.03
+    # Empirical baseline: base_t s per combo for lindblad+RWA, 1 atom, n_times=1000, N=2
+    base_t = 2.3
     solver_factor = {
+        "paper_eqs": 1.0,
         "lindblad": 1.0,
-        "redfield": 5.0,
-        "paper_eqs": 3.0,
+        "redfield": 1.06,
     }
+    # Conservative no-RWA factor (max observed across solvers)
+    rwa_factor = 3.0 if not rwa_sl else 1.0
+
+    # Optional calibration using sweep summary
+    if summary_path and summary_path.exists():
+        try:
+            summary_data = json.loads(summary_path.read_text(encoding="utf-8"))
+            by_label = {entry["label"]: entry for entry in summary_data}
+            baseline_entry = by_label.get("baseline")
+            if baseline_entry:
+                baseline_cfg = load_simulation_config(baseline_entry["config_path"])
+                baseline_times = np.asarray(compute_times_local(baseline_cfg), dtype=float)
+                baseline_runtime = float(baseline_entry["runtime_s"])
+
+                # Calibrate solver factors from sweep ratios
+                solver_factor = {
+                    "redfield": 1.0,
+                    "lindblad": solver_factor.get("lindblad", 1.0),
+                    "paper_eqs": solver_factor.get("paper_eqs", 1.0),
+                }
+                lindblad_entry = by_label.get("config_solver=lindblad")
+                if lindblad_entry:
+                    solver_factor["lindblad"] = (
+                        float(lindblad_entry["runtime_s"]) / baseline_runtime
+                    )
+                paper_entry = by_label.get("config_solver=paper_eqs")
+                if paper_entry:
+                    solver_factor["paper_eqs"] = (
+                        float(paper_entry["runtime_s"]) / baseline_runtime
+                    )
+
+                # Calibrate RWA factor if present
+                no_rwa_entry = by_label.get("laser_rwa_sl=False")
+                if no_rwa_entry:
+                    rwa_factor = float(no_rwa_entry["runtime_s"]) / baseline_runtime
+
+                # Calibrate base_t from baseline runtime (assume combos=1, safety=1)
+                n_times_base = max(1, len(baseline_times))
+                base_t = (
+                    baseline_runtime
+                    / ((n_times_base / 1000) * (N_dim**2) * solver_factor["lindblad"])
+                )
+                print(f"Calibrated base_t={base_t:.4g} s (summary)")
+        except Exception:
+            pass
+
     if solver not in solver_factor:
         raise ValueError(f"Unsupported solver '{solver}'.")
-    if not rwa_sl:
-        base_t *= 5.0  # non-RWA is WAY slower
+    if rwa_sl:
+        rwa_factor = 1.0
 
     # scaling ~ n_times * N^2  (sparse regime)
-    time_per_combo = base_t * solver_factor[solver] * (n_times / 1000) * (N_dim**2)
+    time_per_combo = (
+        base_t
+        * solver_factor[solver]
+        * rwa_factor
+        * (n_times / 1000)
+        * (N_dim**2)
+    )
 
     # total time for one batch (divide by workers)
     total_seconds = time_per_combo * combos_per_batch * time_safety / max(1, workers)
