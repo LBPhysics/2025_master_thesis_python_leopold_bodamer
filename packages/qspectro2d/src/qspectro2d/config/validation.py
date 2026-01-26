@@ -200,11 +200,6 @@ def validate(params: dict) -> None:
         if nsteps is not None and nsteps <= 0:
             raise ValueError("solver_options.nsteps must be > 0")
 
-        if ode_solver == "heom":
-            bath_cfg = solver_options.get("bath")
-            if bath_cfg is not None and not isinstance(bath_cfg, dict):
-                raise TypeError("solver_options['bath'] must be a dict when provided.")
-
         allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(ode_solver, []))
         unknown_keys = set(solver_options) - allowed_keys
         if unknown_keys:

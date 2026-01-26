@@ -175,7 +175,7 @@ class AtomBathCoupling:
         )
 
         args = extract_bath_parameters(self.bath)
-        
+
         args["alpha"] = args["alpha"] * args["wc"]  # rescale coupling for paper eqs
         P_wij = power_spectrum_func_paper(w_ij, **args)
         """
@@ -251,35 +251,3 @@ class AtomBathCoupling:
     def __str__(self) -> str:
         return self.summary()
 
-    # --- HEOM coupling helpers -------------------------------------------------
-    def heom_coupling_ops(
-        self,
-    ) -> list[Qobj]:
-        """Return system coupling operators suited for HEOM simulations.
-        # TODO add decay operators??
-        Parameters
-        -------
-        list[Qobj]
-            Coupling operators transformed into the eigenbasis of ``H0``.
-        """
-
-        sys = self.system
-        sites = list(range(1, sys.n_atoms + 1))
-        coupling_ops: list[Qobj] = []
-
-        for idx in sites:
-            op = sys.deph_op_i(idx)
-            coupling_ops.append(sys.to_eigenbasis(op))
-
-        max_exc = (
-            sys.max_excitation if sys.max_excitation is not None else 1
-        )  # include doubles when available
-        if max_exc == 2:
-            from qspectro2d.core.atomic_system.system_class import pair_to_index
-
-            for i in range(1, sys.n_atoms):
-                for j in range(i + 1, sys.n_atoms + 1):
-                    op = sys.deph_op_i(pair_to_index(i, j, sys.n_atoms))
-                    coupling_ops.append(sys.to_eigenbasis(op))
-
-        return coupling_ops

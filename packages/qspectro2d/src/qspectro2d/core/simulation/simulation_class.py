@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 import numpy as np
 from qutip import Qobj, QobjEvo, ket2dm, mesolve, BosonicEnvironment
-from typing import Any, List, Union
+from typing import List, Union
 
 from ..atomic_system import AtomicSystem
 from ..laser_system import e_pulses, epsilon_pulses, LaserPulseSequence
@@ -29,13 +29,13 @@ class SimulationModuleOQS:
         if self.simulation_config.t_coh_current is None:
             self.simulation_config.t_coh_current = float(self.simulation_config.t_coh_max)
 
-    # --- tiny, strict splitter (incl. HEOM) ---------------------------------------
-    def _solver_split(self) -> tuple[dict, dict, str]:
+    # --- tiny, strict splitter ---------------------------------------
+    def _solver_split(self) -> tuple[dict, dict]:
         """
         Split self.simulation_config.solver_options into:
         run_kwargs  -> solver call
         options     -> ODE options (passed as options=...)
-        solver_key  -> {'lindblad','redfield','montecarlo','heom'}
+        solver_key  -> {'lindblad','redfield','paper_eqs'}
         """
         key = str(self.simulation_config.ode_solver)
         src = dict(self.simulation_config.solver_options)
@@ -51,78 +51,30 @@ class SimulationModuleOQS:
             if "sec_cutoff" in src:
                 run["sec_cutoff"] = src.pop("sec_cutoff")
             return run, options
-        elif key == "montecarlo":
-            run = {}
-            if "ntraj" in src:
-                run["ntraj"] = int(src.pop("ntraj"))
-            return run, options
-
-        elif key == "heom":
-            # only runtime kw that goes to heomsolve; bath fit handled below
-            run = {}
-            if "max_depth" in src:
-                run["max_depth"] = int(src.pop("max_depth"))
-            # keep remaining keys in src for HEOM fit (_collect_heom_inputs consumes them)
-            return run, options
-
-        else:
+        elif key == "paper_eqs":
             return {}, options
-
-    def _collect_heom_inputs(self) -> tuple[list[Qobj], BosonicEnvironment, dict[str, Any]]:
-        """Assemble HEOM coupling operators, bath approximation, and run kwargs."""
-        # pull remaining solver keys captured in _solver_split
-        src = self.simulation_config.solver_options
-
-        coupling_ops = self.sb_coupling.heom_coupling_ops()
-
-        # time grid for env approximation
-        n_t = int(src.get("n_t"))
-        t_max = float(src.get("t_max"))
-        tlist = np.linspace(0.0, t_max, n_t, dtype=float)
-
-        approx_kwargs = dict(
-            method=str(src.get("approx_method")),
-            tlist=tlist,
-            Nr=int(src.get("Nr")),
-            Ni=int(src.get("Ni")),
-            combine=bool(src.get("combine")),
-            separate=bool(src.get("separate")),
-        )
-        tag = src.get("tag", None)
-        if tag is not None:
-            approx_kwargs["tag"] = tag
-
-        bath_env, _fit = self.bath.approximate(**approx_kwargs)
-
-        # max_depth is passed via run_kwargs; default to 1 if not set earlier
-        max_depth = int(src.pop("max_depth", 1))
-        run_kwargs = {"max_depth": max_depth}
-        return coupling_ops, bath_env, run_kwargs
+        raise ValueError(f"Unsupported solver '{key}'.")
 
     # --- Deferred solver-dependent initialization ---------------------------------
     @property
-    def evo_obj(self) -> Union[Qobj, QobjEvo, Any]:
+    def evo_obj(self) -> Union[Qobj, QobjEvo]:
         solver = self.simulation_config.ode_solver
         if solver == "paper_eqs":
             from qspectro2d.core.simulation.liouvillian_paper import matrix_ODE_paper
 
-            evo_obj = QobjEvo(lambda t: matrix_ODE_paper(t, self))
-        else:  # solver == "lindblad", "redfield", "montecarlo" or "heom":
-            evo_obj = QobjEvo(self.H_total_t)
-        return evo_obj
+            return QobjEvo(lambda t: matrix_ODE_paper(t, self))
+        return QobjEvo(self.H_total_t)
 
     @property
     def decay_channels(self) -> list[Qobj] | list[tuple[Qobj, BosonicEnvironment]]:
         solver = self.simulation_config.ode_solver
-        if solver in {"lindblad", "montecarlo"}:
-            decay_channels = self.sb_coupling.me_decay_channels
-        elif solver == "redfield":
-            decay_channels = self.sb_coupling.br_decay_channels
-        elif solver == "heom":
-            decay_channels = self.sb_coupling.heom_coupling_ops()
-        else:  # for paper_eqs & Fallback: create generic evolution with no decay channels.
-            decay_channels = []
-        return decay_channels
+        if solver == "lindblad":
+            return self.sb_coupling.me_decay_channels
+        if solver == "redfield":
+            return self.sb_coupling.br_decay_channels
+        if solver == "paper_eqs":
+            return []
+        raise ValueError(f"Unsupported solver '{solver}'.")
 
     @property
     def initial_state(self) -> Qobj:
