@@ -112,6 +112,12 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Optional path to a YAML simulation config file",
+    )
+    parser.add_argument(
         "--sim_type",
         choices=["0d", "1d", "2d"],
         default="1d",
@@ -125,7 +131,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config_path = pick_config_yaml().resolve()
+    if args.config:
+        config_path = Path(args.config).expanduser().resolve()
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+    else:
+        config_path = pick_config_yaml().resolve()
 
     print("=" * 80)
     print("LOCAL ALL-COMBINATIONS RUNNER")
