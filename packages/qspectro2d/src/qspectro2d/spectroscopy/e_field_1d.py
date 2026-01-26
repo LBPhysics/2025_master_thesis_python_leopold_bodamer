@@ -8,7 +8,7 @@ Steps:
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
 - P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
 
-Supports lindblad, redfield, and Monte Carlo solvers via the internals of SimulationModuleOQS.
+Supports lindblad, redfield, and paper_eqs solvers via the internals of SimulationModuleOQS.
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from __future__ import annotations
 from typing import List, Sequence, Tuple, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
-from qutip import mesolve, mcsolve, brmesolve
-from qutip.solver.heom import heomsolve
+from qutip import mesolve, brmesolve
 
 from ..core.simulation.simulation_class import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local, compute_t_det
@@ -87,33 +86,7 @@ def compute_evolution(
     else:
         options.setdefault("store_states", True)
 
-    if solver == "heom":
-        # build bath expansion + couple
-        coupling_ops, bath_env, heom_run = sim_oqs._collect_heom_inputs()
-        run_kwargs.setdefault("max_depth", heom_run["max_depth"])
-        bath_specs = [(bath_env, op) for op in coupling_ops]
-        res = heomsolve(
-            H=H,
-            bath=bath_specs,
-            state0=state0,
-            tlist=t_list,
-            e_ops=e_ops,
-            options=options,
-            **run_kwargs,
-        )
-
-    elif solver == "montecarlo":
-        res = mcsolve(
-            H=H,
-            state=state0,
-            tlist=t_list,
-            c_ops=sim_oqs.decay_channels,
-            e_ops=e_ops,
-            options=options,
-            **run_kwargs,
-        )
-
-    elif solver == "redfield":
+    if solver == "redfield":
         res = brmesolve(
             H=H,
             psi0=state0,
@@ -123,8 +96,7 @@ def compute_evolution(
             options=options,
             **run_kwargs,
         )
-
-    else:  # "lindblad"
+    elif solver in {"lindblad", "paper_eqs"}:
         res = mesolve(
             H=H,
             rho0=state0,
@@ -133,6 +105,8 @@ def compute_evolution(
             e_ops=e_ops,
             options=options,
         )
+    else:
+        raise ValueError(f"Unsupported solver '{solver}'.")
 
     data = res.expect[0] if e_ops is not None else res.states
 
@@ -163,7 +137,6 @@ def compute_polarization_over_window(
         from qspectro2d.spectroscopy.polarization import time_dependent_polarization_rwa
 
         def polarization(t, state):
-            # HEOM returns HierarchyADOsState objects; extract the system density first.
             rho = state.extract(0) if hasattr(state, "extract") else state
             if hasattr(rho, "isket") and rho.isket:
                 rho = rho.proj()
@@ -320,7 +293,7 @@ def parallel_compute_1d_e_comps(
                 phase_factor = np.exp(-1j * (l * phi1_v + m * phi2_v))
                 P_acc[sig] += phase_factor * P_phi
                 if np.all(P_phi == 0):
-                    print("All zero P_phi detected!")
+                    print("Warning: All zero P_phi detected!")
 
     # Extract components for this realization
     dphi = np.diff(phases_eff).mean() if len(phases_eff) > 1 else 1.0

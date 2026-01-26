@@ -20,7 +20,7 @@ DT = 0.1  # Spacing between time grid points in fs
 T_WAIT = 0.0  # Waiting time in fs
 
 # --- Supported options ---
-SUPPORTED_SOLVERS = ["lindblad", "redfield", "paper_eqs", "heom", "montecarlo"]
+SUPPORTED_SOLVERS = ["lindblad", "redfield", "paper_eqs"]
 
 SUPPORTED_BATHS = [
     "ohmic",

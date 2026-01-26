@@ -20,6 +20,15 @@ thesis_python/
 └─ README.md            # You are here
 ```
 
+## Branch notes
+
+- **master**: stable baseline.
+   - Solvers: `lindblad`, `redfield`, `paper_eqs`.
+   - Bath models: `ohmic`, `drudelorentz`, `ohmic+lorentzian`, `drudelorentz+lorentzian`.
+- **ideas**: experimental extensions (currently unstable/problematic).
+   - Extra solvers: `heom`, `montecarlo`.
+   - Extra bath models: `subohmic`, `superohmic`, `subohmic+lorentzian`, `superohmic+lorentzian`.
+
 Each package in `packages/` is a standalone `pyproject`.  When you create the conda environment the packages are installed in editable mode automatically.
 ## Environment setup
 
