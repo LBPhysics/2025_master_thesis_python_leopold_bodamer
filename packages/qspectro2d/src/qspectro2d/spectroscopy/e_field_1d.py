@@ -178,8 +178,8 @@ def sim_with_only_pulses(
 
 def _worker_P_phi_pair(
     config_path: str, t_coh: float, freq_vector: List[float], phi1: float, phi2: float
-) -> Tuple[float, float, np.ndarray, np.ndarray]:
-    """Process worker: compute (phi1, phi2, t_det, P_{phi1,phi2})."""
+) -> Tuple[float, float, np.ndarray, np.ndarray, float, float, float, List[float]]:
+    """Process worker: compute (phi1, phi2, t_det, P_{phi1,phi2}) plus diagnostics."""
     from qspectro2d.config.create_sim_obj import load_simulation
 
     sim_oqs = load_simulation(config_path)
@@ -210,7 +210,11 @@ def _worker_P_phi_pair(
             P_sub_sum += P_sub
 
     P_phi = P_total - P_sub_sum
-    return phi1, phi2, t_det_a, P_phi
+    max_abs_total = float(np.max(np.abs(P_total))) if len(P_total) else 0.0
+    max_abs_sub = float(np.max(np.abs(P_sub_sum))) if len(P_sub_sum) else 0.0
+    max_abs_phi = float(np.max(np.abs(P_phi))) if len(P_phi) else 0.0
+    pulse_amps = list(sim_oqs.laser.pulse_amplitudes)
+    return phi1, phi2, t_det_a, P_phi, max_abs_total, max_abs_sub, max_abs_phi, pulse_amps
 
 
 # --------------------------------------------------------------------------------------
@@ -286,14 +290,33 @@ def parallel_compute_1d_e_comps(
                     ex.submit(_worker_P_phi_pair, config_path, t_coh, freq_vector, phi1, phi2)
                 )
         for fut in as_completed(futures):
-            phi1_v, phi2_v, _, P_phi = fut.result()
+            (
+                phi1_v,
+                phi2_v,
+                _,
+                P_phi,
+                max_abs_total,
+                max_abs_sub,
+                max_abs_phi,
+                pulse_amps,
+            ) = fut.result()
             for sig in sig_types:
                 lm_tuple = COMPONENT_MAP[sig] if lm is None else lm
                 l, m = lm_tuple
                 phase_factor = np.exp(-1j * (l * phi1_v + m * phi2_v))
                 P_acc[sig] += phase_factor * P_phi
-                if np.all(P_phi == 0):
-                    print("Warning: All zero P_phi detected!")
+            if np.all(P_phi == 0):
+                reason = ""
+                if max_abs_total == 0.0 and max_abs_sub == 0.0:
+                    reason = " (P_total and P_sub_sum are zero)"
+                elif max_abs_phi == 0.0 and max_abs_total > 0.0:
+                    reason = " (P_total cancels P_sub_sum)"
+                print(
+                    "Warning: All zero P_phi detected!"
+                    f" phi1={phi1_v:.3f}, phi2={phi2_v:.3f}, t_coh={t_coh:.3f} fs,"
+                    f" max|P_total|={max_abs_total:.3e}, max|P_sub|={max_abs_sub:.3e},"
+                    f" max|P_phi|={max_abs_phi:.3e}, pulse_amps={pulse_amps}{reason}"
+                )
 
     # Extract components for this realization
     dphi = np.diff(phases_eff).mean() if len(phases_eff) > 1 else 1.0

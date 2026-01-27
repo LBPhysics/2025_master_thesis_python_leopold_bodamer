@@ -54,6 +54,7 @@ def estimate_slurm_resources(
     solver: str = "lindblad",
     mem_safety: float = 100.0,
     base_mb: float = 500.0,
+    mem_per_combo_mb: float = 1.0,
     time_safety: float = 5.0,
     base_time: float = 0.0,
     rwa_sl: bool = True,
@@ -68,20 +69,21 @@ def estimate_slurm_resources(
                * (combos_per_batch / workers)
                * time_safety
     """
-    # ---------------------- MEMORY ----------------------
-    bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
-    total_bytes = mem_safety * workers * bytes_per_solver
-    mem_mb = base_mb + total_bytes / (1024**2)
-    requested_mem = f"{int(math.ceil(mem_mb))}M"
-
-    # ---------------------- TIME ------------------------
     # Number of total independent simulations
     combos_total = n_inhom * n_t_coh
     batches = max(1, n_batches)
     combos_per_batch = max(1, int(math.ceil(combos_total / batches)))
 
+    # ---------------------- MEMORY ----------------------
+    bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
+    total_bytes = mem_safety * workers * bytes_per_solver
+    mem_mb = base_mb + total_bytes / (1024**2) + combos_per_batch * mem_per_combo_mb
+    requested_mem = f"{int(math.ceil(mem_mb))}M"
+
+    # ---------------------- TIME ------------------------
+
     # Empirical baseline: base_t s per combo for lindblad+RWA, 1 atom, n_times=1000, N=2
-    base_t = 2.3
+    base_t = 0.45
     solver_factor = {
         "paper_eqs": 1.0,
         "lindblad": 1.0,
