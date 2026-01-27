@@ -88,13 +88,13 @@ from pathlib import Path
 path = Path(os.environ["SWEEP_RESULT_PATH"])
 path.parent.mkdir(parents=True, exist_ok=True)
 
-data = {
+data = {{
 	"index": int(os.environ["SWEEP_INDEX"]),
 	"label": os.environ["SWEEP_LABEL"],
 	"config_path": os.environ["SWEEP_CONFIG_PATH"],
 	"return_code": int(os.environ["SWEEP_RETURN_CODE"]),
 	"runtime_s": float(os.environ["SWEEP_RUNTIME_S"]),
-}
+}}
 
 path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 PY
