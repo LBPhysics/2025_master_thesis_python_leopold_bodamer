@@ -39,21 +39,18 @@ DATA_DIR = PROJECT_ROOT / "data" / "jobs" / "sweeps"
 def _render_slurm_script(
 	*,
 	job_name: str,
-	case_index: int,
-	case_label: str,
+	batch_path: Path,
 	sim_type: str,
-	case_path: Path,
-	results_path: Path,
+	results_dir: Path,
 	python_executable: Path,
 	partition: str,
 	requested_mem: str,
 	requested_time: str,
 ) -> str:
 	python_cmd = str(python_executable)
-	case_path_str = str(case_path)
-	results_path_str = str(results_path)
-	case_label_safe = case_label.replace("'", "\"")
 	calc_datas = (SCRIPTS_DIR / "local" / "calc_datas.py").as_posix()
+	batch_path_str = str(batch_path)
+	results_dir_str = str(results_dir)
 	return f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/%x.out
@@ -67,39 +64,43 @@ set -euo pipefail
 
 export PYTHONPATH=\"{os.environ.get('PYTHONPATH', '')}\"
 
-START_TS=$(date +%s)
-"{python_cmd}" "{calc_datas}" --sim_type {sim_type} --config "{case_path_str}"
-RC=$?
-END_TS=$(date +%s)
-RUNTIME_S=$((END_TS-START_TS))
-
-export SWEEP_RESULT_PATH="{results_path_str}"
-export SWEEP_INDEX="{case_index}"
-export SWEEP_LABEL="{case_label_safe}"
-export SWEEP_CONFIG_PATH="{case_path_str}"
-export SWEEP_RETURN_CODE="$RC"
-export SWEEP_RUNTIME_S="$RUNTIME_S"
-
 "{python_cmd}" - <<'PY'
 import json
 import os
+import subprocess
+import time
 from pathlib import Path
 
-path = Path(os.environ["SWEEP_RESULT_PATH"])
-path.parent.mkdir(parents=True, exist_ok=True)
+batch_path = Path(r"{batch_path_str}")
+results_dir = Path(r"{results_dir_str}")
+results_dir.mkdir(parents=True, exist_ok=True)
 
-data = {{
-	"index": int(os.environ["SWEEP_INDEX"]),
-	"label": os.environ["SWEEP_LABEL"],
-	"config_path": os.environ["SWEEP_CONFIG_PATH"],
-	"return_code": int(os.environ["SWEEP_RETURN_CODE"]),
-	"runtime_s": float(os.environ["SWEEP_RUNTIME_S"]),
-}}
+with batch_path.open("r", encoding="utf-8") as handle:
+    cases = json.load(handle)
 
-path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+python_cmd = r"{python_cmd}"
+calc_datas = r"{calc_datas}"
+sim_type = r"{sim_type}"
+
+for case in cases:
+    index = int(case["index"])
+    label = case["label"]
+    config_path = case["config_path"]
+    start = time.perf_counter()
+    proc = subprocess.run([python_cmd, calc_datas, "--sim_type", sim_type, "--config", config_path])
+    elapsed = time.perf_counter() - start
+
+    data = {{
+        "index": index,
+        "label": label,
+        "config_path": config_path,
+        "return_code": int(proc.returncode),
+        "runtime_s": round(elapsed, 3),
+    }}
+
+    out_path = results_dir / f"case_{index:03d}.json"
+    out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
 PY
-
-exit $RC
 """
 
 
@@ -153,6 +154,12 @@ def main() -> None:
 		type=str,
 		default=None,
 		help="Optional label for the sweep folder",
+	)
+	parser.add_argument(
+		"--n_batches",
+		type=int,
+		default=5,
+		help="Number of sweep batches (SLURM jobs)",
 	)
 	parser.add_argument(
 		"--partition",
@@ -236,21 +243,37 @@ def main() -> None:
 	print(f"Sweep directory: {sweep_dir}")
 	print(f"Total cases: {len(cases)}")
 
+	case_entries: list[dict[str, Any]] = []
 	for idx, case in enumerate(cases, start=1):
 		cfg = apply_overrides(base_cfg, case.overrides)
 		case_path = sweep_dir / f"case_{idx:03d}.yaml"
 		with case_path.open("w", encoding="utf-8") as handle:
 			yaml.safe_dump(cfg, handle, sort_keys=False)
+		case_entries.append(
+			{
+				"index": idx,
+				"label": case.label,
+				"config_path": str(case_path),
+			}
+		)
 
-		result_path = results_dir / f"case_{idx:03d}.json"
-		job_name = f"sweep_{idx:03d}"
+	n_batches = max(1, int(args.n_batches))
+	batch_size = max(1, int(math.ceil(len(case_entries) / n_batches)))
+	for batch_idx in range(n_batches):
+		start = batch_idx * batch_size
+		end = min(start + batch_size, len(case_entries))
+		if start >= end:
+			break
+		batch_cases = case_entries[start:end]
+		batch_path = sweep_dir / f"batch_{batch_idx:03d}.json"
+		batch_path.write_text(json.dumps(batch_cases, indent=2) + "\n", encoding="utf-8")
+
+		job_name = f"sweep_b{batch_idx:02d}"
 		slurm_text = _render_slurm_script(
 			job_name=job_name,
-			case_index=idx,
-			case_label=case.label,
+			batch_path=batch_path,
 			sim_type=args.sim_type,
-			case_path=case_path,
-			results_path=result_path,
+			results_dir=results_dir,
 			python_executable=python_executable,
 			partition=args.partition,
 			requested_mem=args.mem,
