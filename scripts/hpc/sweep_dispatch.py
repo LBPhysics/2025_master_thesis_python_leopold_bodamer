@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -62,6 +63,8 @@ def _render_slurm_script(
 
 set -euo pipefail
 
+mkdir -p logs
+
 export PYTHONPATH=\"{os.environ.get('PYTHONPATH', '')}\"
 
 "{python_cmd}" - <<'PY'
@@ -91,15 +94,15 @@ for case in cases:
     elapsed = time.perf_counter() - start
 
     data = {{
-        "index": index,
-        "label": label,
-        "config_path": config_path,
-        "return_code": int(proc.returncode),
-        "runtime_s": round(elapsed, 3),
-    }}
+		"index": index,
+		"label": label,
+		"config_path": config_path,
+		"return_code": int(proc.returncode),
+		"runtime_s": round(elapsed, 3),
+	}}
 
-    out_path = results_dir / f"case_{index:03d}.json"
-    out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
+	out_path = results_dir / f"case_{{index:03d}}.json"
+	out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
 PY
 """
 
