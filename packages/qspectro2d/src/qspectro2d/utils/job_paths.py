@@ -55,15 +55,21 @@ def allocate_job_dir(root: Path, base_label: str) -> Path:
 
     candidate = root / base_label
     if not candidate.exists():
-        candidate.mkdir(parents=True)
-        return candidate
+        try:
+            candidate.mkdir(parents=True)
+            return candidate
+        except FileExistsError:
+            pass
 
     counter = 1
     while True:
         candidate = root / f"{base_label}_{counter:02d}"
         if not candidate.exists():
-            candidate.mkdir(parents=True)
-            return candidate
+            try:
+                candidate.mkdir(parents=True)
+                return candidate
+            except FileExistsError:
+                pass
         counter += 1
 
 

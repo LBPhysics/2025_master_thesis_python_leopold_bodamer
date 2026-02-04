@@ -16,7 +16,9 @@ import argparse
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
+import time
 from typing import Any
 import numpy as np
 
@@ -38,6 +40,19 @@ else:
 
 DATA_DIR = (PROJECT_ROOT / "data").resolve()
 DATA_DIR.mkdir(exist_ok=True)
+
+print = partial(print, flush=True)
+
+def _format_seconds(seconds: float) -> str:
+	if seconds < 1:
+		return f"{seconds * 1000:.1f} ms"
+	if seconds < 60:
+		return f"{seconds:.2f} s"
+	mins, secs = divmod(seconds, 60)
+	if mins < 60:
+		return f"{int(mins)}m {secs:04.1f}s"
+	hours, mins = divmod(mins, 60)
+	return f"{int(hours)}h {int(mins)}m {secs:04.1f}s"
 
 
 @dataclass(slots=True)
@@ -132,14 +147,17 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
 	if len(group) <= 1:
 		return group[0]  # Already 1D
 
-	# Sort by t_index
-	group_sorted = sorted(group, key=lambda e: e.metadata.get("t_index", 0))
+	# Sort by coherence time (more robust than t_index alone)
+	group_sorted = sorted(group, key=lambda e: float(e.metadata.get("t_coh_value", 0.0)))
 
 	# Check consistency
 	reference = group_sorted[0]
 	t_det = reference.t_det
 	signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
 	freq_ref = reference.frequency_sample_cm
+	ref_t_coh = reference.metadata.get("t_coh_value")
+	if ref_t_coh is None:
+		raise ValueError(f"Missing t_coh_value in metadata for {reference.path}")
 
 	for entry in group_sorted[1:]:
 		if not np.allclose(entry.frequency_sample_cm, freq_ref):
@@ -147,23 +165,68 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
 		current_signals = list(entry.metadata.get("signal_types", entry.signals.keys()))
 		if current_signals != signal_types:
 			raise ValueError(f"Inconsistent signals for {entry.path}")
+		if entry.metadata.get("t_coh_value") is None:
+			raise ValueError(f"Missing t_coh_value in metadata for {entry.path}")
 
-	# Handle variable signal lengths by truncating to minimum
-	min_len = min(len(entry.signals[sig]) for entry in group_sorted for sig in signal_types)
-	if len(t_det) > min_len:
-		t_det = t_det[:min_len]
-	for entry in group_sorted:
+	# Align to common detection-time window (no interpolation)
+	start = max(float(entry.t_det[0]) for entry in group_sorted if entry.t_det.size)
+	end = min(float(entry.t_det[-1]) for entry in group_sorted if entry.t_det.size)
+	if start > end:
+		raise ValueError("No overlapping t_det window across entries")
+
+	# Build reference t_det grid from the first entry within the common window
+	ref_mask = (reference.t_det >= start) & (reference.t_det <= end)
+	if not np.any(ref_mask):
+		raise ValueError(f"Reference entry {reference.path} has no samples in common t_det window")
+	ref_t_det = reference.t_det[ref_mask]
+
+	def _align_to_ref(entry: RunEntry) -> None:
+		mask = (entry.t_det >= start) & (entry.t_det <= end)
+		if not np.any(mask):
+			raise ValueError(f"Entry {entry.path} has no samples in common t_det window")
+		entry_t = entry.t_det[mask]
+		# Map each ref_t_det to nearest index in entry_t
+		idxs = np.searchsorted(entry_t, ref_t_det, side="left")
+		idxs = np.clip(idxs, 0, len(entry_t) - 1)
+		# Choose nearest of idx and idx-1
+		best = np.zeros_like(idxs)
+		for k, (i, t) in enumerate(zip(idxs, ref_t_det)):
+			candidates = [i]
+			if i > 0:
+				candidates.append(i - 1)
+			best_idx = min(candidates, key=lambda j: abs(entry_t[j] - t))
+			best[k] = best_idx
+		entry.t_det = ref_t_det
 		for sig in signal_types:
-			if len(entry.signals[sig]) > min_len:
-				entry.signals[sig] = entry.signals[sig][:min_len]
+			entry.signals[sig] = entry.signals[sig][mask][best]
+
+	for entry in group_sorted:
+		_align_to_ref(entry)
+
+	# Update reference t_det after alignment
+	t_det = ref_t_det
+
+	# Collapse duplicate t_coh entries (can happen after re-runs)
+	tol = 0.5 * float(reference.simulation_config.dt)
+	collapsed: list[RunEntry] = []
+	for entry in group_sorted:
+		entry_t_coh = float(entry.metadata.get("t_coh_value", 0.0))
+		if collapsed and np.isclose(entry_t_coh, float(collapsed[-1].metadata["t_coh_value"]), atol=tol):
+			# Average signals for duplicate t_coh
+			for sig in signal_types:
+				collapsed[-1].signals[sig] = 0.5 * (
+					collapsed[-1].signals[sig] + entry.signals[sig]
+				)
+			continue
+		collapsed.append(entry)
 
 	# Stack signals
 	stacked_signals = {
-		sig: np.stack([entry.signals[sig] for entry in group_sorted], axis=0)
+		sig: np.stack([entry.signals[sig] for entry in collapsed], axis=0)
 		for sig in signal_types
 	}
 
-	t_coh_values = [entry.metadata.get("t_coh_value", 0.0) for entry in group_sorted]
+	t_coh_values = [entry.metadata.get("t_coh_value", 0.0) for entry in collapsed]
 	t_coh_axis = np.asarray(t_coh_values, dtype=float)
 
 	# Sort by t_coh
@@ -177,7 +240,7 @@ def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
 	metadata_2d.update(
 		{
 			"sim_type": "2d",
-			"stacked_points": len(group_sorted),
+			"stacked_points": len(collapsed),
 		}
 	)
 	metadata_2d.pop("t_coh_value", None)
@@ -239,6 +302,17 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
 		t_det = reference.t_det
 		t_coh = reference.t_coh
 		signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
+		if t_coh is None:
+			raise ValueError("2D averaging requires a t_coh axis, but reference entry has None")
+
+		for entry in entries[1:]:
+			if entry.t_coh is None:
+				raise ValueError(f"Missing t_coh axis in {entry.path}")
+			if entry.t_coh.shape != t_coh.shape or not np.allclose(entry.t_coh, t_coh):
+				raise ValueError(
+					"Inconsistent t_coh axis across samples; "
+					f"reference={reference.path}, offending={entry.path}"
+				)
 
 		# Average signals
 		averaged_signals = {
@@ -325,27 +399,64 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
 
 
 def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
+	start_all = time.perf_counter()
 	abs_path = abs_path.expanduser().resolve()
-	anchor = _load_entry(abs_path)
+	print(f"Starting process_datas for: {abs_path}", flush=True)
+	print(f"Skip if exists: {skip_if_exists}", flush=True)
 
+	step_start = time.perf_counter()
+	anchor = _load_entry(abs_path)
+	print(
+		"Loaded anchor artifact: "
+		f"signals={list(anchor.signals.keys())}, "
+		f"t_det={anchor.t_det.shape}, "
+		f"t_coh={'None' if anchor.t_coh is None else anchor.t_coh.shape}"
+	)
+	print(f"Anchor load time: {_format_seconds(time.perf_counter() - step_start)}")
+
+	step_start = time.perf_counter()
 	entries = _discover_entries(anchor)
+	print(f"Discovered {len(entries)} input artifacts")
 	if not entries:
 		raise FileNotFoundError("No 1D artifacts found for processing")
+	print(f"Discovery time: {_format_seconds(time.perf_counter() - step_start)}")
 
 	# Group by sample
+	step_start = time.perf_counter()
 	groups = _group_by_sample(entries)
+	group_sizes = sorted((sample, len(group)) for sample, group in groups.items())
+	print(f"Grouped into {len(groups)} samples: {group_sizes}")
+	print(f"Grouping time: {_format_seconds(time.perf_counter() - step_start)}")
 
 	# Stack each group to 2D if needed
 	processed_per_sample: list[RunEntry] = []
 	for sample_idx, group in groups.items():
+		group_start = time.perf_counter()
 		if len(group) > 1:
+			print(f"Stacking sample {sample_idx}: {len(group)} artifacts")
 			stacked = _stack_group_to_2d(group)
 			processed_per_sample.append(stacked)
+			print(
+				f"Stacked sample {sample_idx}: t_coh={stacked.t_coh.shape if stacked.t_coh is not None else 'None'}, "
+				f"signals={[sig.shape for sig in stacked.signals.values()]}"
+			)
 		else:
 			processed_per_sample.append(group[0])
+			print(f"Sample {sample_idx}: single artifact (no stacking)")
+		print(
+			f"Sample {sample_idx} processing time: {_format_seconds(time.perf_counter() - group_start)}"
+		)
 
 	# Average across samples
+	step_start = time.perf_counter()
 	final_entry = _average_entries(processed_per_sample)
+	print(
+		"Averaging complete: "
+		f"sim_type={final_entry.simulation_config.sim_type}, "
+		f"averaged_count={final_entry.metadata.get('averaged_count')}, "
+		f"inhom_averaged={final_entry.metadata.get('inhom_averaged')}"
+	)
+	print(f"Averaging time: {_format_seconds(time.perf_counter() - step_start)}")
 
 	# Save the final artifact
 	directory, prefix = split_prefix(anchor.path)
@@ -363,19 +474,19 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 
 	# Save info if needed
 	info_path = directory / final_filename.replace(".npz", ".pkl")
-	if not info_path.exists():
-		extra_payload: dict[str, Any] = {}
-		if final_entry.job_metadata:
-			extra_payload.update(final_entry.job_metadata)
-		extra_payload.update({"t_det": final_entry.t_det, "t_coh": final_entry.t_coh})
-		save_info_file(
-			info_path,
-			final_entry.system,
-			final_entry.simulation_config,
-			bath=final_entry.bath,
-			laser=final_entry.laser,
-			extra_payload=extra_payload,
-		)
+	extra_payload: dict[str, Any] = {}
+	if final_entry.job_metadata:
+		extra_payload.update(final_entry.job_metadata)
+	extra_payload.update({"t_det": final_entry.t_det, "t_coh": final_entry.t_coh})
+	print(f"Writing info file: {info_path}")
+	save_info_file(
+		info_path,
+		final_entry.system,
+		final_entry.simulation_config,
+		bath=final_entry.bath,
+		laser=final_entry.laser,
+		extra_payload=extra_payload,
+	)
 
 	out_path = save_run_artifact(
 		signal_arrays=[final_entry.signals[sig] for sig in final_entry.signals],
@@ -392,10 +503,12 @@ def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
 		else 1
 	)
 
-	print(f"✅ Averaged samples check: Processed and saved final averaged artifact: {out_path}\n")
+	print(f"✅ Processed and saved final averaged artifact: {out_path}")
 	print(
-		f"   (processed {len(entries)} files, stacked {stacked_points} time points, averaged {len(processed_per_sample)} samples)\n"
+		f"Processed {len(entries)} files, stacked {stacked_points} time points, "
+		f"averaged {len(processed_per_sample)} samples"
 	)
+	print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
 	return out_path
 
 

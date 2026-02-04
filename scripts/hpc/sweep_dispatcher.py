@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -52,7 +53,9 @@ def _render_slurm_script(
 	calc_datas = (SCRIPTS_DIR / "local" / "calc_datas.py").as_posix()
 	batch_path_str = str(batch_path)
 	results_dir_str = str(results_dir)
-	return f"""#!/bin/bash
+	return textwrap.dedent(
+		f"""\
+#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/%x.out
 #SBATCH --error=logs/%x.err
@@ -93,7 +96,7 @@ for case in cases:
     proc = subprocess.run([python_cmd, calc_datas, "--sim_type", sim_type, "--config", config_path])
     elapsed = time.perf_counter() - start
 
-    data = {{
+	data = {{
 		"index": index,
 		"label": label,
 		"config_path": config_path,
@@ -105,6 +108,7 @@ for case in cases:
 	out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
 PY
 """
+	)
 
 
 def _collect_results(results_dir: Path, output_dir: Path) -> None:

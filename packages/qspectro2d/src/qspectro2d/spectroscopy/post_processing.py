@@ -69,6 +69,11 @@ def compute_spectra(
 
     # Sizes and extended sizes
     n_det = int(t_det.size)
+    if t_coh is not None:
+        min_det = min(arr.shape[1] for arr in datas if arr.ndim == 2)
+        if min_det != n_det:
+            t_det = t_det[:min_det]
+            n_det = int(t_det.size)
     n_det_ext = int(np.ceil(pad * n_det))
     dt_det = float(t_det[1] - t_det[0])
 
@@ -133,8 +138,10 @@ def compute_spectra(
             continue
 
         # 2D case
-        if arr.ndim != 2 or arr.shape != (n_coh, n_det):
+        if arr.ndim != 2 or arr.shape[0] != n_coh:
             raise ValueError(f"datas[{idx}] must be 2D with shape (len(t_coh), len(t_det))")
+        if arr.shape[1] != n_det:
+            arr = arr[:, :n_det]
 
         # Detection axis (+i): IFFT along det axis (virtual padding)
         spec_2d = np.fft.ifft(arr, n=n_det_ext, axis=1)
