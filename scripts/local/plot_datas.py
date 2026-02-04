@@ -12,9 +12,12 @@ Examples:
 from __future__ import annotations
 
 from pathlib import Path
-import numpy as np
 import argparse
+from functools import partial
+import time
 from typing import Any
+
+import numpy as np
 
 from qspectro2d import load_simulation_data
 from qspectro2d.visualization.plotting import plot_el_field
@@ -32,11 +35,24 @@ else:
 FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
 FIGURES_DIR.mkdir(exist_ok=True)
 
+print = partial(print, flush=True)
+
 # Section for cropping data
 SECTION = (1.5, 1.7)  # or None #for no cropping
 
-# Extend factor for zero-padding
-EXTEND = 20.0
+# PLOT_PAD_FACTOR factor for zero-padding
+PLOT_PAD_FACTOR = 20.0
+
+def _format_seconds(seconds: float) -> str:
+	if seconds < 1:
+		return f"{seconds * 1000:.1f} ms"
+	if seconds < 60:
+		return f"{seconds:.2f} s"
+	mins, secs = divmod(seconds, 60)
+	if mins < 60:
+		return f"{int(mins)}m {secs:04.1f}s"
+	hours, mins = divmod(mins, 60)
+	return f"{int(hours)}h {int(mins)}m {secs:04.1f}s"
 
 
 def main() -> None:
@@ -46,19 +62,29 @@ def main() -> None:
 	parser.add_argument(
 		"--abs_path", type=str, required=True, help="Path to the processed .npz file"
 	)
+	parser.add_argument(
+		"--time_only",
+		action="store_true",
+		help="Only plot time-domain signals (skip frequency-domain plots).",
+	)
 	args = parser.parse_args()
 
+	start_all = time.perf_counter()
+	print(f"Starting plot_datas for: {args.abs_path}")
+
 	# Load the data
+	step_start = time.perf_counter()
 	data = load_simulation_data(args.abs_path)
 	signals = data["signals"]
 	print(
-		f"Available signals: {list(signals.keys())}, with shapes {[s.shape for s in signals.values()]}"
+		f"Available signals: {list(signals.keys())}, "
+		f"shapes={[s.shape for s in signals.values()]}"
 	)
 	t_det = data["t_det"]
 	t_coh = data.get("t_coh")
 	print(
-		f"Loaded t_det with shape: {t_det.shape}",
-		f"and t_coh with shape: {t_coh.shape if t_coh is not None else 'None'}",
+		f"Loaded t_det shape: {t_det.shape}; "
+		f"t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
 	)
 	if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
 		t_coh = None
@@ -66,6 +92,7 @@ def main() -> None:
 	print(f"Loaded data from {args.abs_path}")
 	print(f"Signal types: {list(signals.keys())}")
 	print(f"Data dimension: {'2D' if t_coh is not None else '1D'}")
+	print(f"Load time: {_format_seconds(time.perf_counter() - step_start)}")
 
 	components = ["real", "img", "abs"]
 	saved_files = []
@@ -75,7 +102,8 @@ def main() -> None:
 	base_token = _figure_token(job_metadata, sim_config)
 
 	for st, sig_data in signals.items():
-		print(f"Plotting signal: {st}")
+		signal_start = time.perf_counter()
+		print(f"Plotting time-domain signal: {st}")
 		for comp in components:
 			fig = plot_el_field(
 				axis_det=t_det,
@@ -93,9 +121,16 @@ def main() -> None:
 
 			saved = save_fig(fig, filename=filename)
 			saved_files.append(str(saved))
-			print(saved)
+			print(f"Saved: {saved}")
+		print(f"Time-domain {st} done in {_format_seconds(time.perf_counter() - signal_start)}")
+	if args.time_only:
+		print("Skipping frequency-domain plots (--time_only set)")
+		print(f"Figures folder: {Path(filename).parent}")
+		print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
+		return
 	print("Plotting frequency domain...")
-	pad_factor = EXTEND
+	pad_factor = PLOT_PAD_FACTOR
+	step_start = time.perf_counter()
 	nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
 		list(signals.values()),
 		list(signals.keys()),
@@ -105,9 +140,11 @@ def main() -> None:
 		nu_win_coh=SECTION[1] if SECTION is not None else 2.0,
 		nu_win_det=SECTION[1] if SECTION is not None else 2.0,
 	)
+	print(f"Frequency-domain transform time: {_format_seconds(time.perf_counter() - step_start)}")
 
 	for idx, st in enumerate(out_types):
-		print(f"Plotting signal: {st}")
+		signal_start = time.perf_counter()
+		print(f"Plotting frequency-domain signal: {st}")
 
 		sig_data_freq = datas_nu[idx]
 		for comp in components:
@@ -128,9 +165,11 @@ def main() -> None:
 
 			saved = save_fig(fig, filename=filename)
 			saved_files.append(str(saved))
-			print(saved)
+			print(f"Saved: {saved}")
+		print(f"Frequency-domain {st} done in {_format_seconds(time.perf_counter() - signal_start)}")
 
-	print(f"to see them go to:\n{Path(filename).parent}")
+	print(f"Figures folder: {Path(filename).parent}")
+	print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
 
 
 def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:

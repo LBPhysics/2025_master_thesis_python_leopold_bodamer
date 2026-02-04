@@ -14,7 +14,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
 import statistics
 from datetime import datetime
 from pathlib import Path
@@ -23,8 +22,7 @@ import numpy as np
 import yaml
 
 from qspectro2d.config.create_sim_obj import load_simulation, load_simulation_config
-from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
-from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
+from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
 from qspectro2d.core.simulation.time_axes import (
@@ -44,6 +42,8 @@ from local.calc_datas import (
 	write_json,
 )
 
+SWEEPS_ROOT = RUNS_ROOT / "sweeps"
+
 
 def _set_random_seed(seed: int | None) -> None:
 	if seed is not None:
@@ -60,6 +60,15 @@ def _normalize_config_without_rwa(config: dict) -> str:
 	cleaned = json.loads(json.dumps(config))
 	cleaned.get("laser", {}).pop("rwa_sl", None)
 	return json.dumps(cleaned, sort_keys=True)
+
+
+def _find_latest_sweep_summary() -> Path | None:
+	if not SWEEPS_ROOT.exists():
+		return None
+	summaries = list(SWEEPS_ROOT.glob("**/summary.json"))
+	if not summaries:
+		return None
+	return max(summaries, key=lambda path: path.stat().st_mtime)
 
 
 def estimate_slurm_resources(
@@ -249,24 +258,24 @@ def _render_slurm_script(
 	python_cmd = shlex.quote(str(python_executable))
 	worker_arg = shlex.quote(str(worker_path))
 	return f"""#!/bin/bash
-+#SBATCH --job-name={job_name}
-+#SBATCH --output=logs/%x.out
-+#SBATCH --error=logs/%x.err
-+#SBATCH --cpus-per-task=16
-+#SBATCH --mem={requested_mem}
-+#SBATCH --time={requested_time}
-+#SBATCH --partition=GPGPU,metis
-+
-+set -euo pipefail
-+
-+{python_cmd} {worker_arg} \
-+	--combos_file "{combos_filename}" \
-+	--samples_file "{samples_filename}" \
-+	--time_cut {time_cut:.12g} \
-+	--sim_type {sim_type} \
-+	--batch_id {batch_idx} \
-+	--n_batches {n_batches}
-+"""
+	#SBATCH --job-name={job_name}
+#SBATCH --output=logs/%x.out
+#SBATCH --error=logs/%x.err
+#SBATCH --cpus-per-task=16
+#SBATCH --mem={requested_mem}
+#SBATCH --time={requested_time}
+#SBATCH --partition=GPGPU,metis
+
+set -euo pipefail
+
+{python_cmd} {worker_arg} \
+	--combos_file "{combos_filename}" \
+	--samples_file "{samples_filename}" \
+	--time_cut {time_cut:.12g} \
+	--sim_type {sim_type} \
+	--batch_id {batch_idx} \
+	--n_batches {n_batches}
+"""
 
 
 def submit_sbatch(script_path: Path, cwd: Path | None = None) -> str:
@@ -349,11 +358,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 		help="Optional sweep summary JSON to calibrate runtime scaling",
 	)
 	parser.add_argument(
-		"--skip-calibration",
-		action="store_true",
-		help="Skip the initial calibration run",
-	)
-	parser.add_argument(
 		"--rng_seed",
 		type=int,
 		default=None,
@@ -408,32 +412,27 @@ def main(argv: Sequence[str] | None = None) -> None:
 		f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}, n_batches={args.n_batches}"
 	)
 
+	label_token = job_label_token(sim.simulation_config, sim.system, sim_type=args.sim_type)
+	timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+	job_label = f"hpc_{label_token}_{timestamp}"
+	job_dir = allocate_job_dir(RUNS_ROOT, job_label)
+	job_paths = ensure_job_layout(job_dir, base_name="raw")
+	data_base_path = job_paths.data_base_path
+	logs_dir = job_dir / "logs"
+	logs_dir.mkdir(exist_ok=True)
+
+	samples_file = job_dir / "samples.npy"
+	np.save(samples_file, samples.astype(float))
+
 	calibrated_base_t: float | None = None
-	if not args.skip_calibration:
-		try:
-			if t_coh_values.size == 0 or samples.size == 0:
-				raise ValueError("No samples or coherence times available for calibration")
-			calib_t_coh = float(t_coh_values[0])
-			calib_freqs = samples[0, :].astype(float)
-			print("Running calibration on a single combo...")
-			t0 = time.perf_counter()
-			_ = parallel_compute_1d_e_comps(
-				config_path=str(config_path),
-				t_coh=calib_t_coh,
-				freq_vector=calib_freqs.tolist(),
-				time_cut=np.inf,
-			)
-			elapsed = time.perf_counter() - t0
-			denom = max(1e-12, (len(times_local) / 1000) * (sim.system.dimension**2))
-			calibrated_base_t = elapsed / denom
-			print(
-				f"Calibration runtime: {elapsed:.2f} s for 1 combo → base_t={calibrated_base_t:.4g} s"
-			)
-		except Exception as exc:
-			print(f"Calibration failed ({exc}); using default scaling.")
 
 	# Estimate RAM and TIME based on batch size
-	summary_path = Path(args.summary_path).resolve() if args.summary_path else None
+	if args.summary_path:
+		summary_path = Path(args.summary_path).resolve()
+	else:
+		summary_path = _find_latest_sweep_summary()
+		if summary_path is not None:
+			print(f"Using latest sweep summary: {summary_path}")
 	requested_mem, requested_time = estimate_slurm_resources(
 		n_times=len(times_local),
 		n_inhom=n_inhom,
@@ -455,15 +454,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 		f"Requested resources: mem={requested_mem}, time={requested_time}, cpus=16"
 	)
 
-	label_token = job_label_token(sim.simulation_config, sim.system, sim_type=args.sim_type)
-	timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-	job_label = f"hpc_{label_token}_{timestamp}"
-	job_dir = allocate_job_dir(RUNS_ROOT, job_label)
-	job_paths = ensure_job_layout(job_dir, base_name="raw")
-	data_base_path = job_paths.data_base_path
-	logs_dir = job_dir / "logs"
-	logs_dir.mkdir(exist_ok=True)
-
 	# Save a copy of the config file to the job directory
 	config_copy_path = job_dir / config_path.name
 	if not config_copy_path.exists():
@@ -472,9 +462,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 	# Use the copied config path for subsequent operations
 	config_path = config_copy_path
-
-	samples_file = job_dir / "samples.npy"
-	np.save(samples_file, samples.astype(float))
 
 	job_metadata = {
 		"sim_type": args.sim_type,
