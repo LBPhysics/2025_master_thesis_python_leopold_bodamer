@@ -80,11 +80,6 @@ def estimate_slurm_resources(
 	workers: int = 1,
 	N_dim: int,
 	solver: str = "lindblad",
-	mem_safety: float = 100.0,
-	base_mb: float = 500.0,
-	mem_per_combo_mb: float = 1.0,
-	time_safety: float = 2.5,
-	base_time: float = 0.0,
 	rwa_sl: bool = True,
 	summary_path: Path | None = None,
 	base_t_override: float | None = None,
@@ -104,6 +99,9 @@ def estimate_slurm_resources(
 	combos_per_batch = max(1, int(math.ceil(combos_total / batches)))
 
 	# ---------------------- MEMORY ----------------------
+	mem_safety = 100.0
+	base_mb = 500.0
+	mem_per_combo_mb = 1.0
 	bytes_per_solver = n_times * (N_dim) * 16  # only store the expectation values
 	total_bytes = mem_safety * workers * bytes_per_solver
 	combos_mem_mb = min(combos_per_batch * mem_per_combo_mb, 1000.0)
@@ -216,6 +214,8 @@ def estimate_slurm_resources(
 		)
 
 	# total time for one batch (divide by workers)
+	time_safety = 2.5
+	base_time = 60.0
 	total_seconds = time_per_combo * combos_per_batch * time_safety / max(1, workers)
 
 	# Ensure minimum time of 1 minute to avoid SLURM rejection
@@ -331,36 +331,6 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 		help="Total number of batches to split the combination space into",
 	)
 	parser.add_argument(
-		"--mem-safety",
-		type=float,
-		default=100.0,
-		help="Safety factor for memory estimates",
-	)
-	parser.add_argument(
-		"--time-safety",
-		type=float,
-		default=2.5,
-		help="Safety factor for runtime estimates",
-	)
-	parser.add_argument(
-		"--base-mb",
-		type=float,
-		default=500.0,
-		help="Base memory overhead in MB",
-	)
-	parser.add_argument(
-		"--mem-per-combo-mb",
-		type=float,
-		default=1.0,
-		help="Additional MB per combo (capped internally)",
-	)
-	parser.add_argument(
-		"--base-time",
-		type=float,
-		default=60.0,
-		help="Minimum wall time in seconds",
-	)
-	parser.add_argument(
 		"--summary-path",
 		type=str,
 		default=None,
@@ -456,11 +426,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 		N_dim=sim.system.dimension,
 		solver=sim.simulation_config.ode_solver,
 		rwa_sl=sim.simulation_config.rwa_sl,
-		mem_safety=args.mem_safety,
-		base_mb=args.base_mb,
-		mem_per_combo_mb=args.mem_per_combo_mb,
-		time_safety=args.time_safety,
-		base_time=args.base_time,
 		summary_path=summary_path,
 		base_t_override=calibrated_base_t,
 	)
