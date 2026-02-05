@@ -66,21 +66,6 @@ def apply_overrides(base_cfg: dict[str, Any], overrides: dict[str, Any]) -> dict
 
 
 def build_ofat_cases(base_cfg: dict[str, Any]) -> list[SweepCase]:
-    base_params = {
-        "config.solver": base_cfg["config"].get("solver", "redfield"),
-        "bath.bath_type": base_cfg["bath"].get("bath_type", "ohmic"),
-        "bath.temperature": base_cfg["bath"].get("temperature", 0.1),
-        "bath.cutoff": base_cfg["bath"].get("cutoff", 100.0),
-        "bath.coupling": base_cfg["bath"].get("coupling", 0.01),
-        "laser.rwa_sl": base_cfg["laser"].get("rwa_sl", True),
-        "config.t_det_max": base_cfg["config"].get("t_det_max", 10.0),
-        "config.n_inhomogen": base_cfg["config"].get("n_inhomogen", 1),
-        "config.n_atoms": base_cfg["config"].get("n_atoms", 1),
-        "config.t_coh": base_cfg["config"].get("t_coh", 0.0),
-        "config.t_wait": base_cfg["config"].get("t_wait", 0.0),
-        "config.dt": base_cfg["config"].get("dt", 1.0),
-    }
-
     grids: dict[str, list[Any]] = {
         "config.solver": ["paper_eqs", "redfield"],
         "bath.bath_type": ["ohmic"],
@@ -95,15 +80,20 @@ def build_ofat_cases(base_cfg: dict[str, Any]) -> list[SweepCase]:
         "config.dt": [1.0, 0.5, 0.1],
     }
 
-    cases: list[SweepCase] = [SweepCase("baseline", {})]
+    cases: list[SweepCase] = []
+    keys = list(grids.keys())
 
-    for key, values in grids.items():
-        for value in values:
-            if value == base_params.get(key):
-                continue
-            label = f"{key.replace('.', '_')}={value}"
-            cases.append(SweepCase(label, {key: value}))
+    def _walk(idx: int, current: dict[str, Any]) -> None:
+        if idx == len(keys):
+            label_parts = [f"{key.replace('.', '_')}={current[key]}" for key in keys]
+            cases.append(SweepCase("__".join(label_parts), dict(current)))
+            return
+        key = keys[idx]
+        for value in grids[key]:
+            current[key] = value
+            _walk(idx + 1, current)
 
+    _walk(0, {})
     return cases
 
 

@@ -177,7 +177,7 @@ def main() -> None:
     parser.add_argument(
         "--time",
         type=str,
-        default="00:30:00",
+        default="01:00:00",
         help="Wall time per job",
     )
     parser.add_argument(
