@@ -96,16 +96,16 @@ for case in cases:
     proc = subprocess.run([python_cmd, calc_datas, "--sim_type", sim_type, "--config", config_path])
     elapsed = time.perf_counter() - start
 
-	data = {{
-		"index": index,
-		"label": label,
-		"config_path": config_path,
-		"return_code": int(proc.returncode),
-		"runtime_s": round(elapsed, 3),
-	}}
+    data = {{
+        "index": index,
+        "label": label,
+        "config_path": config_path,
+        "return_code": int(proc.returncode),
+        "runtime_s": round(elapsed, 3),
+    }}
 
-	out_path = results_dir / f"case_{{index:03d}}.json"
-	out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
+    out_path = results_dir / f"case_{{index:03d}}.json"
+    out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
 PY
 """
     )
