@@ -310,6 +310,15 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 	)
 	parser.add_argument(
+		"--config",
+		type=str,
+		default=None,
+		help=(
+			"Optional path to a YAML simulation config. If omitted, the default "
+			"selection logic is used (first '_' prefixed file in scripts/simulation_configs)."
+		),
+	)
+	parser.add_argument(
 		"--sim_type",
 		choices=["0d", "1d", "2d"],
 		default="2d",
@@ -374,7 +383,12 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> None:
 	args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-	config_path = pick_config_yaml().resolve()
+	if args.config:
+		config_path = Path(args.config).expanduser().resolve()
+		if not config_path.exists():
+			raise FileNotFoundError(f"Config file not found: {config_path}")
+	else:
+		config_path = pick_config_yaml().resolve()
 
 	print("=" * 80)
 	print("GENERALIZED HPC DISPATCHER")
