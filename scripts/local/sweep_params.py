@@ -63,7 +63,7 @@ def build_ofat_cases(base_cfg: dict[str, Any]) -> list[SweepCase]:
 	base_params = {
 		"config.solver": base_cfg["config"].get("solver", "redfield"),
 		"bath.bath_type": base_cfg["bath"].get("bath_type", "ohmic"),
-		"bath.temperature": base_cfg["bath"].get("temperature", 0.001),
+		"bath.temperature": base_cfg["bath"].get("temperature", 0.01),
 		"bath.cutoff": base_cfg["bath"].get("cutoff", 100.0),
 		"bath.coupling": base_cfg["bath"].get("coupling", 0.001),
 		"laser.rwa_sl": base_cfg["laser"].get("rwa_sl", True),
@@ -77,7 +77,7 @@ def build_ofat_cases(base_cfg: dict[str, Any]) -> list[SweepCase]:
 	grids: dict[str, list[Any]] = {
 		"config.solver": ["lindblad", "redfield", "paper_eqs"],
 		"bath.bath_type": ["ohmic", "drudelorentz"],
-		"bath.temperature": [0.001, 0.01],
+		"bath.temperature": [0.01],
 		"bath.coupling": [0.001, 0.01],
 		"laser.rwa_sl": [True, False],
 		"config.t_det_max": [5.0, 10.0, 15.0],
