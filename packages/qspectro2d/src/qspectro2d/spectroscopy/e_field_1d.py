@@ -326,7 +326,7 @@ def parallel_compute_1d_e_comps(
     E_list: List[np.ndarray] = []
     for sig in sig_types:
         P_comp = P_acc[sig] * dphi * dphi  # normalization
-        E_comp = -1j * P_comp # still E_comp = P_comp  # Not as is the firs paper, but the second, this way it works
+        E_comp = 1j * P_comp # still Not as is the firs paper, but the second, this way it works
         if t_mask is not None:
             E_comp = E_comp * t_mask
         E_list.append(E_comp)
