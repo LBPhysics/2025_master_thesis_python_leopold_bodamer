@@ -116,10 +116,10 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    ...
    Completed 1 combination(s) in 3.26 s
    Latest artifact:
-   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
+   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
 
    🎯 Next step:
-      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ================================================================================
    DONE
    ```
@@ -128,13 +128,13 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    **Example:**
 
    ```bash
-   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
+   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
    ```
 
    ```
    ...
    🎯 Plot with:
-   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
 4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `PLOT_PAD_FACTOR` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
@@ -142,12 +142,12 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    **Example:**
 
    ```bash
-   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/data/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
+   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
    -> find the figures under `figures/...`
 
-Simulation outputs remain under `data/` and plots under `figures/`.
+Simulation outputs remain under `jobs/` and plots under `figures/`.
 
 ### HPC Batching Workflow (Run on a Cluster)
 For large-scale runs (e.g., full sweeps with many inhomogeneous samples and coherence times). Supports all combinations with parallel batching. Processing and plotting are automated.
@@ -155,9 +155,9 @@ Is structured similar to the local workflow but splits the simulation into batch
 
 1. **Dispatch batches** — Run `python scripts/hpc/calc_dispatcher.py --sim_type {0d,1d,2d} --n_batches N [--rng_seed S] [--no_submit] [--config /path/to/config.yaml]`. Generates SLURM jobs that split work across combinations. If `--config` is omitted, the dispatcher uses the default selection (the first config file prefixed with `_` under scripts/simulation_configs).
 
-2. **Run batches** — Batches auto-submit via `sbatch` (unless `--no_submit`). Each runs `scripts/hpc/run_batch.py` on the cluster, producing partial artifacts in `data/...`.
+2. **Run batches** — Batches auto-submit via `sbatch` (unless `--no_submit`). Each runs `scripts/hpc/run_batch.py` on the cluster, producing partial artifacts in `jobs/...`.
 
-3. **Post-process and plot** — After batches finish, run `python scripts/hpc/plot_dispatcher.py --job_dir /path/to/data/jobs/<job_label> [--skip_if_exists] [--no_submit] [--time_only]`. Processes data (stacks and averages) and submits a single plotting SLURM job that runs `scripts/local/plot_datas.py`.
+3. **Post-process and plot** — After batches finish, run `python scripts/hpc/plot_dispatcher.py --job_dir /path/to/jobs/<job_label> [--skip_if_exists] [--no_submit] [--time_only]`. Processes data (stacks and averages) and submits a single plotting SLURM job that runs `scripts/local/plot_datas.py`.
 
 ## HPC reminder
 
@@ -167,7 +167,7 @@ conda activate m_env
 conda env update -f environment.yml --prune  # only when dependencies change
 python scripts/hpc/calc_dispatcher.py --n_batches N --sim_type 2d --config /path/to/config.yaml
 # Wait for batches to finish, then:
-python scripts/hpc/plot_dispatcher.py --job_dir /path/to/data/jobs/<job_label>
+python scripts/hpc/plot_dispatcher.py --job_dir /path/to/jobs/<job_label>
 ```
 
 Logs from batch submissions stay in the same directories referenced by the HPC helper scripts.

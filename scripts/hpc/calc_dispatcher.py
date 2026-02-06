@@ -256,7 +256,7 @@ def _render_slurm_script(
 	#SBATCH --job-name={job_name}
 #SBATCH --output=logs/%x.out
 #SBATCH --error=logs/%x.err
-#SBATCH --cpus-per-task=16s
+#SBATCH --cpus-per-task=16
 #SBATCH --mem={requested_mem}
 #SBATCH --time={requested_time}
 #SBATCH --partition={partition}

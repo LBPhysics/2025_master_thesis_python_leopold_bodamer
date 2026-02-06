@@ -33,7 +33,7 @@ def ensure_job_layout(job_dir: Path, base_name: str = "run") -> JobPaths:
     """Create the canonical job layout and return the resolved paths."""
 
     resolved_job = job_dir.resolve()
-    data_dir = resolved_job / "data"
+    data_dir = resolved_job / "jobs"
     figures_dir = resolved_job / "figures"
 
     data_dir.mkdir(parents=True, exist_ok=True)

@@ -130,8 +130,10 @@ def compute_polarization_over_window(
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
-    # Build μ_+ in energy eigenbasis (lower triangular part), which oscillates as exp(-i ω_L t) in RWA frame
-    mu_pos = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op.dag())
+    # # Build lowering op in energy eigenbasis (upper triangular part), which oscillates as exp(-i ω_L t) in RWA frame
+    # mu_m = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op)
+    # Build raising op in energy eigenbasis (lower triangular part), which oscillates as exp(+i ω_L t) in RWA frame
+    mu_p = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op.dag())
     if sim_oqs.simulation_config.rwa_sl:
         # rotate the states back to lab frame before expectation value
         from qspectro2d.spectroscopy.polarization import time_dependent_polarization_rwa
@@ -141,7 +143,7 @@ def compute_polarization_over_window(
             if hasattr(rho, "isket") and rho.isket:
                 rho = rho.proj()
             return time_dependent_polarization_rwa(
-                mu_pos,
+                mu_p,
                 rho,
                 t,
                 sim_oqs.system.n_atoms,
@@ -149,7 +151,7 @@ def compute_polarization_over_window(
             )
 
     else:
-        polarization = mu_pos
+        polarization = mu_p
 
     # Get polarization on the global time grid
     times, P_t = compute_evolution(sim_oqs, e_ops=[polarization])
@@ -273,9 +275,9 @@ def parallel_compute_1d_e_comps(
     # Assume 3 pulses as per the function doc
 
     # Optional time mask (keep length constant)
-    # t_mask = None
-    # if time_cut is not None and np.isfinite(time_cut):
-    #    t_mask = (t_det <= time_cut).astype(np.float64)
+    t_mask = None
+    if time_cut is not None and np.isfinite(time_cut):
+        t_mask = (t_det <= time_cut).astype(np.float64)
 
     # Accumulate P components as results arrive
     P_acc = {sig: np.zeros(n_t, dtype=np.complex128) for sig in sig_types}
@@ -324,8 +326,8 @@ def parallel_compute_1d_e_comps(
     E_list: List[np.ndarray] = []
     for sig in sig_types:
         P_comp = P_acc[sig] * dphi * dphi  # normalization
-        E_comp = -1j * P_comp
-        # if t_mask is not None:
-        #     E_comp = E_comp * t_mask
+        E_comp = -1j * P_comp # still E_comp = P_comp  # Not as is the firs paper, but the second, this way it works
+        if t_mask is not None:
+            E_comp = E_comp * t_mask
         E_list.append(E_comp)
     return E_list

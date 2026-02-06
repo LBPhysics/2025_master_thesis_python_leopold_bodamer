@@ -71,17 +71,17 @@ def _matrix_ODE_paper_1atom(t: float, sim_oqs: SimulationModuleOQS) -> Qobj:
     L[idx_ee, idx_gg] = up_rate
     L[idx_ee, idx_ee] = -down_rate
     # Driving contributions to populations
-    L[idx_gg, idx_eg] = -1j * E_RWA_minus * mu
-    L[idx_gg, idx_ge] = +1j * E_RWA_plus * mu
-    L[idx_ee, idx_ge] = -1j * E_RWA_plus * mu
-    L[idx_ee, idx_eg] = +1j * E_RWA_minus * mu
+    L[idx_gg, idx_eg] = +1j * E_RWA_minus * mu
+    L[idx_gg, idx_ge] = -1j * E_RWA_plus * mu
+    L[idx_ee, idx_ge] = +1j * E_RWA_plus * mu
+    L[idx_ee, idx_eg] = -1j * E_RWA_minus * mu
 
     # Coherences
-    L[idx_eg, idx_gg] = -1j * E_RWA_plus * mu
-    L[idx_eg, idx_ee] = +1j * E_RWA_plus * mu
+    L[idx_eg, idx_gg] = +1j * E_RWA_plus * mu
+    L[idx_eg, idx_ee] = -1j * E_RWA_plus * mu
     L[idx_eg, idx_eg] = -deph_rate_tot - 1j * detuning
-    L[idx_ge, idx_gg] = +1j * E_RWA_minus * mu
-    L[idx_ge, idx_ee] = -1j * E_RWA_minus * mu
+    L[idx_ge, idx_gg] = -1j * E_RWA_minus * mu
+    L[idx_ge, idx_ee] = +1j * E_RWA_minus * mu
     L[idx_ge, idx_ge] = -deph_rate_tot + 1j * detuning
 
     return Qobj(L, dims=[[[size], [size]], [[size], [size]]])

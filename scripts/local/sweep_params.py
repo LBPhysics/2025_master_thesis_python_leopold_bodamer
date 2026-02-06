@@ -23,7 +23,7 @@ import yaml
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = SCRIPTS_DIR.parent
-DATA_DIR = PROJECT_ROOT / "data" / "jobs" / "sweeps"
+DATA_DIR = PROJECT_ROOT / "jobs" / "sweeps"
 DEFAULT_CONFIG = SCRIPTS_DIR / "simulation_configs" / "_monomer.yaml"
 BASELINE_OVERRIDES = {
     "config.t_det_max": 10.0,

@@ -35,7 +35,7 @@ from local.sweep_params import (
 )
 
 PROJECT_ROOT = SCRIPTS_DIR.parent
-DATA_DIR = PROJECT_ROOT / "data" / "jobs" / "sweeps"
+DATA_DIR = PROJECT_ROOT / "jobs" / "sweeps"
 
 
 def _render_slurm_script(
@@ -259,13 +259,12 @@ def main() -> None:
         )
 
     n_batches = max(1, int(args.n_batches))
-    batch_size = max(1, int(math.ceil(len(case_entries) / n_batches)))
-    for batch_idx in range(n_batches):
-        start = batch_idx * batch_size
-        end = min(start + batch_size, len(case_entries))
-        if start >= end:
-            break
-        batch_cases = case_entries[start:end]
+    batches: list[list[dict[str, Any]]] = [[] for _ in range(n_batches)]
+    for idx, case in enumerate(case_entries):
+        batches[idx % n_batches].append(case)
+    for batch_idx, batch_cases in enumerate(batches):
+        if not batch_cases:
+            continue
         batch_path = sweep_dir / f"batch_{batch_idx:03d}.json"
         batch_path.write_text(json.dumps(batch_cases, indent=2) + "\n", encoding="utf-8")
 
