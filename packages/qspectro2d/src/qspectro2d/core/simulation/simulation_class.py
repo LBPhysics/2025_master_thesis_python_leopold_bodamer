@@ -136,7 +136,7 @@ class SimulationModuleOQS:
         """
         lowering_op = self.system.to_eigenbasis(
             self.system.lowering_op
-        )  # oscillates as exp(+i ω_L t) in RWA frame
+        )  # oscillates as exp(-i ω_L t) in RWA frame
         if self.simulation_config.rwa_sl:
             E_plus_RWA = e_pulses(t, self.laser)  # oscillates as exp(-i ω_L t) in lab frame
             E_minus_RWA = np.conj(E_plus_RWA)

@@ -38,7 +38,7 @@ for _parent in SCRIPTS_DIR.parents:
 else:
 	raise RuntimeError("Could not locate project root (missing .git directory)")
 
-DATA_DIR = (PROJECT_ROOT / "data").resolve()
+DATA_DIR = (PROJECT_ROOT / "jobs").resolve()
 DATA_DIR.mkdir(exist_ok=True)
 
 print = partial(print, flush=True)

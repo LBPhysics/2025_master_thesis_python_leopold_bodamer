@@ -30,8 +30,8 @@ def compute_spectra(
     """Compute spectra along detection (and optional coherence) axes.
     Based on the paper: https://doi.org/10.1063/5.0214023
     For each input data array:
-    - Along detection time, always use +i convention: S(w_det) = ∫ E(t) e^{+i w t} dt
-      (implemented via IFFT with virtual padding, no normalization scaling applied).
+    - Along detection time, use +i convention (paper): S(w_det) = ∫ E(t) e^{+i w t} dt
+        (implemented via IFFT with virtual padding, no normalization scaling applied).
     - If coherence axis is present:
         - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT)
         (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (IFFT))
@@ -168,9 +168,9 @@ def compute_spectra(
             vals = spec_2d_shifted[rows, cols]
             spmat = sp.coo_matrix((vals, (rows, cols)), shape=(n_coh_ext, n_det_ext))
             datas_nu.append(spmat)
-            
+
     if t_coh is not None:
-        have_r  = any(t.lower().startswith("rephasing") for t in out_types)
+        have_r = any(t.lower().startswith("rephasing") for t in out_types)
         have_nr = any(t.lower().startswith("nonrephasing") for t in out_types)
         if have_r and have_nr:
             # Example: match by index or by separate provided lists;

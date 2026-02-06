@@ -261,7 +261,7 @@ def main() -> None:
 		"--job_dir",
 		type=str,
 		required=True,
-		help="Path to data/jobs/<job_label> (contains job_metadata.json)",
+		help="Path to jobs/<job_label> (contains job_metadata.json)",
 	)
 	parser.add_argument(
 		"--skip_if_exists",

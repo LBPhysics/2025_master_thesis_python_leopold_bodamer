@@ -40,8 +40,8 @@ for _parent in SCRIPTS_DIR.parents:
 else:
 	raise RuntimeError("Could not locate project root (missing .git directory)")
 
-DATA_DIR = (PROJECT_ROOT / "data").resolve()
-RUNS_ROOT = DATA_DIR / "jobs"
+DATA_DIR = (PROJECT_ROOT / "jobs").resolve()
+RUNS_ROOT = DATA_DIR
 SIM_CONFIGS_DIR = SCRIPTS_DIR / "simulation_configs"
 DATA_DIR.mkdir(exist_ok=True)
 RUNS_ROOT.mkdir(exist_ok=True)
