@@ -179,7 +179,11 @@ def sim_with_only_pulses(
 
 
 def _worker_P_phi_pair(
-    config_path: str, t_coh: float, freq_vector: List[float], phi1: float, phi2: float
+    config_path: str,
+    t_coh: float,
+    freq_vector: List[float],
+    phi1: float,
+    phi2: float,
 ) -> Tuple[float, float, np.ndarray, np.ndarray, float, float, float, List[float]]:
     """Process worker: compute (phi1, phi2, t_det, P_{phi1,phi2}) plus diagnostics."""
     from qspectro2d.config.create_sim_obj import load_simulation
@@ -289,7 +293,14 @@ def parallel_compute_1d_e_comps(
         for phi1 in phases_eff:
             for phi2 in phases_eff:
                 futures.append(
-                    ex.submit(_worker_P_phi_pair, config_path, t_coh, freq_vector, phi1, phi2)
+                    ex.submit(
+                        _worker_P_phi_pair,
+                        config_path,
+                        t_coh,
+                        freq_vector,
+                        phi1,
+                        phi2,
+                    )
                 )
         for fut in as_completed(futures):
             (
@@ -322,11 +333,12 @@ def parallel_compute_1d_e_comps(
 
     # Extract components for this realization
     dphi = np.diff(phases_eff).mean() if len(phases_eff) > 1 else 1.0
+    norm = (dphi / (2 * np.pi)) ** 2
 
     E_list: List[np.ndarray] = []
     for sig in sig_types:
-        P_comp = P_acc[sig] * dphi * dphi  # normalization
-        E_comp = 1j * P_comp # still Not as is the firs paper, but the second, this way it works
+        P_comp = P_acc[sig] * norm
+        E_comp = P_comp
         if t_mask is not None:
             E_comp = E_comp * t_mask
         E_list.append(E_comp)

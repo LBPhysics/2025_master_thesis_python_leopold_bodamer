@@ -153,6 +153,7 @@ config/secret_*
 # Machine learning models
 *.model
 *.pkl
+*.svg
 *.pkl.gz
 *.pickle
 *.joblib
