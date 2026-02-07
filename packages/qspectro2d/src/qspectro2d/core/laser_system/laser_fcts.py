@@ -14,6 +14,9 @@ __all__ = [
 def single_pulse_envelope(t_array: np.ndarray, pulse: LaserPulse) -> np.ndarray:
     """Compute envelope contribution of a single pulse for provided time array.
 
+        A(t) = exp(- (t - t0)^2 / (2 * sigma^2))
+             = exp(-4 ln 2 * (t - t0)^2 / FWHM^2)
+
     Parameters
     ----------
     t_array : np.ndarray
@@ -88,36 +91,54 @@ def pulse_envelopes(
 
     return float(envelope_total[0]) if is_scalar else envelope_total
 
-
 def e_pulses(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
-    """Calculate RWA positive freq. electric field: E^(+) = E0 * exp(-i * phi) * envelopes."""
+    """RWA positive-frequency electric field (slowly varying complex amplitude).
+
+    Full single-pulse field (one common convention):
+        E(t) = E0 * A(t) * cos(omega * (t - t0) + phi)
+    Positive/negative frequency parts:
+        E^(+)(t) = (E0/2) * A(t) * exp(-i * (omega * (t - t0) + phi))
+        E^(-)(t) = (E^(+)(t))*
+    RWA factorization:
+        E^(+)(t) = \tilde{E}(t) * exp(-i * omega * t)
+        	ilde{E}(t) = (E0/2) * A(t) * exp(-i * (phi + omega * t0))
+
+    -> Each pulse contributes:
+        E_amp * A(t) * exp(-i * (phi + omega * t0))
+    """
 
     t_array = np.asarray(t, dtype=float)
-    is_scalar = t_array.ndim == 0
+    is_scalar = (t_array.ndim == 0)
     if is_scalar:
         t_array = t_array[None]
 
     omega = pulse_seq.carrier_freq_fs
 
     field_total = np.zeros_like(t_array, dtype=complex)
-    for i in range(len(pulse_seq.pulses)):
-        phi = pulse_seq.pulse_phases[i]
-        phi_eff = phi + omega * pulse_seq.pulse_peak_times[i]
-        E_amp = pulse_seq.pulse_amplitudes[i]
-        single_env = single_pulse_envelope(t_array, pulse_seq.pulses[i])
-        field_total += E_amp * single_env * np.exp(-1j * phi_eff)
 
-    if is_scalar:
-        return complex(field_total[0])
-    return field_total
+    for pulse, phi, t_peak, E_amp in zip(
+        pulse_seq.pulses,
+        pulse_seq.pulse_phases,
+        pulse_seq.pulse_peak_times,
+        pulse_seq.pulse_amplitudes,
+    ):
+        # Real (Gaussian) envelope for this pulse
+        single_env = single_pulse_envelope(t_array, pulse)
+
+        # Constant phase factor in the RWA: exp(-i * (phi + omega * t0))
+        phi_eff = phi + omega * t_peak
+
+        field_total += (E_amp * np.exp(-1j * phi_eff)) * single_env
+
+    return field_total[0] if is_scalar else field_total
 
 
 def epsilon_pulses(
     t: Union[float, np.ndarray], pulse_seq: "LaserPulseSequence"
 ) -> Union[complex, np.ndarray]:
-    """Calculate total positive freq. electric field: E^(+) = E0 * exp(-i * phi - i omega * t) * envelopes."""
+    """Calculate lab-frame positive-frequency field by restoring the carrier."""
     from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
 
     if not isinstance(pulse_seq, LaserPulseSequence):

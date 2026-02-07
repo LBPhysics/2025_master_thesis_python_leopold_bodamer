@@ -18,12 +18,9 @@ def complex_polarization(
     """Return complex/analytical polarization(s) P^(+)(t) for given state(s).
 
     Physics convention:
-    - The positive-frequency part of the dipole operator corresponds to the
-      lowering operator μ^(-) in the energy eigenbasis and carries the
-      exp(-i ω t) time dependence relevant for emitted fields.
-    - Therefore we project the dipole operator onto its strictly upper-triangular
-      part (k = +1), which selects matrix elements connecting higher to lower
-      energy states (|lower⟩⟨higher|).
+        - The positive-frequency part of the dipole operator corresponds to
+            μ^(+) in this codebase's basis ordering and is represented by the
+            strictly lower-triangular part (m > n), selecting |higher⟩⟨lower|.
 
     Accepts a single Qobj (ket or density matrix) or list of Qobj.
     """

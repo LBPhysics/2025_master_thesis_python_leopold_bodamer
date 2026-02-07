@@ -30,7 +30,7 @@ def compute_spectra(
     """Compute spectra along detection (and optional coherence) axes.
     Based on the paper: https://doi.org/10.1063/5.0214023
     For each input data array:
-    - Along detection time, use +i convention (paper): S(w_det) = ∫ E(t) e^{+i w t} dt
+    - Along detection time: S(w_det) = ∫ E(t) e^{+i w t} dt
         (implemented via IFFT with virtual padding, no normalization scaling applied).
     - If coherence axis is present:
         - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT)
