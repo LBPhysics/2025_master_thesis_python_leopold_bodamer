@@ -469,25 +469,3 @@ def pair_to_index(i: int, j: int, n: int) -> int:
     """
     assert 1 <= i < j <= n
     return n + math.comb(j - 1, 2) + i
-
-
-def index_to_pair(k: int, n: int) -> Tuple[int, int]:
-    """
-    Inverse map: from global basis index k (in the doubles block) to (i, j).
-
-    Requires: k in [n+1, n + C(n,2)].
-    Returns i, j with 1 <= i < j <= n.
-    """
-    # rank inside the doubles block, 0-based
-    r = k - (n + 1)
-    if r < 0 or r >= math.comb(n, 2):
-        raise ValueError(f"k={k} is not in the doubles block for n={n}.")
-
-    # find smallest j with C(j,2) > r  (i.e., j such that the cumulative count passes r)
-    j = 2
-    while math.comb(j, 2) <= r:
-        j += 1
-
-    # remove the count up to the previous j, then 1-base for i
-    i = r - math.comb(j - 1, 2) + 1
-    return i, j

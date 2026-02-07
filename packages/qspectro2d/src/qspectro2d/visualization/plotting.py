@@ -16,7 +16,12 @@ from ..core.laser_system import (
 
 from plotstyle import init_style, COLORS, LINE_STYLES, simplify_figure_text
 
-init_style()
+init_style(
+    rc_overrides={
+        "lines.linewidth": 4.0,
+
+    }
+)
 
 
 def plot_pulse_envelopes(
@@ -403,11 +408,23 @@ def plot_el_field(
     if data.ndim == 1:
         # 1D plot
         color, linestyle = _style_for_component(component, 1, domain=domain)
-        ax.plot(axis_det, plot_data, color=color, linestyle=linestyle)
+        # Normalize to max absolute value
+        if plot_data.size > 0 and not np.all(np.isnan(plot_data)):
+            max_abs = np.max(np.abs(plot_data))
+            if max_abs > 0:
+                plot_data = plot_data / max_abs
+        ax.plot(
+            axis_det,
+            plot_data,
+            color=color,
+            linestyle=linestyle,
+            label=base_title.strip(),
+        )
         x_label, y_label, title_suffix = _domain_labels(domain, 1)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
         ax.set_title(base_title + " " + title_suffix)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(r"$" + y_label.strip("$") + r" / \max(|" + y_label.strip("$") + r"|)$")
+        ax.legend()
         fig.tight_layout()
         add_text_box(ax, kwargs=kwargs)
         return fig
@@ -501,9 +518,11 @@ def _style_for_component(
     """
     if ndim == 1:
         color_map = {"abs": 0, "real": 1, "img": 2, "phase": 3}
+        linestyle_map = {"abs": 0, "real": 1, "img": 2, "phase": 3}
         idx = color_map.get(component, 0)
+        style_idx = linestyle_map.get(component, 0)
         color = COLORS[idx]
-        linestyle = LINE_STYLES[0]
+        linestyle = LINE_STYLES[style_idx]
         return color, linestyle
     elif ndim == 2:
         norm = None
