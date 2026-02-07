@@ -22,7 +22,7 @@ __all__ = [
 # Document layout related defaults
 LATEX_DOC_WIDTH: float = 441.01775  # pt width of LaTeX document text block
 LATEX_FONT_SIZE: int = 11
-FONT_SIZE: int = 15
+FONT_SIZE: int = 25
 FIG_SIZE: Tuple[float, float] = (8, 6)
 LINE_WIDTH: float = 2.5
 DPI: int = 300

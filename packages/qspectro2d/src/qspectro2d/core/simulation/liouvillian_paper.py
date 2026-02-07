@@ -42,15 +42,6 @@ def _matrix_ODE_paper_1atom(t: float, sim_oqs: SimulationModuleOQS) -> Qobj:
     w0 = sim_oqs.system.frequencies_fs[0]
     wL = pulse_seq.carrier_freq_fs
     detuning = w0 - wL
-    """
-    w0 = sim_oqs.system.frequencies_fs[0]
-    wL = pulse_seq.carrier_freq_fs
-    from qspectro2d.core.bath_system.bath_fcts import bath_to_rates
-    #deph_rate_pure = bath_to_rates(sim_oqs.bath, mode="deph")
-    #down_rate, up_rate = bath_to_rates(sim_oqs.bath, w0, mode="decay")
-    # Dephasing rate (assumed identical structure for all single excitations)
-    deph_rate_tot = deph_rate_pure + 0.5 * (down_rate + up_rate)
-    """
 
     # Dephasing rate (assumed identical structure for all single excitations)
     deph_rate = 1 / 100

@@ -1,3 +1,4 @@
+### NOT REALLY USED, but can be useful for testing and debugging. The idea is to extract the (l, m) Fourier component of the phase-cycled data, which should correspond to a specific pathway in the 2D spectrum. This can help verify that the phase cycling is working correctly and that the expected pathways are being isolated.
 import numpy as np
 
 

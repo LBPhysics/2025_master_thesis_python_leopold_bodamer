@@ -32,9 +32,6 @@ for _parent in SCRIPTS_DIR.parents:
 else:
     raise RuntimeError("Could not locate project root (missing .git directory)")
 
-FIGURES_DIR = (PROJECT_ROOT / "figures").resolve()
-FIGURES_DIR.mkdir(exist_ok=True)
-
 print = partial(print, flush=True)
 
 # Section for cropping data

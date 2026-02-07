@@ -24,7 +24,7 @@ import yaml
 from qspectro2d.config.create_sim_obj import load_simulation, load_simulation_config
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
-from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
+from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
 from qspectro2d.core.simulation.time_axes import (
     compute_times_local,
     compute_t_coh,

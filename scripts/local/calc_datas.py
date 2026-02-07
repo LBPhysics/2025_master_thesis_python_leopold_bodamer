@@ -30,7 +30,7 @@ from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_t_det
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
 from qspectro2d.utils.data_io import save_info_file, save_run_artifact
-from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
+from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
