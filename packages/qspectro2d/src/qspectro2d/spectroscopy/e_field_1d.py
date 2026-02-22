@@ -6,7 +6,7 @@ Steps:
 - E_ks(t) ∝ i P_ks(t)
 - P_{l,m}(t) = Σ_{phi1} Σ_{phi2} P_{phi1,phi2}(t) * exp(-i(l phi1 + m phi2 + n PHI_DET))
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
-- P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
+- P(t) is the complex/analytical polarization: P(t) = ⟨μ_-⟩(t), using the negative-frequency part of μ for emission spectroscopy
 
 Supports lindblad, redfield, and paper_eqs solvers via the internals of SimulationModuleOQS.
 """
@@ -124,15 +124,15 @@ def compute_polarization_over_window(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Evolve once with current laser settings and return (t_det, P(t_det)),
-    where P = ⟨μ_+⟩ computed on the requested detection window times.
+    where P = ⟨μ_-⟩ computed on the requested detection window times (emission spectroscopy).
     """
     if window is None:
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
-    # # Build lowering op in energy eigenbasis (upper triangular part), which oscillates as exp(-i ω_L t) in RWA frame
-    # mu_m = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op)
-    # Build raising op in energy eigenbasis (lower triangular part), which oscillates as exp(+i ω_L t) in RWA frame
+    # Build raising op in energy eigenbasis (upper triangular part)
+    # For emission spectroscopy, we use μ^- which corresponds to the
+    # upper-triangular elements of the raising operator
     mu_p = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op.dag())
     if sim_oqs.simulation_config.rwa_sl:
         # rotate the states back to lab frame before expectation value
@@ -338,8 +338,8 @@ def parallel_compute_1d_e_comps(
     E_list: List[np.ndarray] = []
     for sig in sig_types:
         P_comp = P_acc[sig] * norm
-        E_comp = P_comp
+        E_comp = -1j * np.conj(P_comp)
         if t_mask is not None:
-            E_comp = -1j * E_comp * t_mask
+            E_comp = E_comp * t_mask
         E_list.append(E_comp)
     return E_list

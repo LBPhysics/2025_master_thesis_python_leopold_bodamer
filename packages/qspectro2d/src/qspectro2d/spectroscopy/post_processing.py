@@ -28,13 +28,13 @@ def compute_spectra(
     force_dense: bool = False,
 ) -> Tuple[Optional[np.ndarray], np.ndarray, List[ArrayOrSparse], List[str]]:
     """Compute spectra along detection (and optional coherence) axes.
-    Based on the paper: https://doi.org/10.1063/5.0214023
+    Based on the actual paper: https://pubs.aip.org/jcp/article/124/23/234504/930650/
     For each input data array:
-    - Along detection time: S(w_det) = ∫ E(t) e^{+i w t} dt
+    - Along detection time: S(w_det) = ∫ E(t) e^{-i w t} dt
         (implemented via IFFT with virtual padding, no normalization scaling applied).
     - If coherence axis is present:
-        - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (FFT)
-        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (IFFT))
+        - rephasing/else: S_R(w_coh, *) = ∫ E(t_coh, *) e^{+i w t} dt (FFT)
+        (- nonrephasing:  S_NR(w_coh, *) = ∫ E(t_coh, *) e^{-i w t} dt (IFFT))
 
     Args:
         datas: List of time-domain data arrays (original size, not extended).
@@ -117,8 +117,8 @@ def compute_spectra(
             if arr.ndim != 1 or arr.shape[0] != n_det:
                 raise ValueError(f"datas[{idx}] must be 1D with length len(t_det)")
 
-            # Detection axis (+i): IFFT with virtual padding
-            spec_det = np.fft.ifft(arr, n=n_det_ext, axis=0)
+            # Detection axis (-i): IFFT with virtual padding
+            spec_det = np.fft.fft(arr, n=n_det_ext, axis=0)
 
             if force_dense or not return_sparse:
                 # Keep dense; shift for user-facing axis
@@ -143,15 +143,15 @@ def compute_spectra(
         if arr.shape[1] != n_det:
             arr = arr[:, :n_det]
 
-        # Detection axis (+i): IFFT along det axis (virtual padding)
-        spec_2d = np.fft.ifft(arr, n=n_det_ext, axis=1)
+        # Detection axis (-i): IFFT along det axis (virtual padding)
+        spec_2d = np.fft.fft(arr, n=n_det_ext, axis=1)
 
         # Coherence axis depends on signal type (virtual padding)
         if st_norm == "nonrephasing":
-            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0)
+            spec_2d = np.fft.fft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("nonrephasing")
         else:
-            spec_2d = np.fft.fft(spec_2d, n=n_coh_ext, axis=0)
+            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("rephasing")
 
         if force_dense or not return_sparse:
