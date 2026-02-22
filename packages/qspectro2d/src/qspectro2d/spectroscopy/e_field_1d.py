@@ -340,6 +340,6 @@ def parallel_compute_1d_e_comps(
         P_comp = P_acc[sig] * norm
         E_comp = P_comp
         if t_mask is not None:
-            E_comp = E_comp * t_mask
+            E_comp = -1j * E_comp * t_mask
         E_list.append(E_comp)
     return E_list
