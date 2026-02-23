@@ -28,7 +28,7 @@ from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_
 from qspectro2d.core.simulation.time_axes import (
     compute_times_local,
     compute_t_coh,
-    compute_t_det,
+    compute_global_t_det,
 )
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -444,27 +444,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     job_metadata = {
         "sim_type": args.sim_type,
         "signal_types": sim.simulation_config.signal_types,
-        "t_det": compute_t_det(sim.simulation_config).tolist(),
+        "t_det": compute_global_t_det(sim.simulation_config).tolist(),
         "t_coh": t_coh_values.tolist(),
         "n_inhom": n_inhom,
         "n_t_coh": int(t_coh_values.size),
-        "n_combinations": len(combinations),
-        "n_batches": int(args.n_batches),
-        "time_cut": float(time_cut),
-        "job_label": job_label,
-        "job_token": label_token,
-        "generated_at": timestamp,
         "job_dir": str(job_paths.job_dir),
         "data_dir": str(job_paths.data_dir),
         "figures_dir": str(job_paths.figures_dir),
         "data_base_name": job_paths.base_name,
         "data_base_path": str(data_base_path),
         "config_path": str(config_path),
-        "rng_seed": args.rng_seed,
-        "cpus_per_task": 16,
-        "requested_mem": requested_mem,
-        "requested_time": requested_time,
-        "partition": args.partition,
     }
     write_json(job_dir / "job_metadata.json", job_metadata)
 

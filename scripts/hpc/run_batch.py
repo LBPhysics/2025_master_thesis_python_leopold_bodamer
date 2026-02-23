@@ -1,9 +1,7 @@
 """Execute a batch of (t_coh, inhomogeneity) combinations for spectroscopy runs.
 
 This worker script is intended to be called from generated SLURM jobs. It receives a
-list of combinations produced by ``scripts/hpc/calc_dispatcher.py`` and performs the
-actual field computations, saving the resulting datasets to the standard ``data``
-folder of the repository.
+list of combinations and performs field computations, padding outputs to a global grid.
 """
 
 from __future__ import annotations
@@ -17,9 +15,10 @@ from typing import Any, Iterable
 
 import numpy as np
 
-
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_run_artifact
+from qspectro2d.utils.data_io import save_run_artifact, pad_or_crop_signals
+from qspectro2d.core.simulation.time_axes import compute_global_t_det
+from qspectro2d.config.create_sim_obj import load_simulation_config
 
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
@@ -147,6 +146,11 @@ def main() -> None:
 
 	signal_types = job_metadata["signal_types"]
 
+	# Compute global detection grid (all signals padded/cropped to this)
+	cfg = load_simulation_config(str(config_path))
+	global_t_det = compute_global_t_det(cfg)
+	global_n_t = len(global_t_det)
+
 	t_start = time.time()
 	saved_paths: list[str] = []
 
@@ -170,6 +174,7 @@ def main() -> None:
 			f"inhom_idx={inhom_idx} ---"
 		)
 
+		# Compute signals for this t_coh value
 		e_components = parallel_compute_1d_e_comps(
 			config_path=str(config_path),
 			t_coh=t_coh_val,
@@ -177,18 +182,18 @@ def main() -> None:
 			time_cut=args.time_cut,
 		)
 
+		# Pad/crop all signals to match global grid
+		padded_components = pad_or_crop_signals(e_components, global_n_t)
+
 		metadata_combo = {
 			"signal_types": signal_types,
 			"t_coh_value": t_coh_val,
-			"t_index": t_idx,
-			"combination_index": global_idx,
 			"sim_type": "1d" if args.sim_type == "2d" else args.sim_type,
-			"batch_id": args.batch_id,
 			"sample_index": inhom_idx,
 		}
 
 		path = save_run_artifact(
-			signal_arrays=e_components,
+			signal_arrays=padded_components,
 			metadata=metadata_combo,
 			frequency_sample_cm=freq_vector,
 			data_dir=data_dir,
