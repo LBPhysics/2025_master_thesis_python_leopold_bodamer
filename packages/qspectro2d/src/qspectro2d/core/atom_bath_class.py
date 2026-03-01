@@ -1,9 +1,9 @@
-# TODO potentially Replace hard‑coded deph_rate and down_rate with rates computed from bath.power_spectrum(self.system.omega_ij(...)), and add thermal raising where applicable
 from dataclasses import dataclass
 import numpy as np
 from qutip import BosonicEnvironment, Qobj
 
 from .atomic_system import AtomicSystem
+from ..config.atomic_system import DEPH_RATE_FS, DOWN_RATE_FS, UP_RATE_FS
 
 
 @dataclass
@@ -77,44 +77,44 @@ class AtomBathCoupling:
 
     @property
     def me_decay_channels(self) -> list[Qobj]:
-        """Generate c_ops for Lindblad solver respecting max_excitation.
+        """Generate hard coded rates-c_ops for Lindblad solver respecting max_excitation.
 
         - Pure dephasing: projectors on each populated basis state (singles; doubles if present)
-        - Population relaxation/excitation: per-site lowering/raising (|0><i|, |i><0|) with rates from bath
-          (double-manifold relaxation: |i,j><i| and |i,j><j| with rates from bath)
+        - Population relaxation/excitation: per-site lowering/raising (|0><i|, |i><0|)
+          (double-manifold relaxation: |i,j><i| and |i,j><j|)
         """
         sys = self.system
         n_atoms = sys.n_atoms
         c_ops = []
         add_op = lambda op, rate: c_ops.append(sys.to_eigenbasis(op) * np.sqrt(rate))
 
-        # Dephasing rate (assumed identical structure for all single excitations)
-        deph_rate = 1 / 100
-        down_rate = 1 / 300
-
         for i_atom in range(1, n_atoms + 1):
             # singles dephasing
             deph_op = sys.deph_op_i(i_atom)
-            add_op(deph_op, deph_rate)
+            add_op(deph_op, DEPH_RATE_FS)
 
             # Radiative-like single-site relaxation (singles -> ground) and thermal excitation
             if n_atoms != 2:  # TO match the paper, no radiative decay in the dimer
                 L_down = sys.basis[0] * sys.basis[i_atom].dag()  # |0><i|
-                add_op(L_down, down_rate)
+                add_op(L_down, DOWN_RATE_FS)
+                if UP_RATE_FS > 0:
+                    L_up = sys.basis[i_atom] * sys.basis[0].dag()  # |i><0|
+                    add_op(L_up, UP_RATE_FS)
 
         # Double-state dephasing if manifold present
         max_exc = sys.max_excitation
         if max_exc == 2:
-            for i in range(1, n_atoms):
-                for j in range(i + 1, n_atoms + 1):
+            for i_atom in range(1, n_atoms):
+                for j_atom in range(i_atom + 1, n_atoms + 1):
                     from qspectro2d.core.atomic_system.system_class import pair_to_index
 
-                    idx = pair_to_index(i, j, n_atoms)
+                    idx = pair_to_index(i_atom, j_atom, n_atoms)
                     deph_op_ij = sys.deph_op_i(idx)
-                    add_op(deph_op_ij, deph_rate)
+                    add_op(deph_op_ij, DEPH_RATE_FS)
                     add_op(
-                        deph_op_ij, deph_rate
+                        deph_op_ij, DEPH_RATE_FS
                     )  # each double excited state gets one contribution from each site
+                    # TODO check wheather or not: twice add_op(deph_op_ij, DEPH_RATE_FS) does the same as add_op(deph_op_ij + deph_op_ij, DEPH_RATE_FS) and add_op(deph_op_ij - deph_op_ij, DEPH_RATE_FS) <- (anti-)correlation??
             if n_atoms == 2:  # to match the paper
                 return c_ops
             for i_atom in range(1, n_atoms):  # otherwise add decay channels
@@ -122,10 +122,10 @@ class AtomBathCoupling:
                     idx = pair_to_index(i_atom, j_atom, n_atoms)
 
                     # Double -> single lowering
-                    L_idx_i = sys.basis[i] * sys.basis[idx].dag()  # |i><i,j|
-                    L_idx_j = sys.basis[j] * sys.basis[idx].dag()  # |j><i,j|
-                    add_op(L_idx_i, down_rate)
-                    add_op(L_idx_j, down_rate)
+                    L_idx_i = sys.basis[i_atom] * sys.basis[idx].dag()  # |i><i,j|
+                    L_idx_j = sys.basis[j_atom] * sys.basis[idx].dag()  # |j><i,j|
+                    add_op(L_idx_i, DOWN_RATE_FS)
+                    add_op(L_idx_j, DOWN_RATE_FS)
 
         return c_ops
 
@@ -155,85 +155,79 @@ class AtomBathCoupling:
         detuning = self.system.frequencies_fs[0] - self.system.frequencies_fs[1]  # Δ
         return 0.5 * np.arctan2(2 * self.system.coupling_fs, detuning)
 
-    # only for the paper solver
-    def paper_gamma_ij(self, i: int, j: int) -> float:
+    # --- Paper solver rates (JCP 124, 234504/234505) ---
+    # Look appendix C in JCP 124, 234504   
+    # ω_{αβ} = E_α − E_β and S is the bath power spectrum.
+    def paper_gamma_ab(self, a: int, b: int) -> float:
+        """Population transfer rate γ_{αβ} for the dimer eigenbasis.
+        Eq. (C1) γ_{αβ} = sin²(2θ) · S(ω_{αβ}), αβ ∈ {1,2} (single-exciton states)
         """
-        Calculate the population relaxation rates. for the dimer system, analogous to the gamma_ij in the paper.
+        w_ab = self.system.omega_ij(a, b)
+        S_wab = self.bath.power_spectrum(w_ab)
+        sin2_2theta = np.sin(2 * self.theta) ** 2
+        return sin2_2theta * S_wab
 
-        Parameters:
-            i (int): Index of the first state.
-            j (int): Index of the second state.
+    def paper_Gamma_ab(self, a: int, b: int) -> float:
+        """Total dephasing / population decay rate Γ_{αβ} for the paper Liouvillian.
+        Eq. (C2-C6)
+        Combines pure dephasing (∝ S(0)) with population-transfer contributions
+        as given in the Redfield tensor.
+        Parameters
+        ----------
+        a, b : int
+            Eigenbasis indices of the density-matrix element ρ_{αβ}.
 
-        Returns:
-            float: Population relaxation rate.
+        Returns
+        -------
+        float
+            Total dephasing rate Γ_{αβ} [fs⁻¹].
+
+        Raises
+        ------
+        ValueError
+            If (a, b) is not a valid dimer eigenbasis index pair.
         """
-        w_ij = self.system.omega_ij(i, j)
-        """
-        from qspectro2d.core.bath_system.bath_fcts import (
-            power_spectrum_func_paper,
-            extract_bath_parameters,
-        )
+        S_0 = self.bath.power_spectrum(0)
+        sin2 = np.sin(2 * self.theta) ** 2
+        cos2 = np.cos(2 * self.theta) ** 2
 
-        args = extract_bath_parameters(self.bath)
+        # Pure-dephasing building blocks (Appendix A, Table I notation)
+        Gamma_ab = 2 * cos2 * S_0                # Γ̃_{αβ}  (exciton coherence)
+        Gamma_a0 = (1 - 0.5 * sin2) * S_0      # Γ̃_{α0}  (optical coherence)
+        Gamma_abar_0 = 2 * S_0                   # Γ̃_{ā,0} (double ↔ ground)
+        Gamma_abar_a = Gamma_a0                # Γ̃_{ā,α} (holds for dimer)
 
-        args["alpha"] = args["alpha"] * args["wc"]  # rescale coupling for paper eqs
-        P_wij = power_spectrum_func_paper(w_ij, **args)
-        """
-        P_wij = self.bath.power_spectrum(w_ij)
-        return np.sin(2 * self.theta) ** 2 * P_wij
+        # Pre-compute the two independent population-transfer rates
+        gamma_21 = self.paper_gamma_ab(2, 1)     # γ_{β→α}
+        gamma_12 = self.paper_gamma_ab(1, 2)     # γ_{α→β}
+        gamma_sum = gamma_21 + gamma_12
 
-    def paper_Gamma_ij(self, i: int, j: int) -> float:
-        """
-        Calculate the pure dephasing rates. for the dimer system, analogous to the gamma_ij in the paper.
-
-        Parameters:
-            i (int): Index of the first state.
-            j (int): Index of the second state.
-
-        Returns:
-            float: Pure dephasing rate.
-        """
-        # Pure dephasing rates helper
-        """
-        from qspectro2d.core.bath_system.bath_fcts import (
-            power_spectrum_func_paper,
-            extract_bath_parameters,
-        )
-
-        args = extract_bath_parameters(self.bath)
-        args["alpha"] = args["alpha"] * args["wc"]  # rescale coupling for paper eqs
-        P_0 = power_spectrum_func_paper(0, **args)
-        """
-        P_0 = self.bath.power_spectrum(0)
-        Gamma_t_ab = 2 * np.cos(2 * self.theta) ** 2 * P_0  # tilde
-        Gamma_t_a0 = (1 - 0.5 * np.sin(2 * self.theta) ** 2) * P_0
-        Gamma_11 = self.paper_gamma_ij(2, 1)
-        Gamma_22 = self.paper_gamma_ij(1, 2)
-        Gamma_abar_0 = 2 * P_0
-        Gamma_abar_a = Gamma_abar_0  # holds for dimer
-        if i == 1:
-            if j == 0:
-                return Gamma_t_a0 + 0.5 * self.paper_gamma_ij(2, i)
-            elif j == 1:
-                return Gamma_11
-            elif j == 2:
-                return Gamma_t_ab + 0.5 * (self.paper_gamma_ij(i, j) + self.paper_gamma_ij(j, i))
-        if i == 2:
-            if j == 0:
-                return Gamma_t_a0 + 0.5 * self.paper_gamma_ij(1, i)
-            elif j == 1:
-                return Gamma_t_ab + 0.5 * (self.paper_gamma_ij(i, j) + self.paper_gamma_ij(j, i))
-            elif j == 2:
-                return Gamma_22
-        elif i == 3:
-            if j == 0:
+        if a == 1:
+            if b == 0:          # ρ_{α,g} optical coherence
+                return Gamma_a0 + 0.5 * gamma_21
+            elif b == 1:        # ρ_{α,α} population
+                return gamma_21
+            elif b == 2:        # ρ_{α,β} exciton coherence
+                return Gamma_ab + 0.5 * gamma_sum
+        elif a == 2:
+            if b == 0:          # ρ_{β,g} optical coherence
+                return Gamma_a0 + 0.5 * gamma_12
+            elif b == 1:        # ρ_{β,α} exciton coherence
+                return Gamma_ab + 0.5 * gamma_sum
+            elif b == 2:        # ρ_{β,β} population
+                return gamma_12
+        elif a == 3:
+            if b == 0:          # ρ_{ā,g} double ↔ ground coherence
                 return Gamma_abar_0
-            elif j == 1:
-                return Gamma_abar_a + 0.5 * (self.paper_gamma_ij(2, j))
-            elif j == 2:
-                return Gamma_abar_a + 0.5 * (self.paper_gamma_ij(1, j))
-        else:
-            raise ValueError("Invalid indices for i and j.")
+            elif b == 1:        # ρ_{ā,α}
+                return Gamma_abar_a + 0.5 * gamma_21
+            elif b == 2:        # ρ_{ā,β}
+                return Gamma_abar_a + 0.5 * gamma_12
+
+        raise ValueError(
+            f"paper_Gamma_ab: invalid dimer index pair (α={a}, β={b}). "
+            f"Expected α ∈ {{1,2,3}}, β ∈ {{0,1,2}}."
+        )
 
     def summary(self) -> str:
         lines = [

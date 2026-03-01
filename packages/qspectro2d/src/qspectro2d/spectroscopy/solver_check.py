@@ -20,7 +20,7 @@ from qutip import Qobj, mesolve, brmesolve
 # LOCAL IMPORTS
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_times_local
-from qspectro2d.utils.rwa_utils import from_rotating_frame_op
+from qspectro2d.utils.rwa_utils import from_rotating_frame_list
 
 __all__ = ["check_the_solver"]
 
@@ -126,52 +126,6 @@ def _check_density_matrix_state(
     return error_messages, time_cut
 
 
-def _evolve_single_step(
-    sim_oqs: SimulationModuleOQS,
-    state: Qobj,
-    t_prev: float,
-    t_curr: float,
-    options: dict,
-    run_kwargs: dict,
-) -> Qobj:
-    """Evolve one time step and return the updated state (lab frame if RWA enabled)."""
-    t_list = [t_prev, t_curr]
-    H = sim_oqs.evo_obj
-    solver = sim_oqs.simulation_config.ode_solver
-
-    if solver == "redfield":
-        res = brmesolve(
-            H=H,
-            psi0=state,
-            tlist=t_list,
-            a_ops=sim_oqs.decay_channels,
-            e_ops=None,
-            options=options,
-            **run_kwargs,
-        )
-    elif solver in {"lindblad", "paper_eqs"}:
-        res = mesolve(
-            H=H,
-            rho0=state,
-            tlist=t_list,
-            c_ops=sim_oqs.decay_channels,
-            e_ops=None,
-            options=options,
-        )
-    else:
-        raise ValueError(f"Unsupported solver '{solver}'.")
-
-    next_state = res.states[-1]
-    if sim_oqs.simulation_config.rwa_sl:
-        next_state = from_rotating_frame_op(
-            next_state,
-            t_curr,
-            sim_oqs.system.n_atoms,
-            sim_oqs.laser.carrier_freq_fs,
-        )
-    return next_state
-
-
 def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     """
     Validate the quantum solver by running a test evolution and checking density matrix properties.
@@ -222,41 +176,54 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     # INPUT VALIDATION
     _validate_simulation_input(copy_sim_oqs)
 
-    # Prepare solver options for step-by-step evolution
+    # Prepare solver options for single-shot evolution
     run_kwargs, options = copy_sim_oqs._solver_split()
     options.setdefault("progress_bar", False)
     options.setdefault("store_states", True)
     options.setdefault("store_final_state", True)
 
-    # Step-by-step evolution with immediate checks
-    print("\n \n=== STATE-BY-STATE ANALYSIS ===")
+    # Single-shot evolution + state-by-state validation
+    print("\n \n=== STATE-BY-STATE ANALYSIS (single-shot solver run) ===")
+    solver = copy_sim_oqs.simulation_config.ode_solver
+    H = copy_sim_oqs.evo_obj
+    rho0 = copy_sim_oqs.initial_state
+
+    if solver == "redfield":
+        res = brmesolve(
+            H=H,
+            psi0=rho0,
+            tlist=times,
+            a_ops=copy_sim_oqs.decay_channels,
+            e_ops=None,
+            options=options,
+            **run_kwargs,
+        )
+    elif solver in {"lindblad", "paper_eqs"}:
+        res = mesolve(
+            H=H,
+            rho0=rho0,
+            tlist=times,
+            c_ops=copy_sim_oqs.decay_channels,
+            e_ops=None,
+            options=options,
+        )
+    else:
+        raise ValueError(f"Unsupported solver '{solver}'.")
+
+    states = res.states
+    if copy_sim_oqs.simulation_config.rwa_sl and len(states):
+        states = from_rotating_frame_list(
+            states,
+            np.asarray(times, dtype=float),
+            copy_sim_oqs.system.n_atoms,
+            copy_sim_oqs.laser.carrier_freq_fs,
+        )
+
     prev_state = None
-    current_state = copy_sim_oqs.initial_state
     time_cut = np.inf
     error_messages: List[str] = []
 
-    for index, time in enumerate(times):
-        if index == 0:
-            state_to_check = (
-                from_rotating_frame_op(
-                    current_state,
-                    float(time),
-                    copy_sim_oqs.system.n_atoms,
-                    copy_sim_oqs.laser.carrier_freq_fs,
-                )
-                if copy_sim_oqs.simulation_config.rwa_sl
-                else current_state
-            )
-        else:
-            current_state = _evolve_single_step(
-                copy_sim_oqs,
-                current_state,
-                float(times[index - 1]),
-                float(time),
-                options,
-                run_kwargs,
-            )
-            state_to_check = current_state
+    for index, (time, state_to_check) in enumerate(zip(times, states)):
 
         error_messages, time_cut = _check_density_matrix_state(
             state_to_check,
