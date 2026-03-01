@@ -6,7 +6,7 @@ Steps:
 - E_ks(t) ∝ i P_ks(t)
 - P_{l,m}(t) = Σ_{phi1} Σ_{phi2} P_{phi1,phi2}(t) * exp(-i(l phi1 + m phi2 + n PHI_DET))
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
-- P(t) is the complex/analytical polarization: P(t) = ⟨μ_+⟩(t), using the positive-frequency part of μ
+- P(t) is the complex/analytical polarization: P(t) = ⟨μ_-⟩(t), using the negative-frequency part of μ for emission spectroscopy
 
 Supports lindblad, redfield, and paper_eqs solvers via the internals of SimulationModuleOQS.
 """
@@ -130,8 +130,6 @@ def compute_polarization_over_window(
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
-    # # Build lowering op in energy eigenbasis (upper triangular part), which oscillates as exp(-i ω_L t) in RWA frame
-    # mu_m = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op)
     # Build raising op in energy eigenbasis (lower triangular part), which oscillates as exp(+i ω_L t) in RWA frame
     mu_p = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op.dag())
     if sim_oqs.simulation_config.rwa_sl:
@@ -231,24 +229,22 @@ def parallel_compute_1d_e_comps(
     t_coh: float,
     freq_vector: List[float],
     *,
-    phases: Optional[Sequence[float]] = None,
     lm: Optional[Tuple[int, int]] = None,
-    time_cut: Optional[float] = None,  # TODO for now just to see evolution -> later implement again
+    time_cut: Optional[float] = None,
 ) -> List[np.ndarray]:
     """Compute 1D electric field components E_kS(t_det) with phase cycling only.
 
-    loads config from YAML, assuming a single
-    inhomogeneous realization (system frequencies set externally). No internal
-    sampling or averaging over inhomogeneity is performed. Use external batching if needed.
+    Loads config from YAML for a single inhomogeneous realization.
+    No internal sampling or averaging over inhomogeneity is performed.
 
     Parameters
     ----------
     config_path : str
         Path to the YAML config file.
     t_coh : float
-        Coherence time.
-    phases : Optional[Sequence[float]]
-        Phase grid for (phi1, phi2). If None, use PHASE_CYCLING_PHASES truncated to n_phases.
+        Coherence time for this run.
+    freq_vector : List[float]
+        System frequencies (externally set).
     lm : Optional[Tuple[int,int]]
         Component to extract; if None, derive from signal types via COMPONENT_MAP.
     time_cut : Optional[float]
@@ -258,7 +254,7 @@ def parallel_compute_1d_e_comps(
     -------
     List[np.ndarray]
         List of complex E-components, one per entry in config.signal_types.
-        Each array has length len(t_det). A soft time_cut is applied by zeroing beyond cutoff.
+        Each array has length len(t_det) for the current t_coh.
     """
     from qspectro2d.config.create_sim_obj import load_simulation_config
 
@@ -267,16 +263,11 @@ def parallel_compute_1d_e_comps(
     config.t_coh_current = t_coh_val
     if t_coh_val > float(config.t_coh_max):
         config.t_coh_max = t_coh_val
-    # Determine phases from config defaults if not provided
-    n_ph = config.n_phases
-    phases_src = phases if phases is not None else PHASE_CYCLING_PHASES
-    phases_eff = tuple(float(x) for x in phases_src[:n_ph])
 
     # Prepare grid and helpers
     t_det = compute_t_det(config)
     n_t = len(t_det)
     sig_types = config.signal_types
-    # Assume 3 pulses as per the function doc
 
     # Optional time mask (keep length constant)
     t_mask = None
@@ -290,8 +281,8 @@ def parallel_compute_1d_e_comps(
     max_workers = config.max_workers
 
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
-        for phi1 in phases_eff:
-            for phi2 in phases_eff:
+        for phi1 in PHASE_CYCLING_PHASES:
+            for phi2 in PHASE_CYCLING_PHASES:
                 futures.append(
                     ex.submit(
                         _worker_P_phi_pair,
@@ -332,13 +323,13 @@ def parallel_compute_1d_e_comps(
                 )
 
     # Extract components for this realization
-    dphi = np.diff(phases_eff).mean() if len(phases_eff) > 1 else 1.0
+    dphi = np.diff(PHASE_CYCLING_PHASES).mean() if len(PHASE_CYCLING_PHASES) > 1 else 1.0
     norm = (dphi / (2 * np.pi)) ** 2
 
     E_list: List[np.ndarray] = []
     for sig in sig_types:
         P_comp = P_acc[sig] * norm
-        E_comp = P_comp
+        E_comp = 1j * P_comp
         if t_mask is not None:
             E_comp = E_comp * t_mask
         E_list.append(E_comp)

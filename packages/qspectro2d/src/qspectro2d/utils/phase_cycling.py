@@ -8,6 +8,8 @@ def phase_cycle_component(phases, P_grid, lm):
     P_grid: (len(phases)~[phi1], len(phases)~[phi2], T)
     lm    : (l, m)
     returns: (T,) ≈ ∬ e^{-i(l φ1 + m φ2)} P(t; φ1, φ2) dφ1 dφ2
+
+    loops because for 4x4 its faster
     """
     l, m = lm
     phases = np.asarray(phases)
