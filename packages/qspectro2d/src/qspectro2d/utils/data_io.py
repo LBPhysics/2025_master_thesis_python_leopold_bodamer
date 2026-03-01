@@ -50,6 +50,37 @@ def _info_path(directory: Path, prefix: str) -> Path:
     return directory / f"{prefix}.pkl"
 
 
+def pad_or_crop_signals(
+    signal_arrays: Sequence[np.ndarray],
+    target_length: int,
+) -> list[np.ndarray]:
+    """Pad or crop signals to a target length.
+    
+    Parameters
+    ----------
+    signal_arrays : Sequence[np.ndarray]
+        List of signals to resize.
+    target_length : int
+        Desired length for all signals.
+    
+    Returns
+    -------
+    list[np.ndarray]
+        List of resized signals (same dtype as input).
+    """
+    result = []
+    for signal in signal_arrays:
+        if len(signal) < target_length:
+            # Pad with zeros
+            padded = np.zeros(target_length, dtype=signal.dtype)
+            padded[:len(signal)] = signal
+            result.append(padded)
+        else:
+            # Crop to target length
+            result.append(signal[:target_length])
+    return result
+
+
 def save_run_artifact(
     *,
     signal_arrays: Sequence[np.ndarray],

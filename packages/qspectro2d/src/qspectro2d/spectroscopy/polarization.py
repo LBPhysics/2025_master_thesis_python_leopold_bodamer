@@ -2,8 +2,8 @@
 
 Pphys(t) = Tr[μ ρ(t)] = ∑_{m,n} μ_{mn} ρ_{nm}(t)
 
-but for spectroscopy are onlz interested in
-P^+(t) = Tr[μ^+ ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
+but for emission spectroscopy we are interested in
+P^-(t) = Tr[μ^- ρ(t)] = ∑_{m<n} μ_{mn} ρ_{nm}(t)
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ from qutip import Qobj, ket2dm, expect
 def complex_polarization(
     dipole_op: Qobj, state: Union[Qobj, List[Qobj]]
 ) -> Union[complex, np.ndarray]:
-    """Return complex/analytical polarization(s) P^(+)(t) for given state(s).
+    """Return complex/analytical polarization(s) P^(-)(t) for given state(s).
 
     Physics convention:
-        - The positive-frequency part of the dipole operator corresponds to
-            μ^(+) in this codebase's basis ordering and is represented by the
-            strictly lower-triangular part (m > n), selecting |higher⟩⟨lower|.
+        - The negative-frequency part of the dipole operator corresponds to
+            μ^(-) in this codebase's basis ordering and is represented by the
+            strictly upper-triangular part (m < n), selecting |lower⟩⟨higher|.
+        - Used for emission spectroscopy: P^(-)(t) ~ exp(-iωt).
 
     Accepts a single Qobj (ket or density matrix) or list of Qobj.
     """
@@ -57,12 +58,12 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
         If state is not a ket or density matrix.
     """
     rho = ket2dm(state) if state.isket else state
-    # Positive-frequency part for this codebase's basis ordering corresponds to
-    # the strictly LOWER-triangular portion (m > n) in the energy eigenbasis.
-    # ~ sigma^+ e^[-iwt]
-    dipole_op_pos = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
+    # Negative-frequency part (emission) for this codebase's basis ordering corresponds to
+    # the strictly UPPER-triangular portion (m < n) in the energy eigenbasis.
+    # ~ sigma^- e^[+iwt] - use this for emission spectroscopy
+    dipole_op_neg = Qobj(np.triu(dipole_op.full(), k=1), dims=dipole_op.dims)
 
-    pol = expect(dipole_op_pos, rho)
+    pol = expect(dipole_op_neg, rho)
 
     return complex(pol)
 

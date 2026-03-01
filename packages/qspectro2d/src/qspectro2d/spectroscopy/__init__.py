@@ -31,6 +31,7 @@ from .inhomogenity import (
 from .post_processing import (
     compute_spectra,
 )
+from ..utils.phase_cycling import phase_cycle_component
 
 __all__ = [
     # Core calculations

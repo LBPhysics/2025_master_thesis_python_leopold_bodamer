@@ -20,8 +20,6 @@ from typing import Optional, Iterable, Sequence, Union, List, Tuple, TYPE_CHECKI
 import matplotlib as mpl
 from .constants import (
     LATEX_DOC_WIDTH,
-    FONT_SIZE,
-    FIG_SIZE,
     DPI,
     FIG_FORMAT,
     TRANSPARENCY,
