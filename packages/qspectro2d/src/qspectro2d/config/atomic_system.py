@@ -18,3 +18,8 @@ MAX_EXCITATION = 1  # 1 -> ground+single manifold, 2 -> add double-excitation ma
 N_INHOMOGEN = 1  # 1 == no inhomogeneous broadening
 
 DELTA_INHOMOGEN_CM = 0.0  # Inhomogeneous broadening [cm⁻¹]
+
+# === DEFAULT 1 ATOMIC OPEN-SYSTEM RATES (fs⁻¹) for the paper_eqs liouvillian===
+DEPH_RATE_FS = 1 / 100
+DOWN_RATE_FS = 1 / 300
+UP_RATE_FS = 0.0  # zero-temperature limit

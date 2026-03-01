@@ -229,7 +229,6 @@ def parallel_compute_1d_e_comps(
     t_coh: float,
     freq_vector: List[float],
     *,
-    phases: Optional[Sequence[float]] = None,
     lm: Optional[Tuple[int, int]] = None,
     time_cut: Optional[float] = None,
 ) -> List[np.ndarray]:
@@ -246,8 +245,6 @@ def parallel_compute_1d_e_comps(
         Coherence time for this run.
     freq_vector : List[float]
         System frequencies (externally set).
-    phases : Optional[Sequence[float]]
-        Phase grid for (phi1, phi2). If None, use PHASE_CYCLING_PHASES truncated to n_phases.
     lm : Optional[Tuple[int,int]]
         Component to extract; if None, derive from signal types via COMPONENT_MAP.
     time_cut : Optional[float]
@@ -266,16 +263,11 @@ def parallel_compute_1d_e_comps(
     config.t_coh_current = t_coh_val
     if t_coh_val > float(config.t_coh_max):
         config.t_coh_max = t_coh_val
-    # Determine phases from config defaults if not provided
-    n_ph = config.n_phases
-    phases_src = phases if phases is not None else PHASE_CYCLING_PHASES
-    phases_eff = tuple(float(x) for x in phases_src[:n_ph])
 
     # Prepare grid and helpers
     t_det = compute_t_det(config)
     n_t = len(t_det)
     sig_types = config.signal_types
-    # Assume 3 pulses as per the function doc
 
     # Optional time mask (keep length constant)
     t_mask = None
@@ -289,8 +281,8 @@ def parallel_compute_1d_e_comps(
     max_workers = config.max_workers
 
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
-        for phi1 in phases_eff:
-            for phi2 in phases_eff:
+        for phi1 in PHASE_CYCLING_PHASES:
+            for phi2 in PHASE_CYCLING_PHASES:
                 futures.append(
                     ex.submit(
                         _worker_P_phi_pair,
@@ -331,7 +323,7 @@ def parallel_compute_1d_e_comps(
                 )
 
     # Extract components for this realization
-    dphi = np.diff(phases_eff).mean() if len(phases_eff) > 1 else 1.0
+    dphi = np.diff(PHASE_CYCLING_PHASES).mean() if len(PHASE_CYCLING_PHASES) > 1 else 1.0
     norm = (dphi / (2 * np.pi)) ** 2
 
     E_list: List[np.ndarray] = []
