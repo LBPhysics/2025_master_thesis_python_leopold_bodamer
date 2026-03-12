@@ -14,8 +14,8 @@ import numpy as np
 
 # Type checking imports to avoid circular imports
 if TYPE_CHECKING:
-    from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
-    from qspectro2d.core.atomic_system.system_class import AtomicSystem
+    from qspectro2d.core.laser_system.laser import LaserPulseSequence
+    from qspectro2d.core.atomic_system.system import AtomicSystem
     from qspectro2d.core.simulation import SimulationConfig
     from qutip import BosonicEnvironment
 

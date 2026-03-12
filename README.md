@@ -183,7 +183,7 @@ Each molecule has a transition frequency
 \omega_{\mathrm{eg}}(t) = \bar{\omega}_{\mathrm{eg}} + \delta \omega(t)
 \]
 
-that drifts in time because its local surroundings slightly change — e.g. molecular reorientation, vibrations, or solvent polarization relaxation.
+that drifts in time because its local surroundings slightly change — e.g. molecular reorientation, vibrations, or solvent polarisation relaxation.
 
 If \(\delta \omega(t)\) changes slowly, the system is inhomogeneously broadened: each molecule has a fixed but different frequency → static disorder.
 

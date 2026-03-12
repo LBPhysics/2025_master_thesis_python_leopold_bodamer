@@ -297,7 +297,7 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
 			job_metadata=reference.job_metadata,
 		)
 	else:
-		# 1D averaging (reuse logic from avg_inhomogenity.py)
+		# 1D averaging.
 		t_det = reference.t_det
 		signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
 

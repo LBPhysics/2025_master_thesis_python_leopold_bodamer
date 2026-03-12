@@ -19,7 +19,7 @@ Modular tools for simulating 1D and 2D electronic four-wave mixing spectroscopy 
 1. Define excitonic systems with configurable geometries, truncation levels, and inhomogeneous broadening.
 2. Specify laser pulses and phase-cycling schemes consistent with four-wave mixing experiments.
 3. Couple systems to dissipative environments using Bloch–Redfield, Lindblad, or paper-specific equations of motion.
-4. Propagate dynamics, compute polarizations, and perform Fourier-domain post-processing for 1D/2D spectroscopy.
+4. Propagate dynamics, compute polarisations, and perform Fourier-domain post-processing for 1D/2D spectroscopy.
 
 The package underpins the numerical results of the Master’s thesis and is designed to be reusable for related projects.
 
@@ -40,7 +40,7 @@ The package underpins the numerical results of the Master’s thesis and is desi
 | Bath descriptions | Ohmic and Drude–Lorentz spectral densities, Qutip `OhmicEnvironment`, configurable coupling strengths |
 | Laser pulses | Gaussian and cos² envelopes, automatic pulse-delay synthesis, phase cycling presets |
 | Simulation engine | Factory to assemble `SimulationModuleOQS`, solver validation, support for QuTiP solvers and paper-derived Liouvillians |
-| Spectroscopy utilities | Analytical polarization, solver sanity checks, FFT helpers, signal averaging and component selection |
+| Spectroscopy utilities | Analytical polarisation, solver sanity checks, FFT helpers, signal averaging and component selection |
 | Project utilities | Default parameter validation, file I/O helpers, thesis path conventions, plotting helpers |
 
 ## Architecture
@@ -49,16 +49,16 @@ The package underpins the numerical results of the Master’s thesis and is desi
 qspectro2d/
 ├── config/        # Default parameters, YAML loading → SimulationModuleOQS factory
 ├── core/          # Atomic, laser, bath, and simulation classes
-├── spectroscopy/  # Polarization, solver validation, post-processing
+├── spectroscopy/  # Polarisation, solver validation, post-processing
 ├── utils/         # Constants, I/O, file naming, rotating-wave helpers
 └── visualization/ # Plotting wrappers (Matplotlib + thesis aesthetics)
 ```
 
 ### Key modules
-- `config.create_sim_obj` – high-level entry point that reads YAML config files, applies physics-aware validation, and returns a ready-to-run simulation object with consistent timing arrays.
-- `core.atomic_system.system_class.AtomicSystem` – manages basis construction, exciton Hamiltonians, and geometry-dependent couplings.
-- `core.simulation.simulation_class.SimulationModuleOQS` – wraps system, laser, bath, and solver settings.
-- `spectroscopy.polarization` – provides analytical polarization computation (`complex_polarization`) compatible with solver outputs.
+- `config.factory` – builds validated simulation objects from one merged config dictionary.
+- `core.atomic_system.system` – manages basis construction, exciton Hamiltonians, and geometry-dependent couplings.
+- `core.simulation.simulation` – wraps system, laser, bath, and solver settings.
+- `spectroscopy.polarisation` – provides analytical polarisation computation (`complex_polarisation`) compatible with solver outputs.
 - `utils.data_io` – standardizes how time-domain signals and metadata are saved/loaded to support reproducible thesis figures.
 
 ## Installation
@@ -82,9 +82,9 @@ Discover the public API and assemble basic simulations programmatically:
 from qspectro2d import (
 		AtomicSystem,
 )
-from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
+from qspectro2d.core.laser_system.laser import LaserPulseSequence
 from qspectro2d.core.simulation.sim_config import SimulationConfig
-from qspectro2d.core.simulation.simulation_class import SimulationModuleOQS
+from qspectro2d.core.simulation.simulation import SimulationModuleOQS
 
 system = AtomicSystem(
 		n_atoms=2,
@@ -117,13 +117,13 @@ simulation = SimulationModuleOQS(
 ## Configuration-driven workflow
 
 1. Describe system, laser, bath, and solver blocks in YAML (values omitted fall back to module defaults in `qspectro2d.config`).
-2. Call `create_sim_obj(path_to_yaml)` to obtain a validated `SimulationModuleOQS` instance, with cutoff time (where the simulation becomes unphysical).
+2. Call `load_simulation(path_to_yaml)` to obtain a validated `SimulationModuleOQS` instance, with cutoff time (where the simulation becomes unphysical).
 
 ### Loading and validating configuration
 
 ```python
 from pathlib import Path
-from qspectro2d.config.create_sim_obj import load_simulation, create_base_sim_oqs
+from qspectro2d.config.factory import create_base_sim_oqs, load_simulation
 
 sim = load_simulation(Path("config/dimer.yaml"))
 sim_summary = sim.summary()
@@ -132,13 +132,13 @@ sim, time_cut = create_base_sim_oqs(Path("config/dimer.yaml"))
 print(f"Usable detection window: {time_cut:.1f} fs")
 ```
 
-The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `qspectro2d.config.validation.validate`).
+The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `qspectro2d.config.validate.validate_config`).
 
 ### Solver options
 
 You can pass solver-specific knobs under `config.solver_options`. These are forwarded to the selected QuTiP solver backend.
 
-Defaults live in `qspectro2d.config.simulation.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validation.validate`.
+Defaults live in `qspectro2d.config.defaults.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validate.validate_config`.
 Unknown keys raise an error to avoid silently ignored typos.
 
 Common keys (for the supported solvers):
@@ -190,9 +190,9 @@ For stable dephasing control, prefer the built-in Ohmic/Sub-Ohmic families, or a
 
 ## Working with results
 
-- `qspectro2d.utils.data_io` – save raw time-domain polarizations, spectral grids, and metadata.
+- `qspectro2d.utils.data_io` – save raw time-domain polarisations, spectral grids, and metadata.
 - `qspectro2d.spectroscopy.post_processing` – apply FFTs, phase matching, and generate absorption/emission maps.
-- `qspectro2d.spectroscopy.solver_check.check_the_solver` – detect unphysical behavior and return the recommended time cut.
+- `qspectro2d.diagnostics.solver_check.check_the_solver` – detect unphysical behavior and return the recommended time cut.
 
 All outputs are designed to integrate with the thesis data hierarchy (`Master_thesis/data` and `Master_thesis/figures`).
 
