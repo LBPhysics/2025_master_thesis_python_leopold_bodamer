@@ -24,12 +24,18 @@ from pathlib import Path
 
 import numpy as np
 
-from qspectro2d.config.create_sim_obj import load_simulation
+from qspectro2d.config.factory import load_simulation
 from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
-from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
-from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_info_file, save_run_artifact, pad_or_crop_signals
-from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
+from qspectro2d.diagnostics import check_the_solver
+from qspectro2d.spectroscopy import compute_emitted_field_components, sample_from_gaussian
+from qspectro2d.utils.data_io import (
+	save_info_file,
+	save_run_artifact,
+	pad_or_crop_signals,
+	allocate_job_dir,
+	ensure_job_layout,
+	job_label_token,
+)
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
@@ -246,7 +252,7 @@ def main() -> None:
 			f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
 		)
 
-		e_components = parallel_compute_1d_e_comps(
+		e_components = compute_emitted_field_components(
 			config_path=str(config_path),
 			t_coh=t_coh_val,
 			freq_vector=freq_vector.tolist(),

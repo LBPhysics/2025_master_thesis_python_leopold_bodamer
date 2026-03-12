@@ -15,10 +15,10 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
+from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import save_run_artifact, pad_or_crop_signals
 from qspectro2d.core.simulation.time_axes import compute_global_t_det
-from qspectro2d.config.create_sim_obj import load_simulation_config
+from qspectro2d.config.factory import load_simulation_config
 
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
@@ -175,7 +175,7 @@ def main() -> None:
 		)
 
 		# Compute signals for this t_coh value
-		e_components = parallel_compute_1d_e_comps(
+		e_components = compute_emitted_field_components(
 			config_path=str(config_path),
 			t_coh=t_coh_val,
 			freq_vector=freq_vector.tolist(),

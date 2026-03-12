@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple, Union
 import scipy.sparse as sp
 import numpy as np
-
+ 
 __all__ = [
     "compute_spectra",
 ]
