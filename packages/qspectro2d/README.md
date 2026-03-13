@@ -19,7 +19,7 @@ Modular tools for simulating 1D and 2D electronic four-wave mixing spectroscopy 
 1. Define excitonic systems with configurable geometries, truncation levels, and inhomogeneous broadening.
 2. Specify laser pulses and phase-cycling schemes consistent with four-wave mixing experiments.
 3. Couple systems to dissipative environments using Bloch–Redfield, Lindblad, or paper-specific equations of motion.
-4. Propagate dynamics, compute polarizations, and perform Fourier-domain post-processing for 1D/2D spectroscopy.
+4. Propagate dynamics, compute polarisations, and perform Fourier-domain post-processing for 1D/2D spectroscopy.
 
 The package underpins the numerical results of the Master’s thesis and is designed to be reusable for related projects.
 
@@ -40,7 +40,7 @@ The package underpins the numerical results of the Master’s thesis and is desi
 | Bath descriptions | Ohmic and Drude–Lorentz spectral densities, Qutip `OhmicEnvironment`, configurable coupling strengths |
 | Laser pulses | Gaussian and cos² envelopes, automatic pulse-delay synthesis, phase cycling presets |
 | Simulation engine | Factory to assemble `SimulationModuleOQS`, solver validation, support for QuTiP solvers and paper-derived Liouvillians |
-| Spectroscopy utilities | Analytical polarization, solver sanity checks, FFT helpers, signal averaging and component selection |
+| Spectroscopy utilities | Analytical polarisation, solver sanity checks, FFT helpers, signal averaging and component selection |
 | Project utilities | Default parameter validation, file I/O helpers, thesis path conventions, plotting helpers |
 
 ## Architecture
@@ -49,7 +49,7 @@ The package underpins the numerical results of the Master’s thesis and is desi
 qspectro2d/
 ├── config/        # Default parameters, YAML loading → SimulationModuleOQS factory
 ├── core/          # Atomic, laser, bath, and simulation classes
-├── spectroscopy/  # Polarization, solver validation, post-processing
+├── spectroscopy/  # Polarisation, solver validation, post-processing
 ├── utils/         # Constants, I/O, file naming, rotating-wave helpers
 └── visualization/ # Plotting wrappers (Matplotlib + thesis aesthetics)
 ```
@@ -58,7 +58,7 @@ qspectro2d/
 - `config.create_sim_obj` – high-level entry point that reads YAML config files, applies physics-aware validation, and returns a ready-to-run simulation object with consistent timing arrays.
 - `core.atomic_system.system_class.AtomicSystem` – manages basis construction, exciton Hamiltonians, and geometry-dependent couplings.
 - `core.simulation.simulation_class.SimulationModuleOQS` – wraps system, laser, bath, and solver settings.
-- `spectroscopy.polarization` – provides analytical polarization computation (`complex_polarization`) compatible with solver outputs.
+- `spectroscopy.polarisation` – provides analytical polarisation computation (`complex_polarisation`) compatible with solver outputs.
 - `utils.data_io` – standardizes how time-domain signals and metadata are saved/loaded to support reproducible thesis figures.
 
 ## Installation
@@ -190,7 +190,7 @@ For stable dephasing control, prefer the built-in Ohmic/Sub-Ohmic families, or a
 
 ## Working with results
 
-- `qspectro2d.utils.data_io` – save raw time-domain polarizations, spectral grids, and metadata.
+- `qspectro2d.utils.data_io` – save raw time-domain polarisations, spectral grids, and metadata.
 - `qspectro2d.spectroscopy.post_processing` – apply FFTs, phase matching, and generate absorption/emission maps.
 - `qspectro2d.spectroscopy.solver_check.check_the_solver` – detect unphysical behavior and return the recommended time cut.
 

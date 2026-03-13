@@ -1,21 +1,23 @@
-"""Polarization related helper functions.
+"""Polarisation related helper functions.
 
 Pphys(t) = Tr[μ ρ(t)] = ∑_{m,n} μ_{mn} ρ_{nm}(t)
 
 but for emission spectroscopy we are interested in
-P^-(t) = Tr[μ^- ρ(t)] = ∑_{m<n} μ_{mn} ρ_{nm}(t)
+P^-(t) = Tr[μ^- ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
 """
 
 from __future__ import annotations
-from typing import Union, List
+
+from typing import List, Union
+
 import numpy as np
-from qutip import Qobj, ket2dm, expect
+from qutip import Qobj, expect, ket2dm
 
 
-def complex_polarization(
+def complex_polarisation(
     dipole_op: Qobj, state: Union[Qobj, List[Qobj]]
 ) -> Union[complex, np.ndarray]:
-    """Return complex/analytical polarization(s) P^(-)(t) for given state(s).
+    """Return complex/analytical polarisation(s) P^(-)(t) for given state(s).
 
     Physics convention:
         - The negative-frequency part of the dipole operator corresponds to
@@ -26,19 +28,19 @@ def complex_polarization(
     Accepts a single Qobj (ket or density matrix) or list of Qobj.
     """
     if isinstance(state, Qobj):
-        return _single_qobj__complex_pol(dipole_op, state)
+        return _complex_polarisation_single(dipole_op, state)
     if isinstance(state, list):
         if len(state) == 0:
             return np.array([], dtype=np.complex128)
         return np.array(
-            [_single_qobj__complex_pol(dipole_op, s) for s in state], dtype=np.complex128
+            [_complex_polarisation_single(dipole_op, s) for s in state], dtype=np.complex128
         )
     raise TypeError(f"State must be Qobj or list[Qobj], got {type(state)}")
 
 
-def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
+def _complex_polarisation_single(dipole_op: Qobj, state: Qobj) -> complex:
     """
-    Calculate polarization for a single quantum state or density matrix.
+    Calculate polarisation for a single quantum state or density matrix.
 
     Parameters
     ----------
@@ -50,7 +52,7 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
     Returns
     -------
     complex
-        Complex polarization value.
+        Complex polarisation value.
 
     Raises
     ------
@@ -58,27 +60,25 @@ def _single_qobj__complex_pol(dipole_op: Qobj, state: Qobj) -> complex:
         If state is not a ket or density matrix.
     """
     rho = ket2dm(state) if state.isket else state
-    # Negative-frequency part (emission) for this codebase's basis ordering corresponds to
-    # the strictly UPPER-triangular portion (m < n) in the energy eigenbasis.
-    # ~ sigma^- e^[+iwt] - use this for emission spectroscopy
-    dipole_op_neg = Qobj(np.triu(dipole_op.full(), k=1), dims=dipole_op.dims)
+    dipole_op_pos = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
 
-    pol = expect(dipole_op_neg, rho)
+    pol = expect(dipole_op_pos, rho)
 
     return complex(pol)
 
 
-def time_dependent_polarization_rwa(
-    dipole_op: Qobj, 
-    state: Qobj, 
-    t: float, 
-    n_atoms: int, 
-    carrier_freq_fs: float
+def time_dependent_polarisation_rwa(
+    dipole_op: Qobj,
+    state: Qobj,
+    t: float,
+    n_atoms: int,
+    carrier_freq_fs: float,
 ) -> complex:
-    """Compute time-dependent polarization with RWA correction."""
+    """Compute time-dependent polarisation with RWA correction."""
     from qspectro2d.utils.rwa_utils import from_rotating_frame_op
-    state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
-    return expect(dipole_op, state_lab)
 
-__all__ = ["complex_polarization", "time_dependent_polarization_rwa"]
+    state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
+    return complex_polarisation(dipole_op, state_lab)
+
+__all__ = ["complex_polarisation", "time_dependent_polarisation_rwa"]
 

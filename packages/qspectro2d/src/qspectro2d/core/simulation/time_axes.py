@@ -9,10 +9,18 @@ if TYPE_CHECKING:
     from .sim_config import SimulationConfig
 
 
+def _active_t_coh(cfg: "SimulationConfig") -> float:
+    """Return the coherence time currently applied in the simulation."""
+    t_coh = getattr(cfg, "t_coh_current", None)
+    if t_coh is None:
+        return float(cfg.t_coh_max)
+    return float(t_coh)
+
+
 def compute_times_local(cfg: "SimulationConfig") -> np.ndarray:
     """Compute the local time grid starting at -t_wait - t_coh."""
     dt = float(cfg.dt)
-    t_coh = float(cfg.t_coh_current) if hasattr(cfg, "t_coh_current") else float(cfg.t_coh_max)
+    t_coh = _active_t_coh(cfg)
     t0 = -(float(cfg.t_wait) + t_coh + 1.5 * float(cfg.pulse_fwhm_fs))
 
     n_steps = int(np.floor((float(cfg.t_det_max) - t0) / dt)) + 1
@@ -65,20 +73,12 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
     dt = float(cfg.dt)
 
     if sim_type in {"0d", "1d"}:
-        # For 0d/1d return t_coh_max as a single-element array
-        return np.asarray([float(cfg.t_coh_max)], dtype=float)
+        # For 0d/1d return the active coherence time as a single-element array
+        return np.asarray([_active_t_coh(cfg)], dtype=float)
 
     # 2d: build axis aligned to times_local, starting from grid point closest to 0
     if sim_type == "2d":
-        # For 2d, compute with t_coh_max to get the global reference grid
-        temp_cfg = cfg
-        if hasattr(cfg, "t_coh_current"):
-            # Temporarily override to get the maximal grid
-            from copy import deepcopy
-            temp_cfg = deepcopy(cfg)
-            temp_cfg.t_coh_current = float(cfg.t_coh_max)
-        
-        times_local = compute_times_local(temp_cfg)
+        times_local = compute_times_local(cfg)
         t0 = times_local[0]
         # Find the grid point at or immediately after 0 (same logic as t_det)
         k = int(np.ceil((0 - t0) / dt))
@@ -94,33 +94,4 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
         return t_coh_axis
 
     # fallback: return single value
-    return np.asarray([float(cfg.t_coh_max)], dtype=float)
-
-
-def compute_global_t_det(cfg: "SimulationConfig") -> np.ndarray:
-    """Compute the GLOBAL detection-time grid (using t_coh_max).
-    
-    This is used for consistent output across all t_coh sweeps.
-    All signals are padded/cropped to match this grid.
-    """
-    if getattr(cfg, "sim_type", "1d") == "0d":
-        return np.asarray([float(cfg.t_det_max)], dtype=float)
-
-    dt = float(cfg.dt)
-    t_det_max = float(cfg.t_det_max)
-    t_coh_max = float(cfg.t_coh_max)
-    t_wait = float(cfg.t_wait)
-    pulse_fwhm = float(cfg.pulse_fwhm_fs)
-    
-    # Global window: start from -t_wait - t_coh_max - pulse
-    t0 = -(t_wait + t_coh_max + 1.5 * pulse_fwhm)
-    
-    k = int(np.ceil(-t0 / dt))
-    x = t0 + k * dt
-    
-    if x > t_det_max:
-        return np.array([])
-    
-    n_steps = int(np.floor((t_det_max - x) / dt)) + 1
-    t_det = x + dt * np.arange(n_steps, dtype=float)
-    return t_det
+    return np.asarray([_active_t_coh(cfg)], dtype=float)

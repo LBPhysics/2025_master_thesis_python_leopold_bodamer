@@ -80,7 +80,7 @@ def to_rotating_frame_list(
     n_atoms: int,
     omega_laser: float,
 ) -> List[Qobj]:
-    """Batch version of ρ_RWA = U† ρ_lab U with simple broadcasting.
+    """Batch version of ρ_RWA = U ρ_lab U† with simple broadcasting.
     - times: array-like → must match len(states)
     """
     if not all(isinstance(s, Qobj) for s in states):
@@ -101,7 +101,7 @@ def from_rotating_frame_list(
     n_atoms: int,
     omega_laser: float,
 ) -> List[Qobj]:
-    """Batch version of ρ_lab = U ρ_RWA U† with simple broadcasting.
+    """Batch version of ρ_lab = U† ρ_RWA U with simple broadcasting.
     - times: array-like → must match len(states)
     """
     if not all(isinstance(s, Qobj) for s in states):
@@ -111,7 +111,12 @@ def from_rotating_frame_list(
     if len(times_arr) != len(states):
         raise ValueError(f"Length mismatch: {len(states)} states vs {times_arr.shape[0]} times")
     return [
-        from_rotating_frame_op(_ensure_density(rho), float(t), n_atoms, omega_laser)
+        from_rotating_frame_op(
+            _ensure_density(rho),
+            float(t),
+            n_atoms,
+            omega_laser,
+        )
         for rho, t in zip(states, times_arr)
     ]
 
@@ -142,7 +147,12 @@ def get_expect_vals_with_RWA(
         # By default we assume stored states are in the rotating frame and we want lab-frame
         # expectation values. If you need the opposite, call `to_rotating_frame` explicitly
         # at the call site and pass rwa_sl=False here to avoid double transforms.
-        states = from_rotating_frame_list(states, times - times[0], n_atoms, omega_laser)
+        states = from_rotating_frame_list(
+            states,
+            times,
+            n_atoms,
+            omega_laser,
+        )
     states_lab = states
     ## Calculate expectation values for each state and each operator
     updated_expects = []
@@ -151,11 +161,11 @@ def get_expect_vals_with_RWA(
         expect_vals = np.array(np.real(expect(e_op, states_lab)))
         updated_expects.append(expect_vals)
     if dipole_op is not None:
-        # Import locally to avoid circular imports and depend directly on polarization module
-        from qspectro2d.spectroscopy.polarization import complex_polarization
+        # Import locally to avoid circular imports and depend directly on polarisation module
+        from qspectro2d.spectroscopy.polarisation import complex_polarisation
 
         # Calculate expectation value for the dipole operator if provided
-        expect_vals_dip = np.array(complex_polarization(dipole_op, states_lab))
+        expect_vals_dip = np.array(complex_polarisation(dipole_op, states_lab))
         updated_expects.append(expect_vals_dip)
 
     return updated_expects

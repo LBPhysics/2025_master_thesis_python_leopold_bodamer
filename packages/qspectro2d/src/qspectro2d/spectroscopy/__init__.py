@@ -2,11 +2,11 @@
 Spectroscopy package for qspectro2d.
 
 This package provides computational tools for 1D and 2D spectroscopy simulations,
-including pulse evolution calculations, polarization computations, and post-processing
+including pulse evolution calculations, polarisation computations, and post-processing
 routines for Fourier transforms and signal analysis.
 
 Main components:
-- e_field_1d: 1D field and polarization computation pipeline
+- e_field_1d: 1D field and polarisation computation pipeline
 - inhomogenity: Tools for handling inhomogeneous broadening
 - post_processing: FFT and signal processing utilities
 - simulation: High-level simulation runners and utilities
@@ -17,7 +17,7 @@ from .e_field_1d import (
     compute_evolution,
     parallel_compute_1d_e_comps,
 )
-from .polarization import complex_polarization
+from .polarisation import complex_polarisation
 
 from .solver_check import check_the_solver
 
@@ -35,7 +35,7 @@ from ..utils.phase_cycling import phase_cycle_component
 
 __all__ = [
     # Core calculations
-    "complex_polarization",
+    "complex_polarisation",
     "compute_evolution",
     "check_the_solver",
     "parallel_compute_1d_e_comps",
