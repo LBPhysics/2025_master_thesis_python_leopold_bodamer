@@ -1,4 +1,4 @@
-"""Compute 1D emitted electric field E_ks(t_det) via phase-cycled third-order polarization.
+"""Compute 1D emitted electric field E_ks(t_det) via phase-cycled third-order polarisation.
 
 This module provides a clean, focused API that mirrors the physics and flow you described:
 
@@ -6,7 +6,7 @@ Steps:
 - E_ks(t) ∝ i P_ks(t)
 - P_{l,m}(t) = Σ_{phi1} Σ_{phi2} P_{phi1,phi2}(t) * exp(-i(l phi1 + m phi2 + n PHI_DET))
 - P_{phi1,phi2}(t) = P_total(t) - Σ_i P_i(t), with P_total using all pulses and P_i with only pulse i active
-- P(t) is the complex/analytical polarization: P(t) = ⟨μ_-⟩(t), using the negative-frequency part of μ for emission spectroscopy
+- P(t) is the complex/analytical polarisation: P(t) = ⟨μ_-⟩(t), using the negative-frequency part of μ for emission spectroscopy
 
 Supports lindblad, redfield, and paper_eqs solvers via the internals of SimulationModuleOQS.
 """
@@ -32,10 +32,10 @@ __all__ = [
 # Internal helpers
 # --------------------------------------------------------------------------------------
 def slice_P_to_window(times: np.ndarray, P_t: list, window: np.ndarray) -> np.ndarray:
-    """Slice the list of polarization values P_t to only keep the detection window portion.
+    """Slice the list of polarisation values P_t to only keep the detection window portion.
 
     Returns:
-        Array of polarization values corresponding to the window time points.
+        Array of polarisation values corresponding to the window time points.
     """
     # Assuming times are sorted and equally spaced
     times = np.asarray(times)
@@ -118,7 +118,7 @@ def compute_evolution(
     return np.array(t_list, float), data
 
 
-def compute_polarization_over_window(
+def compute_polarisation_over_window(
     sim_oqs: SimulationModuleOQS,
     window: np.ndarray | list | None = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -134,13 +134,13 @@ def compute_polarization_over_window(
     mu_p = sim_oqs.system.to_eigenbasis(sim_oqs.system.lowering_op.dag())
     if sim_oqs.simulation_config.rwa_sl:
         # rotate the states back to lab frame before expectation value
-        from qspectro2d.spectroscopy.polarization import time_dependent_polarization_rwa
+        from qspectro2d.spectroscopy.polarisation import time_dependent_polarisation_rwa
 
-        def polarization(t, state):
+        def polarisation(t, state):
             rho = state.extract(0) if hasattr(state, "extract") else state
             if hasattr(rho, "isket") and rho.isket:
                 rho = rho.proj()
-            return time_dependent_polarization_rwa(
+            return time_dependent_polarisation_rwa(
                 mu_p,
                 rho,
                 t,
@@ -149,12 +149,12 @@ def compute_polarization_over_window(
             )
 
     else:
-        polarization = mu_p
+        polarisation = mu_p
 
-    # Get polarization on the global time grid
-    times, P_t = compute_evolution(sim_oqs, e_ops=[polarization])
+    # Get polarisation on the global time grid
+    times, P_t = compute_evolution(sim_oqs, e_ops=[polarisation])
 
-    # Select the polarization at the desired window times (nearest matches)
+    # Select the polarisation at the desired window times (nearest matches)
     P_on_window = slice_P_to_window(times, P_t, window)
     return window, P_on_window
 
@@ -200,7 +200,7 @@ def _worker_P_phi_pair(
 
     # Total signal with all pulses
     t_det = compute_t_det(sim_oqs.simulation_config)
-    t_det_a, P_total = compute_polarization_over_window(sim_oqs, t_det)
+    t_det_a, P_total = compute_polarisation_over_window(sim_oqs, t_det)
 
     # Subtract signals from all subsets of size 1 pulses active
     P_sub_sum = np.zeros_like(P_total, dtype=np.complex128)
@@ -210,7 +210,7 @@ def _worker_P_phi_pair(
     for k in range(1, 2):  # subsets of size 1 only
         for combo in itertools.combinations(range(n_pulses), k):
             sim_sub = sim_with_only_pulses(sim_oqs, list(combo))
-            _, P_sub = compute_polarization_over_window(sim_sub, t_det)
+            _, P_sub = compute_polarisation_over_window(sim_sub, t_det)
             P_sub_sum += P_sub
 
     P_phi = P_total - P_sub_sum

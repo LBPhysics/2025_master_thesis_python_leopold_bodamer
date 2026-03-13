@@ -7,6 +7,7 @@ from __future__ import annotations
 # IMPORTS
 import json
 import pickle
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
@@ -55,28 +56,16 @@ def pad_or_crop_signals(
     target_length: int,
 ) -> list[np.ndarray]:
     """Pad or crop signals to a target length.
-    
-    Parameters
-    ----------
-    signal_arrays : Sequence[np.ndarray]
-        List of signals to resize.
-    target_length : int
-        Desired length for all signals.
-    
-    Returns
-    -------
-    list[np.ndarray]
-        List of resized signals (same dtype as input).
+
+    Kept as a compatibility helper so intermediate migration steps remain runnable.
     """
     result = []
     for signal in signal_arrays:
         if len(signal) < target_length:
-            # Pad with zeros
             padded = np.zeros(target_length, dtype=signal.dtype)
-            padded[:len(signal)] = signal
+            padded[: len(signal)] = signal
             result.append(padded)
         else:
-            # Crop to target length
             result.append(signal[:target_length])
     return result
 
@@ -255,3 +244,102 @@ def load_simulation_data(abs_path: Path | str) -> dict:
         bundle["job_metadata"] = job_meta
 
     return bundle
+
+
+# ---------------------------------------------------------------------------
+# Job-directory helpers (moved from job_paths.py + file_naming.py)
+# ---------------------------------------------------------------------------
+
+
+def generate_base_sub_dir(sim_config: "SimulationConfig", system: "AtomicSystem") -> Path:
+    """Generate standardized subdirectory path based on system and configuration.
+
+    Returns a relative Path that will be used as a sub-directory of DATA_DIR.
+    """
+    parts: list[str] = []
+    sim_f = sim_config.to_dict()
+    sys_f = system.to_dict()
+
+    n_atoms = sys_f.get("n_atoms")
+    n_chains = sys_f.get("n_chains")
+    n_rings = sys_f.get("n_rings")
+    if n_atoms > 2:
+        if n_chains is not None and n_rings is not None:
+            parts.append(f"{n_atoms}({n_chains}x{n_rings})_atoms")
+    else:
+        parts.append(f"{n_atoms}_atoms")
+
+    if n_atoms > 1:
+        coupling_cm = sys_f.get("coupling_cm")
+        if coupling_cm and coupling_cm > 0:
+            parts.append(f"{round(coupling_cm, 0)}cm")
+
+    parts.append(sim_f.get("ode_solver"))
+    parts.append("RWA" if sim_f.get("rwa_sl") else "noRWA")
+    parts.append(f"t_dm{sim_f.get('t_det_max')}_t_wait{sim_f.get('t_wait')}_dt_{sim_f.get('dt')}")
+
+    n_inhomogen = int(sim_f.get("n_inhomogen", 1))
+    if n_inhomogen > 1:
+        parts.append(f"inhom_{sys_f.get('delta_inhomogen_cm', '0')}_cm_{n_inhomogen}n")
+
+    return Path(*parts)
+
+
+@dataclass(frozen=True)
+class JobPaths:
+    """Resolved paths for a spectroscopy job run."""
+
+    job_dir: Path
+    data_dir: Path
+    figures_dir: Path
+    base_name: str
+
+    @property
+    def data_base_path(self) -> Path:
+        return self.data_dir / self.base_name
+
+
+def ensure_job_layout(job_dir: Path, base_name: str = "run") -> JobPaths:
+    """Create the canonical job layout and return the resolved paths."""
+    resolved_job = job_dir.resolve()
+    data_dir = resolved_job / "data"
+    figures_dir = resolved_job / "figures"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    return JobPaths(
+        job_dir=resolved_job,
+        data_dir=data_dir,
+        figures_dir=figures_dir,
+        base_name=base_name,
+    )
+
+
+def allocate_job_dir(root: Path, base_label: str) -> Path:
+    """Allocate a unique job directory under ``root`` using ``base_label``."""
+    root = root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    candidate = root / base_label
+    if not candidate.exists():
+        try:
+            candidate.mkdir(parents=True)
+            return candidate
+        except FileExistsError:
+            pass
+    counter = 1
+    while True:
+        candidate = root / f"{base_label}_{counter:02d}"
+        if not candidate.exists():
+            try:
+                candidate.mkdir(parents=True)
+                return candidate
+            except FileExistsError:
+                pass
+        counter += 1
+
+
+def job_label_token(sim_config: "SimulationConfig", system: "AtomicSystem", *, sim_type: str | None = None) -> str:
+    """Return a flattened identifier derived from the config and system."""
+    base = generate_base_sub_dir(sim_config, system)
+    parts = [part for part in base.parts if part and str(part).lower() != "none"]
+    prefix = (sim_type or getattr(sim_config, "sim_type", None) or "sim").strip()
+    return "_".join([prefix, *parts])

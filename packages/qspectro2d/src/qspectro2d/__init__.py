@@ -61,7 +61,6 @@ from .utils.data_io import (
     load_run_artifact,
     load_simulation_data,
 )
-from .utils import generate_unique_plot_filename
 
 # Spectroscopy exports (imported after data I/O to avoid partial init race)
 from .spectroscopy import compute_spectra
@@ -81,15 +80,13 @@ __all__ = [
     "power_spectrum_func_drude_lorentz",
     "power_spectrum_func_ohmic",
     # High-level simulation functions
-    "complex_polarization",
+    "complex_polarisation",
     # Post-processing
     "compute_spectra",
     # Data management
     "save_run_artifact",
     "load_run_artifact",
     "load_simulation_data",
-    # Plotting helpers
-    "generate_unique_plot_filename",
 ]
 
 

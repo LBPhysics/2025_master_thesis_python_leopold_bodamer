@@ -24,12 +24,14 @@ from pathlib import Path
 
 import numpy as np
 
+from copy import deepcopy
+
 from qspectro2d.config.create_sim_obj import load_simulation
-from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
+from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_t_det
 from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
 from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_info_file, save_run_artifact, pad_or_crop_signals
-from qspectro2d.utils.job_paths import allocate_job_dir, ensure_job_layout, job_label_token
+from qspectro2d.utils.data_io import save_info_file, save_run_artifact
+from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
@@ -182,9 +184,11 @@ def main() -> None:
 		sim.simulation_config.t_coh_current = float(sim.simulation_config.t_coh_max)
 	t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
 
-	# Compute global detection axis (all signals padded/cropped to this)
-	t_det_axis = compute_global_t_det(sim.simulation_config).tolist()
-	global_n_t = len(t_det_axis)
+	# Derive detection axis from current active coherence to keep metadata aligned.
+	det_cfg = deepcopy(sim.simulation_config)
+	if t_coh_values.size:
+		det_cfg.t_coh_current = float(t_coh_values[0])
+	t_det_axis = compute_t_det(det_cfg).tolist()
 	combinations = build_combinations(t_coh_values, n_inhom)
 
 	print(
@@ -253,18 +257,17 @@ def main() -> None:
 			time_cut=time_cut,
 		)
 
-		# Pad/crop all signals to match global grid
-		padded_components = pad_or_crop_signals(e_components, global_n_t)
-
 		metadata_combo = {
 			"signal_types": signal_types,
 			"t_coh_value": t_coh_val,
+			"t_index": t_idx,
+			"combination_index": global_idx,
 			"sim_type": "1d" if args.sim_type == "2d" else args.sim_type,
 			"sample_index": inhom_idx,
 		}
 
 		path = save_run_artifact(
-			signal_arrays=padded_components,
+			signal_arrays=e_components,
 			metadata=metadata_combo,
 			frequency_sample_cm=freq_vector,
 			data_dir=data_base_path.parent,

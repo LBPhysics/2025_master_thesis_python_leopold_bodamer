@@ -191,7 +191,7 @@ archive/
 /config/local.py
 /config/local_*.py
 
-scripts/batch_jobs/
+/jobs/
 
 # all error filed from suptercomputer proteus
 **/.err
