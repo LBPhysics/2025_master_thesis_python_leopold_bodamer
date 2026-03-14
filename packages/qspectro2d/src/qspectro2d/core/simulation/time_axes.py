@@ -80,9 +80,10 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
         if hasattr(cfg, "t_coh_current"):
             # Temporarily override to get the maximal grid
             from copy import deepcopy
+
             temp_cfg = deepcopy(cfg)
             temp_cfg.t_coh_current = float(cfg.t_coh_max)
-        
+
         times_local = compute_times_local(temp_cfg)
         t0 = times_local[0]
         # Find the grid point at or immediately after 0 (same logic as t_det)
@@ -104,7 +105,7 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
 
 def compute_global_t_det(cfg: "SimulationConfig") -> np.ndarray:
     """Compute the GLOBAL detection-time grid (using t_coh_max).
-    
+
     This is used for consistent output across all t_coh sweeps.
     All signals are padded/cropped to match this grid.
     """
@@ -116,16 +117,16 @@ def compute_global_t_det(cfg: "SimulationConfig") -> np.ndarray:
     t_coh_max = float(cfg.t_coh_max)
     t_wait = float(cfg.t_wait)
     pulse_fwhm = float(cfg.pulse_fwhm_fs)
-    
+
     # Global window: start from -t_wait - t_coh_max - pulse
     t0 = -(t_wait + t_coh_max + 1.5 * pulse_fwhm)
-    
+
     k = int(np.ceil(-t0 / dt))
     x = t0 + k * dt
-    
+
     if x > t_det_max:
         return np.array([])
-    
+
     n_steps = int(np.floor((t_det_max - x) / dt)) + 1
     t_det = x + dt * np.arange(n_steps, dtype=float)
     return t_det
