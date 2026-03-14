@@ -24,13 +24,10 @@ from pathlib import Path
 
 import numpy as np
 
-from copy import deepcopy
-
 from qspectro2d.config.create_sim_obj import load_simulation
-from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_t_det
-from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian
-from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_info_file, save_run_artifact
+from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
+from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian, compute_emitted_field_components
+from qspectro2d.utils.data_io import save_info_file, save_run_artifact, pad_or_crop_signals
 from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -184,11 +181,9 @@ def main() -> None:
 		sim.simulation_config.t_coh_current = float(sim.simulation_config.t_coh_max)
 	t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
 
-	# Derive detection axis from current active coherence to keep metadata aligned.
-	det_cfg = deepcopy(sim.simulation_config)
-	if t_coh_values.size:
-		det_cfg.t_coh_current = float(t_coh_values[0])
-	t_det_axis = compute_t_det(det_cfg).tolist()
+	# Compute global detection axis so all saved signals share the same length.
+	t_det_axis = compute_global_t_det(sim.simulation_config).tolist()
+	global_n_t = len(t_det_axis)
 	combinations = build_combinations(t_coh_values, n_inhom)
 
 	print(
@@ -250,12 +245,13 @@ def main() -> None:
 			f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
 		)
 
-		e_components = parallel_compute_1d_e_comps(
+		e_components = compute_emitted_field_components(
 			config_path=str(config_path),
 			t_coh=t_coh_val,
 			freq_vector=freq_vector.tolist(),
 			time_cut=time_cut,
 		)
+		e_components = pad_or_crop_signals(e_components, global_n_t)
 
 		metadata_combo = {
 			"signal_types": signal_types,
