@@ -15,7 +15,6 @@ from .defaults import (
     SUPPORTED_SOLVERS,
 )
 from .io import load_config, merge_config
-from .validation import validate as _legacy_validate
 
 
 def _ohmic_exponent(raw_value: float | None) -> float | None:
@@ -164,7 +163,9 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
     if sim_type in ("0d", "1d") and t_coh_current is None:
         raise ValueError("config.t_coh must be provided for 0d/1d simulations")
 
-    unknown_signal_types = [signal_type for signal_type in signal_types if signal_type not in COMPONENT_MAP]
+    unknown_signal_types = [
+        signal_type for signal_type in signal_types if signal_type not in COMPONENT_MAP
+    ]
     if unknown_signal_types:
         raise ValueError(f"Unsupported signal_types: {unknown_signal_types}")
 
@@ -186,15 +187,10 @@ def validate_defaults() -> None:
     validate_config(load_config())
 
 
-def validate(params: Mapping[str, Any]) -> None:
-    """Legacy compatibility API used by create_sim_obj."""
-    _legacy_validate(dict(params))
-
-
 def ensure_config(config_or_path: Mapping[str, Any] | str | None = None) -> dict[str, Any]:
     if config_or_path is None or isinstance(config_or_path, str):
         return load_config(config_or_path)
     return merge_config(config_or_path)
 
 
-__all__ = ["ensure_config", "validate", "validate_config", "validate_defaults"]
+__all__ = ["ensure_config", "validate_config", "validate_defaults"]
