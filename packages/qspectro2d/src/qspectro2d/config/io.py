@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from .defaults import ALLOWED_SOLVER_OPTIONS, SOLVER_OPTIONS, default_pulse_fwhm_fs, get_defaults
+from .defaults import SOLVER_OPTIONS, default_pulse_fwhm_fs, get_defaults
 
 
 def _read_yaml(path: Path) -> Mapping[str, Any]:
@@ -33,12 +33,9 @@ def _merge_dict(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, 
 def _normalize_solver_options(solver: str, solver_options: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(SOLVER_OPTIONS.get(solver, {}))
     merged.update(dict(solver_options))
-    allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(solver, []))
 
     normalized: dict[str, Any] = {}
     for key, value in merged.items():
-        if key not in allowed_keys:
-            continue
         if isinstance(value, str):
             text = value.strip()
             try:
