@@ -56,23 +56,17 @@ That is:
 Internally, the code converts `atomic.frequencies_cm` to fs⁻¹ for the dynamics; the same
 $\bar\omega_0$ (in fs⁻¹) is used to scale these bath parameters.
 
-### Extra bath types: `*+lorentzian`
+### Stable bath types
 
 Supported `bath.bath_type` values now include:
 - `ohmic`
-- `subohmic`
-- `superohmic`
 - `drudelorentz`
 - `ohmic+lorentzian`
-- `subohmic+lorentzian`
-- `superohmic+lorentzian`
 - `drudelorentz+lorentzian`
 
-For the Ohmic family (`ohmic`, `subohmic`, `superohmic`), you can optionally set an explicit
-power-law exponent via `bath.s` (dimensionless). If omitted, defaults are:
+For the Ohmic variants (`ohmic`, `ohmic+lorentzian`), you can optionally set an explicit
+power-law exponent via `bath.s` (dimensionless). If omitted, the default is:
 - `ohmic`: `s = 1.0`
-- `subohmic`: `s = 0.8`
-- `superohmic`: `s = 1.2`
 
 For the `*+lorentzian` types, the Lorentzian peak is configured via **normalized (dimensionless)** YAML inputs:
 - `bath.peak_width`: $\gamma / \bar\omega_0$
@@ -83,9 +77,9 @@ For the `*+lorentzian` types, the Lorentzian peak is configured via **normalized
 Internally, the loader converts these as:
 $$\gamma = \texttt{peak_width}\,\bar\omega_0, \quad \text{strength} = \texttt{peak_strength}\,\text{coupling}.$$
 
-**Known limitation (important):** the `*+lorentzian` bath types are still experimental.
+**Known limitation (important):** the `*+lorentzian` bath types are still numerically delicate.
 In particular, trying to create a strong peak close to $\omega\approx 0$ (to boost pure dephasing) tends to be numerically fragile in the current QuTiP Bloch–Redfield workflow (rates become very sensitive to low-frequency behavior and the internal spectral integrations / interpolation can become unstable or slow).
-If you need robust low-frequency dephasing, prefer the built-in Ohmic/Sub-Ohmic families for now, or use an analytic Drude–Lorentz/underdamped-mode model instead of an ad-hoc near-zero peak.
+If you need robust low-frequency dephasing, prefer the built-in Ohmic or Drude–Lorentz families for now, or use an analytic Drude–Lorentz/underdamped-mode model instead of an ad-hoc near-zero peak.
 
 ## Workflow overview
 
