@@ -533,7 +533,7 @@ def create_base_sim_oqs(
     t_max = sim.simulation_config.t_det_max
     print("🔍 Validating solver...")
     try:
-        from qspectro2d.spectroscopy.solver_check import check_the_solver
+        from qspectro2d.diagnostics import check_the_solver
 
         time_cut = check_the_solver(sim)
         print("#" * 60)

@@ -195,21 +195,6 @@ class LaserPulseSequence:
                 raise IndexError(f"Pulse index {index} out of range (0 <= i < {n_pulses})")
         return LaserPulseSequence(pulses=[self.pulses[index] for index in indices])
 
-    def select_pulses(self, active_indices: Sequence[int]) -> None:
-        """Keep pulse timing/phases unchanged and mute non-selected pulses.
-
-        This is a backward-compatible in-place API used by legacy spectroscopy
-        routines that build lower-order signals by zeroing pulse amplitudes.
-        """
-        n_pulses = len(self.pulses)
-        active = {int(index) for index in active_indices}
-        for index in active:
-            if index < 0 or index >= n_pulses:
-                raise IndexError(f"Pulse index {index} out of range (0 <= i < {n_pulses})")
-
-        for pulse in self.pulses:
-            pulse.pulse_amplitude = self._E0 if pulse.pulse_index in active else 0.0
-
     def summary(self) -> str:
         return str(self)
 

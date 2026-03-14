@@ -26,7 +26,8 @@ import numpy as np
 
 from qspectro2d.config.create_sim_obj import load_simulation
 from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
-from qspectro2d.spectroscopy import check_the_solver, sample_from_gaussian, compute_emitted_field_components
+from qspectro2d.diagnostics import check_the_solver
+from qspectro2d.spectroscopy import sample_from_gaussian, compute_emitted_field_components
 from qspectro2d.utils.data_io import save_info_file, save_run_artifact, pad_or_crop_signals
 from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
 
