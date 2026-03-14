@@ -21,7 +21,7 @@ def _worker_phase_pair(
     phi1: float,
     phi2: float,
 ) -> tuple[float, float, np.ndarray, np.ndarray, float, float, float, list[float]]:
-    from qspectro2d.config.factory import load_simulation
+    from qspectro2d.config.create_sim_obj import load_simulation
 
     sim_oqs = load_simulation(config_path)
     sim_oqs.update_delays(t_coh=t_coh)
@@ -64,7 +64,7 @@ def compute_emitted_field_components(
     time_cut: float | None = None,
 ) -> list[np.ndarray]:
     """Compute emitted-field components for the configured signal types."""
-    from qspectro2d.config.factory import load_simulation_config
+    from qspectro2d.config.create_sim_obj import load_simulation_config
 
     config = load_simulation_config(config_path)
     t_coh_value = float(t_coh)
