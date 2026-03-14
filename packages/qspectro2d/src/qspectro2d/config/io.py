@@ -66,6 +66,11 @@ def get_max_workers() -> int:
 def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Merge user config onto defaults and resolve derived values once."""
     cfg = get_defaults()
+    user_laser_cfg: Mapping[str, Any] = {}
+    if isinstance(user_cfg, Mapping):
+        laser_section = user_cfg.get("laser", {})
+        if isinstance(laser_section, Mapping):
+            user_laser_cfg = laser_section
     if user_cfg:
         _merge_dict(cfg, user_cfg)
 
@@ -92,7 +97,12 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         if laser_cfg.get("pulse_fwhm_fs") is None
         else float(laser_cfg["pulse_fwhm_fs"])
     )
-    laser_cfg["pulse_amplitudes"] = [float(value) for value in laser_cfg["pulse_amplitudes"]]
+    base_amplitude = float(laser_cfg.get("base_amplitude", 0.01))
+    if "pulse_amplitudes" in user_laser_cfg:
+        laser_cfg["pulse_amplitudes"] = [float(value) for value in laser_cfg["pulse_amplitudes"]]
+    else:
+        # Legacy behavior: first two pulses at E0, probe pulse at 10% of E0.
+        laser_cfg["pulse_amplitudes"] = [base_amplitude, base_amplitude, 0.1 * base_amplitude]
     laser_cfg["carrier_freq_cm"] = float(laser_cfg["carrier_freq_cm"])
     laser_cfg["rwa_sl"] = bool(laser_cfg["rwa_sl"])
 
