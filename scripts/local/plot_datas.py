@@ -3,7 +3,7 @@ Plot processed spectroscopy data: plot time-domain and frequency-domain electric
 
 This script loads the final processed artifact from process_datas.py and generates
 time-domain and frequency-domain plots for each signal type (e.g., 'rephasing', 'non-rephasing') and each
-component ('real', 'img', 'abs', 'phase').
+component ('real', 'imag', 'abs', 'phase').
 
 Examples:
         python "<repo>/scripts/local/plot_datas.py" --abs_path '/path/to/final_averaged.npz'
@@ -35,7 +35,7 @@ else:
 print = partial(print, flush=True)
 
 # Section for cropping data
-SECTION = (1.5, 1.7)  # or None #for no cropping
+SECTION = (-1.7, 1.7)  # or None #for no cropping
 
 # PLOT_PAD_FACTOR factor for zero-padding
 PLOT_PAD_FACTOR = 20.0
@@ -92,7 +92,7 @@ def main() -> None:
     print(f"Data dimension: {'2D' if t_coh is not None else '1D'}")
     print(f"Load time: {_format_seconds(time.perf_counter() - step_start)}")
 
-    components = ["real", "img", "abs"]
+    components = ["real", "imag", "abs"]
     saved_files = []
 
     job_metadata = data.get("job_metadata") or {}

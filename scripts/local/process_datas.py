@@ -86,20 +86,6 @@ def _load_entry(path: Path) -> RunEntry:
 	if sim_cfg is None or system is None:
 		raise ValueError(f"Artifact {path} is missing simulation context")
 
-	# Align detection axis with stored signal length if metadata drifted.
-	if signals:
-		det_len = next(iter(signals.values())).shape[-1]
-		if t_det.size != det_len:
-			from copy import deepcopy
-			from qspectro2d.core.simulation.time_axes import compute_t_det
-			cfg_for_det = deepcopy(sim_cfg)
-			tc_val = metadata.get("t_coh_value")
-			if tc_val is not None:
-				cfg_for_det.t_coh_current = float(tc_val)
-			new_t_det = compute_t_det(cfg_for_det)
-			if new_t_det.size == det_len:
-				t_det = new_t_det
-
 	if sim_cfg.sim_type == "1d":
 		t_coh = None
 
@@ -143,63 +129,27 @@ def _group_by_sample(entries: list[RunEntry]) -> dict[int, list[RunEntry]]:
 
 
 def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
-	"""Stack a group of 1D entries into a single 2D entry."""
+	"""Stack a group of 1D entries into a single 2D entry.
+	
+	Since all runs use a global t_det grid (based on t_coh_max),
+	they automatically have matching dimensions and no alignment is needed.
+	"""
 	if len(group) <= 1:
 		return group[0]  # Already 1D
 
-	# Sort by coherence time (more robust than t_index alone)
+	# Sort by coherence time
 	group_sorted = sorted(group, key=lambda e: float(e.metadata.get("t_coh_value", 0.0)))
 
 	# Check consistency
 	reference = group_sorted[0]
+	t_det = reference.t_det
 	signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
 	freq_ref = reference.frequency_sample_cm
 	ref_t_coh = reference.metadata.get("t_coh_value")
 	if ref_t_coh is None:
 		raise ValueError(f"Missing t_coh_value in metadata for {reference.path}")
 
-	for entry in group_sorted[1:]:
-		if not np.allclose(entry.frequency_sample_cm, freq_ref):
-			raise ValueError(f"Inconsistent frequency for {entry.path}")
-		current_signals = list(entry.metadata.get("signal_types", entry.signals.keys()))
-		if current_signals != signal_types:
-			raise ValueError(f"Inconsistent signals for {entry.path}")
-		if entry.metadata.get("t_coh_value") is None:
-			raise ValueError(f"Missing t_coh_value in metadata for {entry.path}")
 
-	# Align to common detection-time window (no interpolation)
-	start = max(float(entry.t_det[0]) for entry in group_sorted if entry.t_det.size)
-	end = min(float(entry.t_det[-1]) for entry in group_sorted if entry.t_det.size)
-	if start > end:
-		raise ValueError("No overlapping t_det window across entries")
-
-	# Build reference t_det grid from the first entry within the common window
-	ref_mask = (reference.t_det >= start) & (reference.t_det <= end)
-	if not np.any(ref_mask):
-		raise ValueError(f"Reference entry {reference.path} has no samples in common t_det window")
-	ref_t_det = reference.t_det[ref_mask]
-
-	def _align_to_ref(entry: RunEntry) -> None:
-		mask = (entry.t_det >= start) & (entry.t_det <= end)
-		if not np.any(mask):
-			raise ValueError(f"Entry {entry.path} has no samples in common t_det window")
-		entry_t = entry.t_det[mask]
-		idxs = np.searchsorted(entry_t, ref_t_det, side="left")
-		idxs = np.clip(idxs, 0, len(entry_t) - 1)
-		best = np.zeros_like(idxs)
-		for k, (i, t) in enumerate(zip(idxs, ref_t_det)):
-			candidates = [i]
-			if i > 0:
-				candidates.append(i - 1)
-			best[k] = min(candidates, key=lambda j: abs(entry_t[j] - t))
-		entry.t_det = ref_t_det
-		for sig in signal_types:
-			entry.signals[sig] = entry.signals[sig][mask][best]
-
-	for entry in group_sorted:
-		_align_to_ref(entry)
-
-	t_det = ref_t_det
 
 	# Collapse duplicate t_coh entries (can happen after re-runs)
 	tol = 0.5 * float(reference.simulation_config.dt)
@@ -347,7 +297,7 @@ def _average_entries(entries: list[RunEntry]) -> RunEntry:
 			job_metadata=reference.job_metadata,
 		)
 	else:
-		# 1D averaging (reuse logic from avg_inhomogenity.py)
+		# 1D averaging.
 		t_det = reference.t_det
 		signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
 
