@@ -1,25 +1,10 @@
 """Simulation defaults for qspectro2d."""
 
+from .defaults import SOLVER_OPTIONS
+
 # === SIMULATION DEFAULTS ===
 ODE_SOLVER = "redfield"
 SIM_TYPE = "1d"
-
-SOLVER_OPTIONS = {
-    "paper_eqs": {},
-    "redfield": {
-        "sec_cutoff": -1,
-        "atol": 1e-4,
-        "rtol": 1e-3,
-        "nsteps": 200000,
-        "method": "bdf",
-    },
-    "lindblad": {
-        "atol": 1e-5,
-        "rtol": 1e-3,
-        "nsteps": 200000,
-        "method": "bdf",
-    },
-}
 
 ALLOWED_SOLVER_OPTIONS = {
     "paper_eqs": [],

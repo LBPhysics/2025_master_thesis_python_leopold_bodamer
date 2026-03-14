@@ -41,7 +41,7 @@ from .atomic_system import (
     N_INHOMOGEN,
 )
 from .bath_system import BATH_COUPLING, BATH_CUTOFF, BATH_TEMP, BATH_TYPE
-from .defaults import DT, INITIAL_STATE, SUPPORTED_BATHS, T_DET_MAX, T_WAIT
+from .defaults import DT, INITIAL_STATE, SOLVER_OPTIONS, SUPPORTED_BATHS, T_DET_MAX, T_WAIT
 from .laser_system import (
     BASE_AMPLITUDE,
     CARRIER_FREQ_CM,
@@ -50,8 +50,8 @@ from .laser_system import (
     RWA_SL,
 )
 from .signal_processing import N_PHASES, RELATIVE_E0S, SIGNAL_TYPES
-from .simulation import ALLOWED_SOLVER_OPTIONS, ODE_SOLVER, SIM_TYPE, SOLVER_OPTIONS
-from .validation import validate
+from .simulation import ALLOWED_SOLVER_OPTIONS, ODE_SOLVER, SIM_TYPE
+from .validate import validate
 
 __all__ = [
     "load_simulation",
@@ -197,7 +197,7 @@ def load_simulation_laser(
         pulse_fwhm_fs=pulse_fwhm_fs,
         carrier_freq_cm=carrier_cm,
         envelope_type=envelope,
-        relative_E0s=relative_e0s,
+        pulse_amplitudes=[base_amp * r for r in relative_e0s],
         phases=phases,
     )
 

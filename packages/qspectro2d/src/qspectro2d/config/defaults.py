@@ -37,12 +37,26 @@ SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
 
 SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
 
+SOLVER_OPTIONS = {
+    "paper_eqs": {},
+    "redfield": {
+        "sec_cutoff": 0,
+    },
+    "lindblad": {
+        "atol": 1e-5,
+        "rtol": 1e-3,
+        "nsteps": 200000,
+        "method": "bdf",
+    },
+}
+
 __all__ = [
     "INITIAL_STATE",
     "T_DET_MAX",
     "T_COH_MAX",
     "DT",
     "T_WAIT",
+    "SOLVER_OPTIONS",
     "SUPPORTED_SOLVERS",
     "SUPPORTED_BATHS",
     "SUPPORTED_ENVELOPES",

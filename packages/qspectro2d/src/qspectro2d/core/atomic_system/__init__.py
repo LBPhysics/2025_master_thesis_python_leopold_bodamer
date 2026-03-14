@@ -12,18 +12,9 @@ The AtomicSystem class handles both single atoms and coupled atom systems
 with configurable coupling strengths and inhomogeneities.
 """
 
-# ATOMIC SYSTEM CLASS
+# Atomic-system models and helpers.
 
-from .system_class import AtomicSystem
+from .basis import pair_to_index
+from .system import AtomicSystem
 
-
-# PUBLIC API
-
-__all__ = ["AtomicSystem"]
-
-
-# VERSION INFO
-
-__version__ = "1.0.0"
-__author__ = "Leopold Bodamer"
-__email__ = ""
+__all__ = ["AtomicSystem", "pair_to_index"]

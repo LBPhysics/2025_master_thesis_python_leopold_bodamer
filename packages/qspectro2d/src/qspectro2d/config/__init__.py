@@ -10,7 +10,7 @@ The previous layered dataclass API (`models.py`, `loader.py`) was removed.
 
 from __future__ import annotations
 
-from .validation import validate_defaults, validate  # physics-level sanity
+from .validate import validate_defaults, validate  # physics-level sanity
 from ..utils.constants import HBAR, BOLTZMANN
 
 
