@@ -38,10 +38,15 @@ def compute_t_det(cfg: "SimulationConfig") -> np.ndarray:
     t_det_max = cfg.t_det_max
     times_local = compute_times_local(cfg)
 
-    # Find the smallest time in times_local that is >= 0
+    # Find the smallest grid time >= 0 in a numerically stable way.
+    # Using ceil(-t0/dt) can jump by +1 when floating noise nudges an
+    # almost-integer ratio slightly above the integer.
     t0 = times_local[0]
-    k = int(np.ceil(-t0 / dt))
+    k = int(np.floor((-t0) / dt))
     x = t0 + k * dt
+    if x < 0:
+        k += 1
+        x = t0 + k * dt
 
     # Ensure x is within bounds
     if x > t_det_max:
