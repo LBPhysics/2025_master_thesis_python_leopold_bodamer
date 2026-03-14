@@ -113,7 +113,6 @@ class SimulationModuleOQS:
 
     @property
     def sb_coupling(self) -> BathCoupling:
-        """Backward-compat alias for bath_coupling."""
         return self.bath_coupling
 
     @property

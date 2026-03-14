@@ -15,8 +15,10 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from qspectro2d.spectroscopy.e_field_1d import parallel_compute_1d_e_comps
-from qspectro2d.utils.data_io import save_run_artifact
+from qspectro2d.spectroscopy import compute_emitted_field_components
+from qspectro2d.utils.data_io import save_run_artifact, pad_or_crop_signals
+from qspectro2d.core.simulation.time_axes import compute_global_t_det
+from qspectro2d.config.factory import load_simulation_config
 
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
@@ -144,8 +146,14 @@ def main() -> None:
 
 	signal_types = job_metadata["signal_types"]
 
+	# Compute global detection grid (all signals padded/cropped to this)
+	cfg = load_simulation_config(str(config_path))
+	global_t_det = compute_global_t_det(cfg)
+	global_n_t = len(global_t_det)
+
 	t_start = time.time()
 	saved_paths: list[str] = []
+	failed_combos = 0
 
 	for combo in _iter_combos(combinations):
 		t_idx = combo.get("t_index", 0)
@@ -167,26 +175,45 @@ def main() -> None:
 			f"inhom_idx={inhom_idx} ---"
 		)
 
-		# Compute signals for this t_coh value
-		e_components = parallel_compute_1d_e_comps(
-			config_path=str(config_path),
-			t_coh=t_coh_val,
-			freq_vector=freq_vector.tolist(),
-			time_cut=args.time_cut,
-		)
+		run_status = "ok"
+		error_message = None
+		try:
+			# Compute signals for this t_coh value
+			e_components = compute_emitted_field_components(
+				config_path=str(config_path),
+				t_coh=t_coh_val,
+				freq_vector=freq_vector.tolist(),
+				time_cut=args.time_cut,
+			)
+
+			# Pad/crop all signals to match global grid
+			padded_components = pad_or_crop_signals(e_components, global_n_t)
+		except Exception as exc:
+			failed_combos += 1
+			run_status = "failed_fallback_zero"
+			error_message = f"{type(exc).__name__}: {exc}"
+			print(
+				"    ⚠️ combo failed; writing zero-valued fallback signals and continuing. "
+				f"error={error_message}",
+				flush=True,
+			)
+			padded_components = [
+				np.zeros(global_n_t, dtype=np.complex128)
+				for _ in signal_types
+			]
 
 		metadata_combo = {
 			"signal_types": signal_types,
 			"t_coh_value": t_coh_val,
-			"t_index": t_idx,
-			"combination_index": global_idx,
 			"sim_type": "1d" if args.sim_type == "2d" else args.sim_type,
-			"batch_id": args.batch_id,
 			"sample_index": inhom_idx,
+			"run_status": run_status,
 		}
+		if error_message is not None:
+			metadata_combo["error"] = error_message
 
 		path = save_run_artifact(
-			signal_arrays=e_components,
+			signal_arrays=padded_components,
 			metadata=metadata_combo,
 			frequency_sample_cm=freq_vector,
 			data_dir=data_dir,
@@ -202,6 +229,8 @@ def main() -> None:
 		f"Completed {len(saved_paths)} combination(s) in {elapsed:.2f} s | "
 		f"batch_id={args.batch_id}"
 	)
+	if failed_combos:
+		print(f"Fallback zero-signal outputs written for {failed_combos} failed combination(s).")
 	if saved_paths:
 		print("Latest artifact:")
 		print(f"  {saved_paths[-1]}")
