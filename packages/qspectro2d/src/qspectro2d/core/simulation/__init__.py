@@ -11,9 +11,10 @@ redfield          : Redfield tensor construction helpers
 liouvillian_paper : Paper specific time–dependent Liouvillian builders
 """
 
+from .paper_solver import matrix_ODE_paper
 from .sim_config import SimulationConfig
-from .simulation_class import SimulationModuleOQS
-from .liouvillian_paper import matrix_ODE_paper
+from .simulation import SimulationModuleOQS
+
 __all__ = [
     "SimulationConfig",
     "SimulationModuleOQS",
