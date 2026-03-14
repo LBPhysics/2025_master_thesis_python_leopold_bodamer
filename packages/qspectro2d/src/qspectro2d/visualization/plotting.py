@@ -367,15 +367,15 @@ def plot_el_field(
     axis_det: np.ndarray,
     data: np.ndarray,
     axis_coh: Optional[np.ndarray] = None,
-    component: Literal["real", "img", "abs", "phase"] = "real",
+    component: Literal["real", "imag", "abs", "phase"] = "real",
     domain: Literal["time", "freq"] = "time",
     section: Optional[tuple[float, float]] = None,
     ax: Optional[plt.Axes] = None,
     cutoff_percent: float = 0.0,
     **kwargs: dict,
 ) -> plt.Figure:
-    if component not in ("real", "img", "abs", "phase"):
-        raise ValueError("Invalid component. Must be 'real', 'img', 'abs', or 'phase'.")
+    if component not in ("real", "imag", "abs", "phase"):
+        raise ValueError("Invalid component. Must be 'real', 'imag', 'abs', or 'phase'.")
 
     # Convert sparse to dense if needed
     if isinstance(data, sp.spmatrix):
@@ -517,8 +517,8 @@ def _style_for_component(
     For 2D: returns (colormap, norm)
     """
     if ndim == 1:
-        color_map = {"abs": 0, "real": 1, "img": 2, "phase": 3}
-        linestyle_map = {"abs": 0, "real": 1, "img": 2, "phase": 3}
+        color_map = {"abs": 0, "real": 1, "imag": 2, "phase": 3}
+        linestyle_map = {"abs": 0, "real": 1, "imag": 2, "phase": 3}
         idx = color_map.get(component, 0)
         style_idx = linestyle_map.get(component, 0)
         color = COLORS[idx]
@@ -526,7 +526,7 @@ def _style_for_component(
         return color, linestyle
     elif ndim == 2:
         norm = None
-        if component in ("real", "img", "phase"):
+        if component in ("real", "imag", "phase"):
             use_custom_colormap = True
         else:
             use_custom_colormap = False
@@ -557,11 +557,11 @@ def _style_for_component(
 
 def _component_data(data: np.ndarray, component: str) -> Tuple[np.ndarray, str]:
     """Return transformed data + base title according to component."""
-    if component not in ("real", "img", "abs", "phase"):
+    if component not in ("real", "imag", "abs", "phase"):
         raise ValueError("Invalid component.")
     if component == "real":
         return np.real(data), r"$\text{Real }$"
-    if component == "img":
+    if component == "imag":
         return np.imag(data), r"$\text{Imag }$"
     if component == "abs":
         return np.abs(data), r"$\text{Abs }$"
@@ -580,16 +580,16 @@ def _domain_labels(domain: str, ndim: int) -> Tuple[str, ...]:
     title_suffix = "Time domain signal" if domain == "time" else "Spectrum"
     if ndim == 1:
         if domain == "time":
-            return r"$t_{\text{det}}$ [fs]", signal_label, title_suffix
+            return r"$t_{\mathrm{det}}$ [fs]", signal_label, title_suffix
         else:
-            return r"$\omega_{\text{det}}$ [$10^4$ cm$^{-1}$]", signal_label, title_suffix
+            return r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]", signal_label, title_suffix
     elif ndim == 2:
         if domain == "time":
-            return r"$t_{\text{coh}}$ [fs]", r"$t_{\text{det}}$ [fs]", signal_label, title_suffix
+            return r"$t_{\mathrm{coh}}$ [fs]", r"$t_{\mathrm{det}}$ [fs]", signal_label, title_suffix
         else:
             return (
-                r"$\omega_{\text{coh}}$ [$10^4$ cm$^{-1}$]",
-                r"$\omega_{\text{det}}$ [$10^4$ cm$^{-1}$]",
+                r"$\omega_{\mathrm{coh}}$ [$10^4$ cm$^{-1}$]",
+                r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]",
                 signal_label,
                 title_suffix,
             )
@@ -611,12 +611,12 @@ def add_custom_contour_lines(
         x (np.ndarray): X-axis coordinate array
         y (np.ndarray): Y-axis coordinate array
         data (np.ndarray): 2D data array to contour
-        component (str): Data component type ("real", "img", "phase", "abs")
+        component (str): Data component type ("real", "imag", "phase", "abs")
         level_count (int): Number of contour levels in each region (positive/negative).
             If 10 (default), levels are placed at ±[5, 15, ..., 95]% of |max(data)|.
     """
     ### Add contour lines with different styles for positive and negative values
-    if component in ("real", "img", "phase"):
+    if component in ("real", "imag", "phase"):
         ### Determine contour levels based on the data range
         vmax = max(abs(np.min(data)), abs(np.max(data)))
         vmin = -vmax

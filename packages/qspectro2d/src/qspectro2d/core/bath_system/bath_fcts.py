@@ -206,59 +206,6 @@ def power_spectrum_func_paper(w: float | ArrayLike, **args) -> float | ArrayLike
     return 2 * result
 
 
-# Convert bath coupling constant alpha to lindblad rates and vice versa
-def bath_to_rates(
-    env: BosonicEnvironment, w: float = None, mode: str = "decay"
-) -> tuple[float, float] | float:
-    """
-    Wrapper to convert bath coupling constant alpha to lindblad rates.
-    Args:
-        alpha: Coupling constant of the bath.
-        env: BosonicEnvironment instance with the bath parameters.
-        w: System transition frequency (difference of two energy levels) (required for decay mode).
-        mode: 'decay' for decay rates, 'deph' for dephasing rate.
-    Returns:
-        Decay rates (emission_rate, gamma_absorption) or dephasing rate (deph_rate).
-    """
-    if mode == "decay":
-        if w is None:
-            raise ValueError("System frequency w must be provided for decay mode.")
-        return bath_to_decay_rates(env, w)
-    elif mode == "deph":
-        return bath_to_dephasing_rate(env)
-    else:
-        raise ValueError("Invalid mode. Use 'decay' or 'deph'.")
-
-
-def rates_to_alpha(
-    rate: float | tuple[float, float],
-    env: BosonicEnvironment,
-    w: float = None,
-    wc=None,
-    mode: str = "decay",
-) -> float:
-    """
-    Wrapper to convert lindblad rates to bath coupling constant alpha.
-    Args:
-        rate: Decay rates (emission_rate, gamma_absorption) or dephasing rate (deph_rate).
-        env: BosonicEnvironment instance with the bath parameters.
-        w: System frequency (required for decay mode).
-        mode: 'decay' for decay rates, 'deph' for dephasing rate.
-    Returns:
-        alpha: Coupling constant of the bath.
-    """
-    if mode == "decay":
-        if wc is None:
-            raise ValueError("Cutoff frequency wc must be provided for decay mode.")
-        return decay_rates_to_alpha(rate, env, w, wc)
-    elif mode == "deph":
-        if not isinstance(rate, float):
-            raise ValueError("Rate must be a float (deph_rate) for dephasing mode.")
-        return dephasing_rate_to_alpha(rate, env)
-    else:
-        raise ValueError("Invalid mode. Use 'decay' or 'deph'.")
-
-
 def bath_to_decay_rates(env: BosonicEnvironment, w: float) -> tuple[float, float]:
     """
     Convert bath coupling constant alpha to lindblad decay channel rates.
@@ -273,34 +220,6 @@ def bath_to_decay_rates(env: BosonicEnvironment, w: float) -> tuple[float, float
     P_plus = env.power_spectrum(w)  # S(+ω) - emission rate
     P_minus = env.power_spectrum(-w)  # S(-ω) - absorption rate
     return P_plus, P_minus
-
-
-def decay_rates_to_alpha(
-    emission_rate: float, env: BosonicEnvironment, w: float, wc: float
-) -> float:
-    """
-    Convert lindblad decay channel rates to bath coupling constant alpha.
-    Args:
-        emission_rate: Spontaneous emission rate.
-        env: BosonicEnvironment instance with the bath parameters.
-        w: System frequency.
-    Returns:
-        alpha: Coupling constant of the bath.
-    """
-    # Avoid division by zero if w is very small
-    if w < 1e-12:
-        raise ValueError("w is too small; cannot determine alpha reliably.")
-
-    temp = env.T
-
-    P_plus = emission_rate
-    # Use constants directly to avoid circular import
-    BOLTZMANN_LOCAL = 1.0  # Using normalized units
-    HBAR_LOCAL = 1.0  # Using normalized units
-
-    w_th = BOLTZMANN_LOCAL * temp / HBAR_LOCAL
-    alpha = P_plus / (2 * w * np.exp(-w / wc) * (n_thermal(w, w_th) + 1))
-    return alpha
 
 
 def bath_to_dephasing_rate(env: BosonicEnvironment) -> float:

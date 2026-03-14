@@ -128,6 +128,7 @@ class AtomicSystem:
         lowering_op = 0.0
         for i_site in range(1, self.n_atoms + 1):
             lowering_op += self.dip_moments[i_site - 1] * (self.basis[0] * self.basis[i_site].dag())
+
         if self.max_excitation == 2:
             for i_site in range(1, self.n_atoms):
                 for j_site in range(i_site + 1, self.n_atoms + 1):
@@ -151,6 +152,7 @@ class AtomicSystem:
     def coupling_op(self) -> Qobj:
         if self.n_atoms <= 1:
             return 0
+
         coupling_op = ket2dm(self.basis[0]) * 0.0
         for i_site in range(1, self.n_atoms + 1):
             for j_site in range(i_site + 1, self.n_atoms + 1):
@@ -160,6 +162,7 @@ class AtomicSystem:
                 ket_i = self.basis[i_site]
                 ket_j = self.basis[j_site]
                 coupling_op += HBAR * coupling_ij * (ket_i * ket_j.dag() + ket_j * ket_i.dag())
+
         if self.max_excitation == 2 and self.n_atoms >= 3:
             for i_site in range(1, self.n_atoms):
                 for j_site in range(i_site + 1, self.n_atoms + 1):

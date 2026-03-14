@@ -44,17 +44,7 @@ _warnings.filterwarnings(
 # EXPLICIT IMPORTS ONLY (no lazy imports)
 
 # Core exports
-from .core import (
-    AtomicSystem,
-    LaserPulse,
-    LaserPulseSequence,
-    e_pulses,
-    pulse_envelopes,
-    matrix_ODE_paper,
-    power_spectrum_func_paper,
-    power_spectrum_func_drude_lorentz,
-    power_spectrum_func_ohmic,
-)
+from .core import AtomicSystem, LaserPulse, LaserPulseSequence, SimulationConfig, SimulationModuleOQS
 
 from .utils.data_io import (
     save_run_artifact,
@@ -67,23 +57,12 @@ from .spectroscopy import compute_spectra
 
 # PUBLIC API - MOST COMMONLY USED
 __all__ = [
-    # Core classes - most important for users
     "AtomicSystem",
     "LaserPulse",
     "LaserPulseSequence",
-    # Essential functions
-    "e_pulses",
-    "pulse_envelopes",
-    "matrix_ODE_paper",
-    # Bath functions
-    "power_spectrum_func_paper",
-    "power_spectrum_func_drude_lorentz",
-    "power_spectrum_func_ohmic",
-    # High-level simulation functions
-    "complex_polarisation",
-    # Post-processing
+    "SimulationConfig",
+    "SimulationModuleOQS",
     "compute_spectra",
-    # Data management
     "save_run_artifact",
     "load_run_artifact",
     "load_simulation_data",

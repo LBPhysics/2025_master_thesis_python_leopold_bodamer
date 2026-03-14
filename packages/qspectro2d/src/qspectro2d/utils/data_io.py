@@ -7,7 +7,6 @@ from __future__ import annotations
 # IMPORTS
 import json
 import pickle
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
@@ -15,8 +14,8 @@ import numpy as np
 
 # Type checking imports to avoid circular imports
 if TYPE_CHECKING:
-    from qspectro2d.core.laser_system.laser_class import LaserPulseSequence
-    from qspectro2d.core.atomic_system.system_class import AtomicSystem
+    from qspectro2d.core.laser_system.laser import LaserPulseSequence
+    from qspectro2d.core.atomic_system.system import AtomicSystem
     from qspectro2d.core.simulation import SimulationConfig
     from qutip import BosonicEnvironment
 
@@ -56,16 +55,28 @@ def pad_or_crop_signals(
     target_length: int,
 ) -> list[np.ndarray]:
     """Pad or crop signals to a target length.
-
-    Kept as a compatibility helper so intermediate migration steps remain runnable.
+    
+    Parameters
+    ----------
+    signal_arrays : Sequence[np.ndarray]
+        List of signals to resize.
+    target_length : int
+        Desired length for all signals.
+    
+    Returns
+    -------
+    list[np.ndarray]
+        List of resized signals (same dtype as input).
     """
     result = []
     for signal in signal_arrays:
         if len(signal) < target_length:
+            # Pad with zeros
             padded = np.zeros(target_length, dtype=signal.dtype)
-            padded[: len(signal)] = signal
+            padded[:len(signal)] = signal
             result.append(padded)
         else:
+            # Crop to target length
             result.append(signal[:target_length])
     return result
 
@@ -246,20 +257,36 @@ def load_simulation_data(abs_path: Path | str) -> dict:
     return bundle
 
 
-# ---------------------------------------------------------------------------
-# Job-directory helpers (moved from job_paths.py + file_naming.py)
-# ---------------------------------------------------------------------------
+"""Helpers for allocating and managing per-run job directories.
+
+The local and HPC workflows both create a dedicated "job directory" that
+collects raw artifacts, processed outputs, figures, and metadata in one
+place.  This module provides tiny utilities to derive those paths.
+"""
+
+from dataclasses import dataclass
 
 
-def generate_base_sub_dir(sim_config: "SimulationConfig", system: "AtomicSystem") -> Path:
-    """Generate standardized subdirectory path based on system and configuration.
-
-    Returns a relative Path that will be used as a sub-directory of DATA_DIR.
+def generate_base_sub_dir(sim_config: SimulationConfig, system: AtomicSystem) -> Path:
     """
+    Generate standardized subdirectory path based on system and configuration.
+    WILL BE subdir of DATA_DIR
+
+    Args:
+        info_config: Dictionary containing simulation parameters
+        system: System parameters object
+
+    Returns:
+        Path: Relative path for data storage
+    """
+    # Base directory based on number of atoms and solver type
     parts: list[str] = []
+
+    # Add simulation dimension (1d/2d)
     sim_f = sim_config.to_dict()
     sys_f = system.to_dict()
 
+    # Add system details
     n_atoms = sys_f.get("n_atoms")
     n_chains = sys_f.get("n_chains")
     n_rings = sys_f.get("n_rings")
@@ -270,19 +297,27 @@ def generate_base_sub_dir(sim_config: "SimulationConfig", system: "AtomicSystem"
         parts.append(f"{n_atoms}_atoms")
 
     if n_atoms > 1:
+        # Add coupling strength if applicable. For inhom runs, avoid numeric per-run values.
         coupling_cm = sys_f.get("coupling_cm")
         if coupling_cm and coupling_cm > 0:
             parts.append(f"{round(coupling_cm, 0)}cm")
 
+    # Add solver if available
     parts.append(sim_f.get("ode_solver"))
+
+    # Add RWA if available
     parts.append("RWA" if sim_f.get("rwa_sl") else "noRWA")
+
+    # Add time parameters
     parts.append(f"t_dm{sim_f.get('t_det_max')}_t_wait{sim_f.get('t_wait')}_dt_{sim_f.get('dt')}")
 
+    # For inhomogeneous batches, avoid embedding per-run numeric parameters to keep a stable folder
     n_inhomogen = int(sim_f.get("n_inhomogen", 1))
     if n_inhomogen > 1:
         parts.append(f"inhom_{sys_f.get('delta_inhomogen_cm', '0')}_cm_{n_inhomogen}n")
 
-    return Path(*parts)
+    base_path = Path(*parts)
+    return base_path
 
 
 @dataclass(frozen=True)
@@ -296,16 +331,21 @@ class JobPaths:
 
     @property
     def data_base_path(self) -> Path:
+        """Base path used for raw artifacts (stem only)."""
+
         return self.data_dir / self.base_name
 
 
 def ensure_job_layout(job_dir: Path, base_name: str = "run") -> JobPaths:
     """Create the canonical job layout and return the resolved paths."""
+
     resolved_job = job_dir.resolve()
     data_dir = resolved_job / "data"
     figures_dir = resolved_job / "figures"
+
     data_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
+
     return JobPaths(
         job_dir=resolved_job,
         data_dir=data_dir,
@@ -316,8 +356,10 @@ def ensure_job_layout(job_dir: Path, base_name: str = "run") -> JobPaths:
 
 def allocate_job_dir(root: Path, base_label: str) -> Path:
     """Allocate a unique job directory under ``root`` using ``base_label``."""
+
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
+
     candidate = root / base_label
     if not candidate.exists():
         try:
@@ -325,6 +367,7 @@ def allocate_job_dir(root: Path, base_label: str) -> Path:
             return candidate
         except FileExistsError:
             pass
+
     counter = 1
     while True:
         candidate = root / f"{base_label}_{counter:02d}"
@@ -337,9 +380,11 @@ def allocate_job_dir(root: Path, base_label: str) -> Path:
         counter += 1
 
 
-def job_label_token(sim_config: "SimulationConfig", system: "AtomicSystem", *, sim_type: str | None = None) -> str:
+def job_label_token(sim_config, system, *, sim_type: str | None = None) -> str:
     """Return a flattened identifier derived from the config and system."""
+
     base = generate_base_sub_dir(sim_config, system)
     parts = [part for part in base.parts if part and str(part).lower() != "none"]
     prefix = (sim_type or getattr(sim_config, "sim_type", None) or "sim").strip()
-    return "_".join([prefix, *parts])
+    token_parts = [prefix, *parts]
+    return "_".join(token_parts)

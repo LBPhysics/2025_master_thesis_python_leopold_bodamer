@@ -18,7 +18,6 @@ __all__ = ["matrix_ODE_paper"]
 
 
 def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
-    """Build and cache static Liouvillian pieces for fast runtime assembly."""
     cached = getattr(sim_oqs, "_paper_liouvillian_ctx", None)
     if cached is not None:
         return cached
