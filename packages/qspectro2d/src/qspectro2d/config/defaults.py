@@ -1,4 +1,9 @@
-"""Single source of truth for configuration defaults."""
+"""Single source of truth for configuration defaults.
+
+This module keeps all raw defaults in one place so the rest of the config
+package can work with one merged config object instead of reconstructing state
+from scattered module globals.
+"""
 
 from __future__ import annotations
 
