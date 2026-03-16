@@ -40,8 +40,12 @@ def _worker_phase_pair(
 
     polarisation_component = polarisation_total - polarisation_subtractions
     max_abs_total = float(np.max(np.abs(polarisation_total))) if len(polarisation_total) else 0.0
-    max_abs_sub = float(np.max(np.abs(polarisation_subtractions))) if len(polarisation_subtractions) else 0.0
-    max_abs_component = float(np.max(np.abs(polarisation_component))) if len(polarisation_component) else 0.0
+    max_abs_sub = (
+        float(np.max(np.abs(polarisation_subtractions))) if len(polarisation_subtractions) else 0.0
+    )
+    max_abs_component = (
+        float(np.max(np.abs(polarisation_component))) if len(polarisation_component) else 0.0
+    )
     pulse_amplitudes = list(sim_oqs.laser.pulse_amplitudes)
     return (
         phi1,
@@ -81,13 +85,15 @@ def compute_emitted_field_components(
         time_mask = (t_det <= time_cut).astype(np.float64)
 
     accumulated = {
-        signal_type: np.zeros(component_count, dtype=np.complex128)
-        for signal_type in signal_types
+        signal_type: np.zeros(component_count, dtype=np.complex128) for signal_type in signal_types
     }
 
     with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
         futures = {
-            executor.submit(_worker_phase_pair, config_path, t_coh, freq_vector, phi1, phi2): (phi1, phi2)
+            executor.submit(_worker_phase_pair, config_path, t_coh, freq_vector, phi1, phi2): (
+                phi1,
+                phi2,
+            )
             for phi1 in PHASE_CYCLING_PHASES
             for phi2 in PHASE_CYCLING_PHASES
         }

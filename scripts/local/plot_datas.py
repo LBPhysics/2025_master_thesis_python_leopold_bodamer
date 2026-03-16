@@ -35,7 +35,7 @@ else:
 print = partial(print, flush=True)
 
 # Section for cropping data
-SECTION = (-1.7, 1.7)  # or None #for no cropping
+SECTION = (1.5, 1.7)  # or None #for no cropping
 
 # PLOT_PAD_FACTOR factor for zero-padding
 PLOT_PAD_FACTOR = 20.0

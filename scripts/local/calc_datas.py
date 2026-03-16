@@ -153,7 +153,12 @@ def main() -> None:
     time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
-    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=args.sim_type)
+    effective_sim_type = (
+        args.sim_type if args.sim_type is not None else sim.simulation_config.sim_type
+    )
+    sim.simulation_config.sim_type = effective_sim_type
+
+    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=effective_sim_type)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     job_label = f"local_{label_token}_{timestamp}"
     job_dir = allocate_job_dir(RUNS_ROOT, job_label)
@@ -183,8 +188,7 @@ def main() -> None:
         mu=base_freqs,
     )
 
-    sim.simulation_config.sim_type = args.sim_type
-    if args.sim_type == "1d" and getattr(sim.simulation_config, "t_coh_current", None) is None:
+    if effective_sim_type == "1d" and getattr(sim.simulation_config, "t_coh_current", None) is None:
         sim.simulation_config.t_coh_current = float(sim.simulation_config.t_coh_max)
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
 
@@ -199,7 +203,7 @@ def main() -> None:
     )
 
     job_metadata = {
-        "sim_type": args.sim_type,
+        "sim_type": effective_sim_type,
         "signal_types": sim.simulation_config.signal_types,
         "t_det": t_det_axis,
         "t_coh": t_coh_values.tolist(),
@@ -265,7 +269,7 @@ def main() -> None:
         metadata_combo = {
             "signal_types": signal_types,
             "t_coh_value": t_coh_val,
-            "sim_type": "1d" if args.sim_type == "2d" else args.sim_type,
+            "sim_type": "1d" if effective_sim_type == "2d" else effective_sim_type,
             "sample_index": inhom_idx,
         }
 

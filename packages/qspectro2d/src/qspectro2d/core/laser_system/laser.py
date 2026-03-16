@@ -158,7 +158,6 @@ class LaserPulseSequence:
     @staticmethod
     def from_pulse_delays(
         pulse_delays: list[float],
-        base_amplitude: float = 1,
         pulse_fwhm_fs: float = 15.0,
         carrier_freq_cm: float = 16000.0,
         envelope_type: str = "gaussian",
@@ -168,7 +167,7 @@ class LaserPulseSequence:
         if any(delay < 0 for delay in pulse_delays):
             raise ValueError("All pulse_delays must be non-negative.")
         n_pulses = len(pulse_delays) + 1
-        pulse_amplitudes = pulse_amplitudes or [float(base_amplitude)] * n_pulses
+        pulse_amplitudes = pulse_amplitudes or [1.0] * n_pulses
         phases = phases or [0.0] * n_pulses
         if not (len(pulse_amplitudes) == len(phases) == n_pulses):
             raise ValueError("Lengths of pulse_delays, pulse_amplitudes, and phases must match")
@@ -199,8 +198,11 @@ class LaserPulseSequence:
         return str(self)
 
     def __str__(self) -> str:
-        return "LaserPulseSequence Summary\n" + "-" * 80 + "\n" + "\n".join(
-            pulse.summary_line() for pulse in self.pulses
+        return (
+            "LaserPulseSequence Summary\n"
+            + "-" * 80
+            + "\n"
+            + "\n".join(pulse.summary_line() for pulse in self.pulses)
         )
 
     def to_dict(self) -> dict:

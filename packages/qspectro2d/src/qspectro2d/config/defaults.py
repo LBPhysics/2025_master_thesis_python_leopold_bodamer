@@ -19,6 +19,7 @@ T_DET_MAX = 20.0
 T_COH_MAX = T_DET_MAX
 DT = 0.1
 T_WAIT = 0.0
+DEFAULT_PULSE_FWHM_FS = 5.0
 
 # --- Supported options ---
 SUPPORTED_SOLVERS = ["lindblad", "redfield", "paper_eqs"]
@@ -38,6 +39,11 @@ SOLVER_OPTIONS = {
     "paper_eqs": {},
     "redfield": {
         "sec_cutoff": 0,
+        "method": "lsoda",  # can automatically solve stiff(bfd) vs non-stiff(adam) systems;
+        "nsteps": 10000000,
+        "atol": 1e-3,
+        "rtol": 1e-3,
+        "max_step": None,  # for pulsed time dependence, recommended by QuTip docs
     },
     "lindblad": {
         "atol": 1e-5,
@@ -92,7 +98,7 @@ DEFAULTS = {
         "up_rate_fs": 0.0,
     },
     "laser": {
-        "pulse_fwhm_fs": None,
+        "pulse_fwhm_fs": DEFAULT_PULSE_FWHM_FS,
         "pulse_amplitudes": [0.01, 0.01, 0.01],
         "envelope_type": "gaussian",
         "carrier_freq_cm": 16000.0,
@@ -103,7 +109,7 @@ DEFAULTS = {
         "temperature": 1e-2,
         "cutoff": 1e2,
         "coupling": 1e-4,
-        "s": None,
+        "s": 1.0,
         "wmax_factor": 10.0,
         "peak_strength": 0.0,
         "peak_width": 1.0,
@@ -124,11 +130,6 @@ DEFAULTS = {
         "max_workers": None,
     },
 }
-
-
-def default_pulse_fwhm_fs(n_atoms: int) -> float:
-    """Return the derived default pulse width for a system size."""
-    return 15.0 if int(n_atoms) == 1 else 5.0
 
 
 def get_defaults() -> dict:
@@ -152,10 +153,10 @@ __all__ = [
     "SUPPORTED_SIM_TYPES",
     "SUPPORTED_SOLVERS",
     "TRACE_TOLERANCE",
+    "DEFAULT_PULSE_FWHM_FS",
     "T_COH_MAX",
     "T_DET_MAX",
     "T_WAIT",
     "DT",
-    "default_pulse_fwhm_fs",
     "get_defaults",
 ]

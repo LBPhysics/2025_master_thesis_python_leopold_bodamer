@@ -19,9 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 import numpy as np
-import yaml
-
 from qspectro2d.config.factory import load_simulation, load_simulation_config
+from qspectro2d.config.io import load_config
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
@@ -143,8 +142,8 @@ def estimate_slurm_resources(
                     continue
 
                 cfg_obj = load_simulation_config(str(cfg_path))
-                cfg_dict = yaml.safe_load(Path(cfg_path).read_text(encoding="utf-8"))
-                solver_name = cfg_dict.get("config", {}).get("solver", "paper_eqs")
+                cfg_dict = load_config(str(cfg_path))
+                solver_name = str(cfg_dict.get("config", {}).get("solver", "redfield"))
                 rwa_val = bool(cfg_dict.get("laser", {}).get("rwa_sl", True))
 
                 n_times_cfg = len(np.asarray(compute_times_local(cfg_obj), dtype=float))
@@ -371,7 +370,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     time_cut = np.inf  # TODO ONLY CHECK LOCALLY check_the_solver(sim)
     print(f"✅ Solver NOT validated on hpc -> do it locally! time_cut = {time_cut:.6g}")
 
-    sim.simulation_config.sim_type = args.sim_type  # to ensure t_coh_axis has the right behavior
+    effective_sim_type = (
+        args.sim_type if args.sim_type is not None else sim.simulation_config.sim_type
+    )
+    sim.simulation_config.sim_type = effective_sim_type
 
     n_inhom = sim.simulation_config.n_inhomogen
     if n_inhom <= 0:
@@ -397,7 +399,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}, n_batches={args.n_batches}"
     )
 
-    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=args.sim_type)
+    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=effective_sim_type)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     job_label = f"hpc_{label_token}_{timestamp}"
     job_dir = allocate_job_dir(RUNS_ROOT, job_label)
@@ -442,7 +444,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     config_path = config_copy_path
 
     job_metadata = {
-        "sim_type": args.sim_type,
+        "sim_type": effective_sim_type,
         "signal_types": sim.simulation_config.signal_types,
         "t_det": compute_global_t_det(sim.simulation_config).tolist(),
         "t_coh": t_coh_values.tolist(),
@@ -486,12 +488,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         combos_file = job_dir / f"batch_{batch_idx:03d}.json"
         write_json(combos_file, {"combos": combos_subset})
 
-        job_name = f"{args.sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
+        job_name = f"{effective_sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
         slurm_text = _render_slurm_script(
             job_name=job_name,
             batch_idx=batch_idx,
             n_batches=args.n_batches,
-            sim_type=args.sim_type,
+            sim_type=effective_sim_type,
             combos_filename=combos_file.name,
             samples_filename=samples_file.name,
             time_cut=time_cut,

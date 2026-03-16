@@ -12,7 +12,8 @@ if TYPE_CHECKING:
 def compute_times_local(cfg: "SimulationConfig") -> np.ndarray:
     """Compute the local time grid starting at -t_wait - t_coh."""
     dt = float(cfg.dt)
-    t_coh = float(cfg.t_coh_current) if hasattr(cfg, "t_coh_current") else float(cfg.t_coh_max)
+    t_coh_current = getattr(cfg, "t_coh_current", None)
+    t_coh = float(cfg.t_coh_max) if t_coh_current is None else float(t_coh_current)
     t0 = -(float(cfg.t_wait) + t_coh + 1.5 * float(cfg.pulse_fwhm_fs))
 
     n_steps = int(np.floor((float(cfg.t_det_max) - t0) / dt)) + 1
@@ -70,14 +71,20 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
     dt = float(cfg.dt)
 
     if sim_type in {"0d", "1d"}:
-        # For 0d/1d return t_coh_max as a single-element array
-        return np.asarray([float(cfg.t_coh_max)], dtype=float)
+        # For 0d/1d use the current coherence time when available.
+        # This keeps runs consistent with config.t_coh and with local window creation.
+        t_coh_value = (
+            float(cfg.t_coh_current)
+            if getattr(cfg, "t_coh_current", None) is not None
+            else float(cfg.t_coh_max)
+        )
+        return np.asarray([t_coh_value], dtype=float)
 
     # 2d: build axis aligned to times_local, starting from grid point closest to 0
     if sim_type == "2d":
         # For 2d, compute with t_coh_max to get the global reference grid
         temp_cfg = cfg
-        if hasattr(cfg, "t_coh_current"):
+        if getattr(cfg, "t_coh_current", None) is not None:
             # Temporarily override to get the maximal grid
             from copy import deepcopy
 
