@@ -50,19 +50,36 @@ def _info_path(directory: Path, prefix: str) -> Path:
     return directory / f"{prefix}.pkl"
 
 
+def build_run_metadata(
+    *,
+    signal_types: Sequence[str],
+    sim_type: str,
+    sample_index: int,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build canonical per-run metadata with required keys at the source level."""
+    metadata: dict[str, Any] = {
+        "signal_types": list(signal_types),
+        "sim_type": str(sim_type),
+        "sample_index": int(sample_index),
+    }
+    metadata.update(extra)
+    return metadata
+
+
 def pad_or_crop_signals(
     signal_arrays: Sequence[np.ndarray],
     target_length: int,
 ) -> list[np.ndarray]:
     """Pad or crop signals to a target length.
-    
+
     Parameters
     ----------
     signal_arrays : Sequence[np.ndarray]
         List of signals to resize.
     target_length : int
         Desired length for all signals.
-    
+
     Returns
     -------
     list[np.ndarray]
@@ -73,7 +90,7 @@ def pad_or_crop_signals(
         if len(signal) < target_length:
             # Pad with zeros
             padded = np.zeros(target_length, dtype=signal.dtype)
-            padded[:len(signal)] = signal
+            padded[: len(signal)] = signal
             result.append(padded)
         else:
             # Crop to target length
@@ -94,7 +111,7 @@ def save_run_artifact(
     directory = Path(data_dir)
     abs_path = directory / filename
 
-    signal_types = list(metadata.get("signal_types", []))
+    signal_types = list(metadata["signal_types"])
     if len(signal_types) != len(signal_arrays):
         raise ValueError("signal_types metadata must match number of signal arrays")
 
@@ -193,15 +210,15 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     with np.load(path, allow_pickle=False) as bundle:
         contents = {key: bundle[key] for key in bundle.files}
 
-    metadata = json.loads(str(contents.pop(_META_KEY).item())) if _META_KEY in contents else {}
+    metadata = json.loads(str(contents.pop(_META_KEY).item()))
 
     # Load from info file
     directory, prefix = split_prefix(path)
     info_path = _info_path(directory, prefix)
     info = load_info_file(info_path)
 
-    sim_cfg = info.get("sim_config")
-    system = info.get("system")
+    sim_cfg = info["sim_config"]
+    system = info["system"]
     laser = info.get("laser")
     bath = info.get("bath")
     job_metadata = {
@@ -225,9 +242,9 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
     return {
         "path": path,
         "signals": signals,
-        "t_det": np.asarray(info.get("t_det", []), dtype=float),
+        "t_det": np.asarray(info["t_det"], dtype=float),
         "t_coh": np.asarray(info.get("t_coh", []), dtype=float),
-        "frequency_sample_cm": contents.get(_SAMPLE_KEY),
+        "frequency_sample_cm": contents[_SAMPLE_KEY],
         "metadata": metadata,
         "simulation_config": sim_cfg,
         "system": system,
@@ -241,7 +258,9 @@ def load_simulation_data(abs_path: Path | str) -> dict:
     """Load and unpack a run artifact produced by :func:`save_run_artifact`."""
 
     artifact = load_run_artifact(abs_path)
-    signals = artifact.get("signals")
+    signals = artifact["signals"]
+    if not signals:
+        raise ValueError("Run artifact contains no signal arrays")
     bundle = dict(artifact)
     bundle["signal_types"] = list(signals.keys())
 

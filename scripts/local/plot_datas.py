@@ -73,20 +73,24 @@ def main() -> None:
     # Load the data
     step_start = time.perf_counter()
     data = load_simulation_data(args.abs_path)
+    required_keys = ["signals", "t_det", "simulation_config", "job_metadata"]
+    missing = [key for key in required_keys if key not in data]
+    if missing:
+        raise KeyError(f"Missing required data keys in artifact: {missing}")
+
     signals = data["signals"]
     print(
         f"Available signals: {list(signals.keys())}, "
         f"shapes={[s.shape for s in signals.values()]}"
     )
     t_det = data["t_det"]
-    t_coh = data.get("t_coh")
+    t_coh = data["t_coh"] if "t_coh" in data else None
     print(
         f"Loaded t_det shape: {t_det.shape}; "
         f"t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
     )
     if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
         t_coh = None
-    sim_config = data["simulation_config"]
     print(f"Loaded data from {args.abs_path}")
     print(f"Signal types: {list(signals.keys())}")
     print(f"Data dimension: {'2D' if t_coh is not None else '1D'}")
@@ -95,9 +99,8 @@ def main() -> None:
     components = ["real", "imag", "abs"]
     saved_files = []
 
-    job_metadata = data.get("job_metadata") or {}
+    job_metadata = data["job_metadata"]
     figures_root = _resolve_figures_dir(job_metadata)
-    base_token = _figure_token(job_metadata, sim_config)
 
     for st, sig_data in signals.items():
         signal_start = time.perf_counter()
@@ -114,7 +117,7 @@ def main() -> None:
                 print(f"  Skipping {st} {comp}: unsupported data shape")
                 continue
 
-            stem = _figure_stem(base_token, st, "time", comp)
+            stem = _figure_stem(st, "time", comp)
             filename = _unique_fig_path(figures_root, stem)
 
             saved = save_fig(fig, filename=filename)
@@ -123,7 +126,7 @@ def main() -> None:
         print(f"Time-domain {st} done in {_format_seconds(time.perf_counter() - signal_start)}")
     if args.time_only:
         print("Skipping frequency-domain plots (--time_only set)")
-        print(f"Figures folder: {Path(filename).parent}")
+        print(f"Figures folder: {figures_root}")
         print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
         return
     print("Plotting frequency domain...")
@@ -158,7 +161,7 @@ def main() -> None:
                 print(f"  Skipping {st} {comp}: unsupported data shape")
                 continue
 
-            stem = _figure_stem(base_token, st, "freq", comp)
+            stem = _figure_stem(st, "freq", comp)
             filename = _unique_fig_path(figures_root, stem)
 
             saved = save_fig(fig, filename=filename)
@@ -168,7 +171,7 @@ def main() -> None:
             f"Frequency-domain {st} done in {_format_seconds(time.perf_counter() - signal_start)}"
         )
 
-    print(f"Figures folder: {Path(filename).parent}")
+    print(f"Figures folder: {figures_root}")
     print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
 
 
@@ -182,11 +185,7 @@ def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
     return figures_dir
 
 
-def _figure_token(job_metadata: dict[str, Any], sim_config: Any) -> str:
-    return ""
-
-
-def _figure_stem(base_token: str, signal: str, domain: str, component: str) -> str:
+def _figure_stem(signal: str, domain: str, component: str) -> str:
     safe_signal = str(signal).replace(" ", "_").replace("/", "-")
     parts = [safe_signal, domain, component]
     stem = "_".join(filter(None, parts)).lower()

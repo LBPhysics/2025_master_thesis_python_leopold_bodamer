@@ -31,6 +31,7 @@ from qspectro2d.spectroscopy import compute_emitted_field_components, sample_fro
 from qspectro2d.utils.data_io import (
     save_info_file,
     save_run_artifact,
+    build_run_metadata,
     pad_or_crop_signals,
     allocate_job_dir,
     ensure_job_layout,
@@ -188,8 +189,6 @@ def main() -> None:
         mu=base_freqs,
     )
 
-    if effective_sim_type == "1d" and getattr(sim.simulation_config, "t_coh_current", None) is None:
-        sim.simulation_config.t_coh_current = float(sim.simulation_config.t_coh_max)
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
 
     # Compute global detection axis (all signals padded/cropped to this)
@@ -266,12 +265,12 @@ def main() -> None:
         # Pad/crop all signals to match global grid
         padded_components = pad_or_crop_signals(e_components, global_n_t)
 
-        metadata_combo = {
-            "signal_types": signal_types,
-            "t_coh_value": t_coh_val,
-            "sim_type": "1d" if effective_sim_type == "2d" else effective_sim_type,
-            "sample_index": inhom_idx,
-        }
+        metadata_combo = build_run_metadata(
+            signal_types=signal_types,
+            sim_type="1d" if effective_sim_type == "2d" else effective_sim_type,
+            sample_index=inhom_idx,
+            t_coh_value=t_coh_val,
+        )
 
         path = save_run_artifact(
             signal_arrays=padded_components,

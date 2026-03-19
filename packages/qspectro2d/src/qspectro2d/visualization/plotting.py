@@ -19,7 +19,6 @@ from plotstyle import init_style, COLORS, LINE_STYLES, simplify_figure_text
 init_style(
     rc_overrides={
         "lines.linewidth": 4.0,
-
     }
 )
 
@@ -56,6 +55,7 @@ def plot_pulse_envelopes(
     )  # Styles for individual pulses will cycle
     n_styles = len(LINE_STYLES)
     n_colors = len(COLORS)
+    from qspectro2d.core.laser_system.laser import DEFAULT_ACTIVE_WINDOW_NFWHM
 
     # Plot individual envelopes and annotations (support any number of pulses)
     for idx, pulse in enumerate(pulse_seq.pulses):
@@ -63,7 +63,7 @@ def plot_pulse_envelopes(
         # get the individual envelope from the pulse_envelopes function
         individual_envelope = single_pulse_envelope(times, pulse)
         t_peak = pulse.pulse_peak_time
-        Delta_width = pulse.pulse_fwhm_fs
+        Delta_width = DEFAULT_ACTIVE_WINDOW_NFWHM * pulse.pulse_fwhm_fs
         ax.plot(
             times,
             individual_envelope,
@@ -388,7 +388,7 @@ def plot_el_field(
     # Crop data if section provided
     if section is not None:
         if data.ndim == 1:
-                axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
+            axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
         elif data.ndim == 2:
             axis_coh, data = crop_nd_data_along_axis(axis_coh, data, section, axis=0)
             axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=1)
@@ -585,7 +585,12 @@ def _domain_labels(domain: str, ndim: int) -> Tuple[str, ...]:
             return r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]", signal_label, title_suffix
     elif ndim == 2:
         if domain == "time":
-            return r"$t_{\mathrm{coh}}$ [fs]", r"$t_{\mathrm{det}}$ [fs]", signal_label, title_suffix
+            return (
+                r"$t_{\mathrm{coh}}$ [fs]",
+                r"$t_{\mathrm{det}}$ [fs]",
+                signal_label,
+                title_suffix,
+            )
         else:
             return (
                 r"$\omega_{\mathrm{coh}}$ [$10^4$ cm$^{-1}$]",
