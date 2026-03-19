@@ -20,7 +20,9 @@ def _dephasing_projector(system: AtomicSystem, index: int) -> Qobj:
     return system.deph_op_i(index)
 
 
-def redfield_decay_channels(system: AtomicSystem, bath: BosonicEnvironment) -> list[tuple[Qobj, BosonicEnvironment]]:
+def redfield_decay_channels(
+    system: AtomicSystem, bath: BosonicEnvironment
+) -> list[tuple[Qobj, BosonicEnvironment]]:
     """Return Bloch-Redfield coupling operators for the current system."""
     channels: list[tuple[Qobj, BosonicEnvironment]] = []
 
@@ -33,15 +35,15 @@ def redfield_decay_channels(system: AtomicSystem, bath: BosonicEnvironment) -> l
             lowering = system.basis[0] * system.basis[i_atom].dag()
             add_channel(lowering + lowering.dag())
 
-    if system.max_excitation != 2:
-        return channels
-
     for i_atom in range(1, system.n_atoms):
         for j_atom in range(i_atom + 1, system.n_atoms + 1):
             idx = pair_to_index(i_atom, j_atom, system.n_atoms)
             add_channel(_dephasing_projector(system, idx))
-            add_channel(_dephasing_projector(system, idx))
+            add_channel(
+                _dephasing_projector(system, idx)
+            )  # intentional duplicate to replicate H_SB =  sum_i=A,B  F_i |ixi| + (F_A + F_B) |ABxAB|
 
+    """
     if system.n_atoms == 2:
         return channels
 
@@ -52,6 +54,7 @@ def redfield_decay_channels(system: AtomicSystem, bath: BosonicEnvironment) -> l
             op_ij_j = system.basis[j_atom] * system.basis[idx].dag()
             add_channel(op_ij_i + op_ij_i.dag())
             add_channel(op_ij_j + op_ij_j.dag())
+    """
     return channels
 
 
@@ -70,16 +73,16 @@ def lindblad_decay_channels(system: AtomicSystem) -> list[Qobj]:
             if UP_RATE_FS > 0:
                 add_channel(system.basis[i_atom] * system.basis[0].dag(), UP_RATE_FS)
 
-    if system.max_excitation != 2:
-        return channels
-
     for i_atom in range(1, system.n_atoms):
         for j_atom in range(i_atom + 1, system.n_atoms + 1):
             idx = pair_to_index(i_atom, j_atom, system.n_atoms)
             deph_op_ij = system.deph_op_i(idx)
             add_channel(deph_op_ij, DEPH_RATE_FS)
-            add_channel(deph_op_ij, DEPH_RATE_FS)
+            add_channel(
+                deph_op_ij, DEPH_RATE_FS
+            )  # intentional duplicate to replicate H_SB =  sum_i=A,B  F_i |ixi| + (F_A + F_B) |ABxAB|
 
+    """
     if system.n_atoms == 2:
         return channels
 
@@ -88,6 +91,7 @@ def lindblad_decay_channels(system: AtomicSystem) -> list[Qobj]:
             idx = pair_to_index(i_atom, j_atom, system.n_atoms)
             add_channel(system.basis[i_atom] * system.basis[idx].dag(), DOWN_RATE_FS)
             add_channel(system.basis[j_atom] * system.basis[idx].dag(), DOWN_RATE_FS)
+    """
     return channels
 
 

@@ -8,6 +8,7 @@ from functools import cached_property
 import numpy as np
 from qutip import BosonicEnvironment, Qobj, QobjEvo, ket2dm, mesolve
 
+from ...config.defaults import SUPPORTED_SOLVERS
 from ..atomic_system import AtomicSystem
 from ..bath_coupling import BathCoupling, lindblad_decay_channels, redfield_decay_channels
 from ..laser_system import LaserPulseSequence, e_pulses, epsilon_pulses
@@ -15,18 +16,21 @@ from .sim_config import SimulationConfig
 
 
 def split_solver_options(config: SimulationConfig) -> tuple[dict, dict]:
-    key = str(config.ode_solver)
+    solver = str(config.ode_solver)
     src = dict(config.solver_options)
-    option_keys = ("method", "atol", "rtol", "nsteps", "max_step", "min_step", "progress_bar")
-    options = {k: src.pop(k) for k in option_keys if k in src}
-    if key == "redfield" and "sec_cutoff" in src:
-        return {"sec_cutoff": src.pop("sec_cutoff")}, options
-    if key in {"lindblad", "paper_eqs", "redfield"}:
-        return {}, options
-    raise ValueError(f"Unsupported solver '{key}'.")
+    run_kwargs: dict = {}
+    if solver == "redfield":
+        if "sec_cutoff" in src:
+            run_kwargs["sec_cutoff"] = src.pop("sec_cutoff")
+
+    if solver in SUPPORTED_SOLVERS:
+        return run_kwargs, src
+    raise ValueError(f"Unsupported solver '{solver}'.")
 
 
-def build_initial_state(config: SimulationConfig, system: AtomicSystem, bath: BosonicEnvironment) -> Qobj:
+def build_initial_state(
+    config: SimulationConfig, system: AtomicSystem, bath: BosonicEnvironment
+) -> Qobj:
     init_choice = getattr(config, "initial_state", "ground")
     if init_choice == "ground":
         return system.to_eigenbasis(system.ground_state_dm())
@@ -55,7 +59,12 @@ def build_observable_ops(system: AtomicSystem) -> list[Qobj]:
     if dim > 1:
         operators.append(sum(eigenstates[0] * eigenstates[index].dag() for index in range(1, dim)))
     if dim > system.n_atoms + 1:
-        operators.append(sum(eigenstates[0] * eigenstates[index].dag() for index in range(system.n_atoms + 1, dim)))
+        operators.append(
+            sum(
+                eigenstates[0] * eigenstates[index].dag()
+                for index in range(system.n_atoms + 1, dim)
+            )
+        )
         operators.append(
             sum(
                 eigenstates[e] * eigenstates[f].dag()
@@ -124,7 +133,9 @@ class SimulationModuleOQS:
         energies, _ = self.system.eigenstates
         hamiltonian = Qobj(np.diag(energies), dims=self.system.hamiltonian.dims)
         if self.simulation_config.rwa_sl:
-            hamiltonian -= self.laser.carrier_freq_fs * self.system.to_eigenbasis(self.system.number_op)
+            hamiltonian -= self.laser.carrier_freq_fs * self.system.to_eigenbasis(
+                self.system.number_op
+            )
         return hamiltonian
 
     def H_int_sl(self, t: float) -> Qobj:

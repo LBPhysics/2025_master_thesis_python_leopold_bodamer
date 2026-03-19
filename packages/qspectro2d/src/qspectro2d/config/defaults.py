@@ -39,16 +39,16 @@ SOLVER_OPTIONS = {
     "paper_eqs": {},
     "redfield": {
         "sec_cutoff": 0,
-        "method": "lsoda",  # can automatically solve stiff(bfd) vs non-stiff(adam) systems;
-        "nsteps": 10000000,
+        "method": "lsoda",  # can automatically switch stiff/non-stiff methods
+        "nsteps": 10_000_000,
         "atol": 1e-3,
         "rtol": 1e-3,
-        "max_step": None,  # for pulsed time dependence, recommended by QuTip docs
+        "max_step": None,  # filled from pulse_fwhm_fs in io.merge_config
     },
     "lindblad": {
         "atol": 1e-5,
         "rtol": 1e-3,
-        "nsteps": 200000,
+        "nsteps": 200_000,
         "method": "bdf",
     },
 }
@@ -119,11 +119,11 @@ DEFAULTS = {
         "solver": "redfield",
         "solver_options": {},
         "sim_type": "1d",
-        "t_det_max": 20.0,
+        "t_det_max": T_DET_MAX,
         "t_coh_max": None,
         "t_coh": None,
-        "t_wait": 0.0,
-        "dt": 0.1,
+        "t_wait": T_WAIT,
+        "dt": DT,
         "n_phases": N_PHASES,
         "signal_types": list(SIGNAL_TYPES),
         "initial_state": INITIAL_STATE,

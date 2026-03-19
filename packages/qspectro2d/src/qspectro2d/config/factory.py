@@ -30,7 +30,9 @@ def _as_config(source: Mapping[str, Any] | str | Path | None) -> dict[str, Any]:
     return ensure_config(source)
 
 
-def load_simulation_config(source: Mapping[str, Any] | str | Path | None = None) -> SimulationConfig:
+def load_simulation_config(
+    source: Mapping[str, Any] | str | Path | None = None,
+) -> SimulationConfig:
     cfg = _as_config(source)
     atomic_cfg = cfg["atomic"]
     laser_cfg = cfg["laser"]
@@ -42,7 +44,7 @@ def load_simulation_config(source: Mapping[str, Any] | str | Path | None = None)
         rwa_sl=bool(laser_cfg["rwa_sl"]),
         dt=float(sim_cfg["dt"]),
         t_coh_max=float(sim_cfg["t_coh_max"]),
-        t_coh_current=sim_cfg["t_coh"],
+        t_coh_current=float(sim_cfg["t_coh_current"]),
         t_wait=float(sim_cfg["t_wait"]),
         t_det_max=float(sim_cfg["t_det_max"]),
         pulse_fwhm_fs=float(laser_cfg["pulse_fwhm_fs"]),
@@ -55,15 +57,15 @@ def load_simulation_config(source: Mapping[str, Any] | str | Path | None = None)
     )
 
 
-def load_simulation_laser(source: Mapping[str, Any] | str | Path | None = None) -> LaserPulseSequence:
+def load_simulation_laser(
+    source: Mapping[str, Any] | str | Path | None = None,
+) -> LaserPulseSequence:
     cfg = _as_config(source)
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
 
-    t_coh_delay = sim_cfg["t_coh"] if sim_cfg["t_coh"] is not None else sim_cfg["t_coh_max"]
-
     return LaserPulseSequence.from_pulse_delays(
-        pulse_delays=[float(t_coh_delay), float(sim_cfg["t_wait"])],
+        pulse_delays=[float(sim_cfg["t_coh_current"]), float(sim_cfg["t_wait"])],
         pulse_fwhm_fs=float(laser_cfg["pulse_fwhm_fs"]),
         carrier_freq_cm=float(laser_cfg["carrier_freq_cm"]),
         envelope_type=str(laser_cfg["envelope_type"]),
@@ -72,7 +74,9 @@ def load_simulation_laser(source: Mapping[str, Any] | str | Path | None = None) 
     )
 
 
-def load_simulation_atomic_system(source: Mapping[str, Any] | str | Path | None = None) -> AtomicSystem:
+def load_simulation_atomic_system(
+    source: Mapping[str, Any] | str | Path | None = None,
+) -> AtomicSystem:
     cfg = _as_config(source)
     atomic_cfg = cfg["atomic"]
 
@@ -87,7 +91,9 @@ def load_simulation_atomic_system(source: Mapping[str, Any] | str | Path | None 
     )
 
 
-def load_simulation_bath(source: Mapping[str, Any] | str | Path | None = None) -> BosonicEnvironment:
+def load_simulation_bath(
+    source: Mapping[str, Any] | str | Path | None = None,
+) -> BosonicEnvironment:
     cfg = _as_config(source)
     atomic_cfg = cfg["atomic"]
     bath_cfg = cfg["bath"]
