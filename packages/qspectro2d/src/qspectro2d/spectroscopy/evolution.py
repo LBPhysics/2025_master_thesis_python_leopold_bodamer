@@ -23,6 +23,7 @@ from qutip import brmesolve, mesolve
 
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_t_det, compute_times_local
+from ..diagnostics.solver_inputs import log_redfield_solver_debug
 from ..utils.rwa_utils import from_rotating_frame_list
 from .polarisation import complex_polarisation, time_dependent_polarisation_rwa
 
@@ -59,7 +60,9 @@ def slice_polarisation_to_window(
         if index < len(times) - 1:
             candidates.append(index + 1)
         # Choose the candidate with minimal absolute difference.
-        selected_indices[position] = min(candidates, key=lambda candidate: abs(times[candidate] - time_value))
+        selected_indices[position] = min(
+            candidates, key=lambda candidate: abs(times[candidate] - time_value)
+        )
 
     return np.array([polarisation[int(index)] for index in selected_indices], dtype=complex)
 
@@ -91,15 +94,19 @@ def compute_evolution(
         options.setdefault("store_states", True)
 
     if solver == "redfield":
-        result = brmesolve(
-            H=hamiltonian,
-            psi0=state0,
-            tlist=t_list,
-            a_ops=sim_oqs.decay_channels,
-            e_ops=e_ops,
-            options=options,
-            **run_kwargs,
-        )
+        try:
+            result = brmesolve(
+                H=hamiltonian,
+                psi0=state0,
+                tlist=t_list,
+                a_ops=sim_oqs.decay_channels,
+                e_ops=e_ops,
+                options=options,
+                **run_kwargs,
+            )
+        except Exception as exc:
+            log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
+            raise
     elif solver in {"lindblad", "paper_eqs"}:
         result = mesolve(
             H=hamiltonian,
@@ -159,6 +166,7 @@ def compute_polarisation_over_window(
             )
 
     else:
+
         def polarisation(_t, state):
             return complex_polarisation(dipole_op, polarisation_density(state))
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
@@ -14,13 +13,14 @@ from .evolution import compute_polarisation_over_window, simulation_with_pulses
 __all__ = ["compute_emitted_field_components"]
 
 
-def _worker_phase_pair(
+def _worker_polarisation(
     config_path: str,
     t_coh: float,
     freq_vector: list[float],
     phi1: float,
     phi2: float,
-) -> tuple[float, float, np.ndarray, np.ndarray, float, float, float, list[float]]:
+    active_pulses: list[int] | None = None,
+) -> tuple[np.ndarray, np.ndarray, float, list[float]]:
     from qspectro2d.config.factory import load_simulation
 
     sim_oqs = load_simulation(config_path)
@@ -29,34 +29,15 @@ def _worker_phase_pair(
     sim_oqs.laser.pulse_phases = [phi1, phi2, 0.0]
 
     detection_window = compute_t_det(sim_oqs.simulation_config)
-    t_det, polarisation_total = compute_polarisation_over_window(sim_oqs, detection_window)
+    if active_pulses is None:
+        t_det, polarisation = compute_polarisation_over_window(sim_oqs, detection_window)
+    else:
+        sim_subset = simulation_with_pulses(sim_oqs, active_pulses)
+        t_det, polarisation = compute_polarisation_over_window(sim_subset, detection_window)
 
-    polarisation_subtractions = np.zeros_like(polarisation_total, dtype=np.complex128)
-    pulse_count = len(sim_oqs.laser.pulses)
-    for active_set in itertools.combinations(range(pulse_count), 1):
-        sim_subset = simulation_with_pulses(sim_oqs, list(active_set))
-        _, polarisation_subset = compute_polarisation_over_window(sim_subset, detection_window)
-        polarisation_subtractions += polarisation_subset
-
-    polarisation_component = polarisation_total - polarisation_subtractions
-    max_abs_total = float(np.max(np.abs(polarisation_total))) if len(polarisation_total) else 0.0
-    max_abs_sub = (
-        float(np.max(np.abs(polarisation_subtractions))) if len(polarisation_subtractions) else 0.0
-    )
-    max_abs_component = (
-        float(np.max(np.abs(polarisation_component))) if len(polarisation_component) else 0.0
-    )
+    max_abs_polarisation = float(np.max(np.abs(polarisation))) if len(polarisation) else 0.0
     pulse_amplitudes = list(sim_oqs.laser.pulse_amplitudes)
-    return (
-        phi1,
-        phi2,
-        t_det,
-        polarisation_component,
-        max_abs_total,
-        max_abs_sub,
-        max_abs_component,
-        pulse_amplitudes,
-    )
+    return (t_det, polarisation, max_abs_polarisation, pulse_amplitudes)
 
 
 def compute_emitted_field_components(
@@ -87,63 +68,153 @@ def compute_emitted_field_components(
     accumulated = {
         signal_type: np.zeros(component_count, dtype=np.complex128) for signal_type in signal_types
     }
+    zero_component = np.zeros(component_count, dtype=np.complex128)
+
+    total_polarisations: dict[tuple[float, float], np.ndarray] = {}
+    single_pulse_1: dict[float, np.ndarray] = {}
+    single_pulse_2: dict[float, np.ndarray] = {}
+    single_pulse_3: np.ndarray | None = None
+
+    successful_phase_pairs = 0
+    failed_phase_pairs = 0
+    failed_single_pulse_jobs = 0
+    pulse_amplitudes: list[float] = []
 
     with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
-        futures = {
-            executor.submit(_worker_phase_pair, config_path, t_coh, freq_vector, phi1, phi2): (
-                phi1,
-                phi2,
-            )
-            for phi1 in PHASE_CYCLING_PHASES
-            for phi2 in PHASE_CYCLING_PHASES
-        }
-        failed_phase_pairs = 0
-        successful_phase_pairs = 0
+        futures = {}
+        for phi1 in PHASE_CYCLING_PHASES:
+            for phi2 in PHASE_CYCLING_PHASES:
+                futures[
+                    executor.submit(
+                        _worker_polarisation, config_path, t_coh, freq_vector, phi1, phi2
+                    )
+                ] = ("total", float(phi1), float(phi2))
+
+        for phi1 in PHASE_CYCLING_PHASES:
+            futures[
+                executor.submit(
+                    _worker_polarisation,
+                    config_path,
+                    t_coh,
+                    freq_vector,
+                    float(phi1),
+                    0.0,
+                    [0],
+                )
+            ] = ("single_1", float(phi1), 0.0)
+
+        for phi2 in PHASE_CYCLING_PHASES:
+            futures[
+                executor.submit(
+                    _worker_polarisation,
+                    config_path,
+                    t_coh,
+                    freq_vector,
+                    0.0,
+                    float(phi2),
+                    [1],
+                )
+            ] = ("single_2", 0.0, float(phi2))
+
+        futures[
+            executor.submit(_worker_polarisation, config_path, t_coh, freq_vector, 0.0, 0.0, [2])
+        ] = ("single_3", 0.0, 0.0)
+
         for future in as_completed(futures):
-            phi1_requested, phi2_requested = futures[future]
+            worker_kind, phi1_requested, phi2_requested = futures[future]
             try:
-                (
-                    phi1_value,
-                    phi2_value,
-                    _,
-                    polarisation_component,
-                    max_abs_total,
-                    max_abs_sub,
-                    max_abs_component,
-                    pulse_amplitudes,
-                ) = future.result()
+                _, polarisation, _, pulse_amplitudes_value = future.result()
             except Exception as exc:
-                failed_phase_pairs += 1
+                if worker_kind == "total":
+                    failed_phase_pairs += 1
+                else:
+                    failed_single_pulse_jobs += 1
                 print(
-                    "Warning: phase-pair worker failed; using zero contribution for this pair."
+                    "Warning: phase-cycling worker failed; using zero contribution for this task."
+                    f" kind={worker_kind},"
                     f" phi1={phi1_requested:.3f}, phi2={phi2_requested:.3f}, t_coh={t_coh:.3f} fs,"
                     f" error={type(exc).__name__}: {exc}",
                     flush=True,
                 )
                 continue
 
-            successful_phase_pairs += 1
-            for signal_type in signal_types:
-                component_indices = COMPONENT_MAP[signal_type] if lm is None else lm
-                l_index, m_index = component_indices
-                phase_factor = np.exp(-1j * (l_index * phi1_value + m_index * phi2_value))
-                accumulated[signal_type] += phase_factor * polarisation_component
-            if np.all(polarisation_component == 0):
-                reason = ""
-                if max_abs_total == 0.0 and max_abs_sub == 0.0:
-                    reason = " (P_total and P_sub_sum are zero)"
-                elif max_abs_component == 0.0 and max_abs_total > 0.0:
-                    reason = " (P_total cancels P_sub_sum)"
-                print(
-                    "Warning: All zero P_phi detected!"
-                    f" phi1={phi1_value:.3f}, phi2={phi2_value:.3f}, t_coh={t_coh:.3f} fs,"
-                    f" max|P_total|={max_abs_total:.3e}, max|P_sub|={max_abs_sub:.3e},"
-                    f" max|P_phi|={max_abs_component:.3e}, pulse_amps={pulse_amplitudes}{reason}"
-                )
+            if not pulse_amplitudes:
+                pulse_amplitudes = pulse_amplitudes_value
+
+            if worker_kind == "total":
+                total_polarisations[(phi1_requested, phi2_requested)] = polarisation
+            elif worker_kind == "single_1":
+                single_pulse_1[phi1_requested] = polarisation
+            elif worker_kind == "single_2":
+                single_pulse_2[phi2_requested] = polarisation
+            else:
+                single_pulse_3 = polarisation
+
+        for phi1 in PHASE_CYCLING_PHASES:
+            for phi2 in PHASE_CYCLING_PHASES:
+                p_total = total_polarisations.get((float(phi1), float(phi2)))
+                if p_total is None:
+                    continue
+
+                successful_phase_pairs += 1
+                p_sub_1 = single_pulse_1.get(float(phi1), zero_component)
+                p_sub_2 = single_pulse_2.get(float(phi2), zero_component)
+                p_sub_3 = single_pulse_3 if single_pulse_3 is not None else zero_component
+                p_sub_sum = p_sub_1 + p_sub_2 + p_sub_3
+                polarisation_component = p_total - p_sub_sum
+
+                for signal_type in signal_types:
+                    component_indices = COMPONENT_MAP[signal_type] if lm is None else lm
+                    l_index, m_index = component_indices
+                    phase_factor = np.exp(-1j * (l_index * phi1 + m_index * phi2))
+                    accumulated[signal_type] += phase_factor * polarisation_component
+
+                if np.all(polarisation_component == 0):
+                    max_abs_total = float(np.max(np.abs(p_total))) if len(p_total) else 0.0
+                    max_abs_sub = float(np.max(np.abs(p_sub_sum))) if len(p_sub_sum) else 0.0
+                    max_abs_component = (
+                        float(np.max(np.abs(polarisation_component)))
+                        if len(polarisation_component)
+                        else 0.0
+                    )
+                    reason = ""
+                    if max_abs_total == 0.0 and max_abs_sub == 0.0:
+                        reason = " (P_total and P_sub_sum are zero)"
+                    elif max_abs_component == 0.0 and max_abs_total > 0.0:
+                        reason = " (P_total cancels P_sub_sum)"
+                    print(
+                        "Warning: All zero P_phi detected!"
+                        f" phi1={phi1:.3f}, phi2={phi2:.3f}, t_coh={t_coh:.3f} fs,"
+                        f" max|P_total|={max_abs_total:.3e}, max|P_sub|={max_abs_sub:.3e},"
+                        f" max|P_phi|={max_abs_component:.3e}, pulse_amps={pulse_amplitudes}{reason}"
+                    )
+
+        expected_total_pairs = len(PHASE_CYCLING_PHASES) ** 2
+        missing_total_pairs = expected_total_pairs - successful_phase_pairs
+        if missing_total_pairs > 0:
+            print(
+                "Warning: phase cycling completed with missing total phase-pair results."
+                f" successful_pairs={successful_phase_pairs}, missing_pairs={missing_total_pairs},"
+                f" t_coh={t_coh:.3f} fs",
+                flush=True,
+            )
+
+        missing_single_1 = len(PHASE_CYCLING_PHASES) - len(single_pulse_1)
+        missing_single_2 = len(PHASE_CYCLING_PHASES) - len(single_pulse_2)
+        missing_single_3 = 0 if single_pulse_3 is not None else 1
+        total_missing_single_terms = missing_single_1 + missing_single_2 + missing_single_3
+        if total_missing_single_terms > 0:
+            print(
+                "Warning: missing single-pulse subtraction terms; zero fallback used."
+                f" missing_p1={missing_single_1}, missing_p2={missing_single_2},"
+                f" missing_p3={missing_single_3}, failed_single_jobs={failed_single_pulse_jobs},"
+                f" t_coh={t_coh:.3f} fs",
+                flush=True,
+            )
 
         if failed_phase_pairs:
             print(
-                "Warning: phase cycling completed with failed workers."
+                "Warning: phase cycling completed with failed total workers."
                 f" successful_pairs={successful_phase_pairs}, failed_pairs={failed_phase_pairs},"
                 f" t_coh={t_coh:.3f} fs",
                 flush=True,
