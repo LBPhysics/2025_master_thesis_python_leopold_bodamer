@@ -66,38 +66,6 @@ def get_max_workers() -> int:
     return slurm_cpus if slurm_cpus > 0 else int(local_cpus)
 
 
-def _resolve_effective_t_coh(sim_cfg: dict[str, Any]) -> tuple[float, float]:
-    """Resolve the runtime coherence time according to sim_type.
-
-    Rules:
-    - 0d / 1d: use only ``t_coh``. Ignore ``t_coh_max`` even if provided.
-      If ``t_coh`` is omitted, fall back to ``t_det_max``.
-    - 2d: use only ``t_coh_max``. Ignore ``t_coh`` even if provided.
-      If ``t_coh_max`` is omitted, fall back to ``t_det_max``.
-
-    Returns
-    -------
-    tuple[float, float]
-        ``(t_coh_current, t_coh_max)`` as concrete floats.
-    """
-    sim_type = str(sim_cfg["sim_type"])
-    t_det_max = float(sim_cfg["t_det_max"])
-    raw_t_coh = sim_cfg.get("t_coh")
-    raw_t_coh_max = sim_cfg.get("t_coh_max")
-
-    if sim_type in {"0d", "1d"}:
-        t_coh_current = t_det_max if raw_t_coh is None else float(raw_t_coh)
-        t_coh_max = t_coh_current
-        return t_coh_current, t_coh_max
-
-    if sim_type == "2d":
-        t_coh_max = t_det_max if raw_t_coh_max is None else float(raw_t_coh_max)
-        t_coh_current = t_coh_max
-        return t_coh_current, t_coh_max
-
-    raise ValueError(f"Unsupported sim_type: {sim_type}")
-
-
 def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Merge user config onto defaults and resolve derived values once."""
     cfg = get_defaults()
@@ -109,16 +77,12 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
 
     laser_cfg["pulse_fwhm_fs"] = float(laser_cfg["pulse_fwhm_fs"])
 
-    sim_cfg["t_det_max"] = float(sim_cfg["t_det_max"])
+    sim_cfg["t_det"] = float(sim_cfg["t_det"])
+    sim_cfg["t_coh"] = float(sim_cfg["t_coh"])
     sim_cfg["t_wait"] = float(sim_cfg["t_wait"])
     sim_cfg["dt"] = float(sim_cfg["dt"])
     sim_cfg["solver"] = str(sim_cfg["solver"])
     sim_cfg["sim_type"] = str(sim_cfg["sim_type"])
-
-    t_coh_current, t_coh_max = _resolve_effective_t_coh(sim_cfg)
-    sim_cfg["t_coh_current"] = t_coh_current
-    sim_cfg["t_coh_max"] = t_coh_max
-    sim_cfg["t_coh"] = t_coh_current
 
     sim_cfg["max_workers"] = (
         get_max_workers() if sim_cfg.get("max_workers") is None else int(sim_cfg["max_workers"])

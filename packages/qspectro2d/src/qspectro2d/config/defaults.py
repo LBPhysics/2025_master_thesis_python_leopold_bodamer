@@ -15,8 +15,6 @@ import numpy as np
 INITIAL_STATE = "ground"
 
 # --- Time and grid defaults (kept as flat vars for backward compat) ---
-T_DET_MAX = 20.0
-T_COH_MAX = T_DET_MAX
 DT = 0.1
 T_WAIT = 0.0
 DEFAULT_PULSE_FWHM_FS = 5.0
@@ -119,9 +117,8 @@ DEFAULTS = {
         "solver": "redfield",
         "solver_options": {},
         "sim_type": "1d",
-        "t_det_max": T_DET_MAX,
-        "t_coh_max": None,
-        "t_coh": None,
+        "t_det": 20.0,
+        "t_coh": 20.0,
         "t_wait": T_WAIT,
         "dt": DT,
         "n_phases": N_PHASES,
@@ -154,8 +151,6 @@ __all__ = [
     "SUPPORTED_SOLVERS",
     "TRACE_TOLERANCE",
     "DEFAULT_PULSE_FWHM_FS",
-    "T_COH_MAX",
-    "T_DET_MAX",
     "T_WAIT",
     "DT",
     "get_defaults",

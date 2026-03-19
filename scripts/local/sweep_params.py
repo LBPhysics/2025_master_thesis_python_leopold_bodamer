@@ -26,7 +26,7 @@ PROJECT_ROOT = SCRIPTS_DIR.parent
 DATA_DIR = PROJECT_ROOT / "jobs" / "sweeps"
 DEFAULT_CONFIG = SCRIPTS_DIR / "simulation_configs" / "_monomer.yaml"
 BASELINE_OVERRIDES = {
-    "config.t_det_max": 10.0,
+    "config.t_det": 10.0,
     "config.t_coh": 0.0,
     "config.t_wait": 0.0,
     "config.dt": 1.0,
@@ -72,7 +72,7 @@ def build_ofat_cases(base_cfg: dict[str, Any]) -> list[SweepCase]:
         "bath.temperature": [0.1],
         "bath.coupling": [0.01],
         "laser.rwa_sl": [True, False],
-        "config.t_det_max": [10.0, 20.0, 50.0],
+        "config.t_det": [10.0, 20.0, 50.0],
         "config.n_inhomogen": [1, 2],
         "config.n_atoms": [1, 2],
         "config.t_coh": [0.0, 10.0, 20.0],

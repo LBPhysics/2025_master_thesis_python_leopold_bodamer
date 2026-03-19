@@ -128,7 +128,7 @@ def _group_by_sample(entries: list[RunEntry]) -> dict[int, list[RunEntry]]:
 def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
     """Stack a group of 1D entries into a single 2D entry.
 
-    Since all runs use a global t_det grid (based on t_coh_max),
+    Since all runs use a global t_det grid (based on t_coh),
     they automatically have matching dimensions and no alignment is needed.
     """
     if len(group) <= 1:

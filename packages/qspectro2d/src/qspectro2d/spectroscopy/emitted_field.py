@@ -53,9 +53,6 @@ def compute_emitted_field_components(
 
     config = load_simulation_config(config_path)
     t_coh_value = float(t_coh)
-    config.t_coh_current = t_coh_value
-    if t_coh_value > float(config.t_coh_max):
-        config.t_coh_max = t_coh_value
 
     t_det = compute_t_det(config)
     signal_types = config.signal_types

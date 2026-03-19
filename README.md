@@ -89,14 +89,14 @@ There are two main workflows: **local execution** (for small tests) and **HPC ba
 For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates all combinations of coherence times and inhomogeneous samples, then processes them into final averaged spectra.
 
 1. **Configure simulation** — Duplicate the template in `scripts/simulation_configs/` and adjust physical parameters. `_monomer.yaml` is the default that `calc_datas.py` auto-selects.
-   - 0d/1d: set `config.t_coh` (single coherence time).
-   - 2d: set `config.t_coh_max` (coherence sweep upper bound); `config.t_coh` is ignored.
-   - `null`/`None` values are not accepted in YAML config.
+   - All sim_types use `config.t_det` (detection window max time) and `config.t_coh` (coherence time value or sweep upper bound).
+   - For 0d: both are single values.
+   - For 1d: t_coh is single value; t_det is swept from ~0 to the given value.
+   - For 2d: both are swept from ~0 to their given values.
 
 1. **Simulate** — Run `python scripts/calc_datas.py --sim_type {0d,1d,2d}` locally.
-   - Generates all combinations of `t_coh` points and inhomogeneous samples.
+   - Generates all combinations based on sim_type and config parameters.
    - Outputs raw `.npz` files per combination.
-   - For a 2D simulation the `t_coh` value in the config will be ignored and instead all t_coh values (same as the detection times `t_det`) will be used.
 
    **Example:**
 

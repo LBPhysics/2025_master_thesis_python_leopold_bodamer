@@ -101,7 +101,7 @@ config = SimulationConfig(
 		dt=0.1,
 		t_coh=0.0,
 		t_wait=100.0,
-		t_det_max=250.0,
+		t_det=250.0,
 )
 
 simulation = SimulationModuleOQS(

@@ -43,10 +43,9 @@ def load_simulation_config(
         solver_options=dict(sim_cfg["solver_options"]),
         rwa_sl=bool(laser_cfg["rwa_sl"]),
         dt=float(sim_cfg["dt"]),
-        t_coh_max=float(sim_cfg["t_coh_max"]),
-        t_coh_current=float(sim_cfg["t_coh_current"]),
+        t_coh=float(sim_cfg["t_coh"]),
         t_wait=float(sim_cfg["t_wait"]),
-        t_det_max=float(sim_cfg["t_det_max"]),
+        t_det=float(sim_cfg["t_det"]),
         pulse_fwhm_fs=float(laser_cfg["pulse_fwhm_fs"]),
         n_phases=int(sim_cfg["n_phases"]),
         n_inhomogen=int(atomic_cfg["n_inhomogen"]),
@@ -65,7 +64,7 @@ def load_simulation_laser(
     sim_cfg = cfg["config"]
 
     return LaserPulseSequence.from_pulse_delays(
-        pulse_delays=[float(sim_cfg["t_coh_current"]), float(sim_cfg["t_wait"])],
+        pulse_delays=[float(sim_cfg["t_coh"]), float(sim_cfg["t_wait"])],
         pulse_fwhm_fs=float(laser_cfg["pulse_fwhm_fs"]),
         carrier_freq_cm=float(laser_cfg["carrier_freq_cm"]),
         envelope_type=str(laser_cfg["envelope_type"]),
@@ -200,7 +199,7 @@ def create_base_sim_oqs(
     print("Base simulation created from config.")
 
     time_cut = -np.inf
-    t_max = sim.simulation_config.t_det_max
+    t_max = sim.simulation_config.t_det
     print("Validating solver...")
     try:
         from qspectro2d.diagnostics import check_the_solver

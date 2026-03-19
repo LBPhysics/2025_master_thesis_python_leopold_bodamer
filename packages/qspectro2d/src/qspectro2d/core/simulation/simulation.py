@@ -95,8 +95,6 @@ class SimulationModuleOQS:
 
     def __post_init__(self) -> None:
         self.bath_coupling = BathCoupling(self.system, self.bath)
-        if self.simulation_config.t_coh_current is None:
-            self.simulation_config.t_coh_current = float(self.simulation_config.t_coh_max)
 
     def _solver_split(self) -> tuple[dict, dict]:
         return split_solver_options(self.simulation_config)
@@ -164,9 +162,6 @@ class SimulationModuleOQS:
         wait_time = float(self.simulation_config.t_wait if t_wait is None else t_wait)
         self.simulation_config.t_wait = wait_time
         self.laser.pulse_delays = [float(t_coh), wait_time]
-        self.simulation_config.t_coh_current = float(t_coh)
-        if t_coh > self.simulation_config.t_coh_max:
-            self.simulation_config.t_coh_max = float(t_coh)
 
 
 __all__ = [

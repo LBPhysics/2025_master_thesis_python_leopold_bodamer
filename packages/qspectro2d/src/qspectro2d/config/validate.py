@@ -51,11 +51,9 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
     solver_options = sim_cfg["solver_options"]
     sim_type = str(sim_cfg["sim_type"])
     max_workers = int(sim_cfg["max_workers"])
-    t_det_max = float(sim_cfg["t_det_max"])
+    t_det = float(sim_cfg["t_det"])
+    t_coh = float(sim_cfg["t_coh"])
     dt = float(sim_cfg["dt"])
-    t_coh_max = float(sim_cfg["t_coh_max"])
-    t_coh = sim_cfg.get("t_coh")  # Can be None for 2d sims
-    t_coh_current = float(t_coh) if t_coh is not None else None
     t_wait = float(sim_cfg["t_wait"])
     n_inhomogen = int(atomic_cfg["n_inhomogen"])
     signal_types = list(sim_cfg["signal_types"])
@@ -75,14 +73,12 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
 
     if dt <= 0:
         raise ValueError("dt must be > 0")
-    if t_coh_max < 0:
-        raise ValueError("t_coh_max must be >= 0")
-    if t_coh_current is not None and t_coh_current < 0:
-        raise ValueError("t_coh must be >= 0 if provided")
+    if t_coh < 0:
+        raise ValueError("t_coh must be >= 0")
     if t_wait < 0:
         raise ValueError("t_wait must be >= 0")
-    if t_det_max <= 0:
-        raise ValueError("t_det_max must be > 0")
+    if t_det <= 0:
+        raise ValueError("t_det must be > 0")
 
     if pulse_fwhm_fs <= 0:
         raise ValueError("pulse_fwhm_fs must be > 0")
@@ -168,15 +164,6 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
         raise ValueError(f"sim_type '{sim_type}' not in {SUPPORTED_SIM_TYPES}")
     if max_workers <= 0:
         raise ValueError("max_workers must be >= 1")
-    if sim_type in {"0d", "1d"}:
-        if t_coh_current is None:
-            raise ValueError(f"For sim_type='{sim_type}', config.t_coh must be set")
-        if not np.isclose(t_coh_current, t_coh_max):
-            raise ValueError(f"For sim_type='{sim_type}', config.t_coh must equal config.t_coh_max")
-
-    elif sim_type == "2d":
-        # For 2d simulations, t_coh is ignored - it can be anything or None
-        pass
 
     unknown_signal_types = [
         signal_type for signal_type in signal_types if signal_type not in COMPONENT_MAP
