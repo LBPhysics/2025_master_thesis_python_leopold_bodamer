@@ -26,7 +26,7 @@ import numpy as np
 
 from qspectro2d.config.factory import load_simulation
 from qspectro2d.config import resolve_config, validate_config
-from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
+from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_t_det
 from qspectro2d.diagnostics import check_the_solver
 from qspectro2d.spectroscopy import compute_emitted_field_components, sample_from_gaussian
 from qspectro2d.utils.data_io import (
@@ -199,7 +199,12 @@ def main() -> None:
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
 
     # Compute global detection axis (all signals padded/cropped to this)
-    t_det_axis = compute_global_t_det(sim.simulation_config).tolist()
+    t_det_axis = compute_t_det(sim.simulation_config).tolist()
+    if not t_det_axis and effective_sim_type != "0d":
+        raise RuntimeError(
+            "Invariant violation: empty global detection axis for non-0d local run "
+            f"(sim_type={effective_sim_type}, t_det={float(sim.simulation_config.t_det):.6g}, dt={float(sim.simulation_config.dt):.6g})"
+        )
     global_n_t = len(t_det_axis)
     combinations = build_combinations(t_coh_values, n_inhom)
 
@@ -268,6 +273,7 @@ def main() -> None:
             t_coh=t_coh_val,
             freq_vector=freq_vector.tolist(),
             time_cut=time_cut,
+            detection_window=t_det_axis,
         )
 
         # Pad/crop all signals to match global grid
@@ -278,6 +284,9 @@ def main() -> None:
             sim_type="1d" if effective_sim_type == "2d" else effective_sim_type,
             sample_index=inhom_idx,
             t_coh_value=t_coh_val,
+            run_status="ok",
+            t_index=int(t_idx),
+            global_index=int(global_idx),
         )
 
         path = save_run_artifact(

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -18,7 +19,6 @@ import numpy as np
 from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import save_run_artifact, build_run_metadata, pad_or_crop_signals
 from qspectro2d.core.simulation.time_axes import (
-    compute_global_t_det,
     compute_times_local,
     compute_t_det,
 )
@@ -109,6 +109,16 @@ def main() -> None:
     config_path = Path(job_metadata["config_path"])
     merged_cfg = job_metadata["merged_config"]
 
+    slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
+    if slurm_cpus is not None:
+        try:
+            cpus_per_task = int(slurm_cpus)
+        except ValueError:
+            cpus_per_task = 0
+        if cpus_per_task > 0:
+            merged_cfg.setdefault("config", {})["max_workers"] = cpus_per_task
+            print(f"Using max_workers={cpus_per_task} from SLURM_CPUS_PER_TASK", flush=True)
+
     try:
         data_dir = Path(job_metadata["data_dir"]).resolve()
         prefix = str(job_metadata["data_base_name"])
@@ -154,20 +164,18 @@ def main() -> None:
     cfg = load_simulation_config(merged_cfg)
     global_t_det = np.asarray(job_metadata.get("t_det", []), dtype=float)
     if global_t_det.size == 0:
-        global_t_det = compute_global_t_det(cfg)
-    global_n_t = len(global_t_det)
-
-    unique_t_coh_values = sorted({float(combo["t_coh_value"]) for combo in combinations})
-    axis_cache: dict[float, tuple[np.ndarray, np.ndarray]] = {}
-    for t_coh_value in unique_t_coh_values:
-        axis_cache[t_coh_value] = (
-            compute_times_local(cfg, t_coh_override=t_coh_value),
-            compute_t_det(cfg, t_coh_override=t_coh_value),
+        global_t_det = compute_t_det(cfg)
+    if global_t_det.size == 0 and args.sim_type != "0d":
+        raise RuntimeError(
+            "Invariant violation: empty global detection axis for non-0d batch run "
+            f"(sim_type={args.sim_type}, t_det={float(cfg.t_det):.6g}, dt={float(cfg.dt):.6g})"
         )
+    global_n_t = len(global_t_det)
 
     t_start = time.time()
     saved_paths: list[str] = []
     failed_combos = 0
+    all_zero_combos = 0
 
     for combo in _iter_combos(combinations):
         t_idx = combo.get("t_index", 0)
@@ -182,7 +190,6 @@ def main() -> None:
             )
 
         freq_vector = samples[inhom_idx, :].astype(float)
-        solver_times, detection_window = axis_cache[t_coh_val]
 
         print(
             f"\n--- combo {local_idx} / {len(combinations)} (global {global_idx}): "
@@ -197,12 +204,19 @@ def main() -> None:
                 t_coh=t_coh_val,
                 freq_vector=freq_vector.tolist(),
                 time_cut=args.time_cut,
-                solver_times=solver_times,
-                detection_window=detection_window,
+                detection_window=global_t_det,
             )
 
             padded_components = pad_or_crop_signals(e_components, global_n_t)
+            if all(np.allclose(arr, 0.0) for arr in padded_components):
+                all_zero_combos += 1
+                run_status = "returned_all_zero"
+                print("    ⚠️ combo returned all-zero signal arrays", flush=True)
         except Exception as exc:
+            if isinstance(exc, RuntimeError) and "Invariant violation: empty detection axis" in str(
+                exc
+            ):
+                raise
             failed_combos += 1
             run_status = "failed_fallback_zero"
             error_message = f"{type(exc).__name__}: {exc}"
@@ -215,13 +229,14 @@ def main() -> None:
 
         metadata_combo = build_run_metadata(
             signal_types=signal_types,
-            sim_type="1d" if args.sim_type == "2d" else args.sim_type,
+            sim_type=("1d" if args.sim_type == "2d" else args.sim_type),
             sample_index=inhom_idx,
             t_coh_value=t_coh_val,
             run_status=run_status,
+            t_index=int(t_idx),
+            global_index=int(global_idx),
+            **({"error": error_message} if error_message is not None else {}),
         )
-        if error_message is not None:
-            metadata_combo["error"] = error_message
 
         path = save_run_artifact(
             signal_arrays=padded_components,
@@ -242,6 +257,8 @@ def main() -> None:
     )
     if failed_combos:
         print(f"Fallback zero-signal outputs written for {failed_combos} failed combination(s).")
+    if all_zero_combos:
+        print(f"All-zero outputs returned without exception for {all_zero_combos} combination(s).")
     if saved_paths:
         print("Latest artifact:")
         print(f"  {saved_paths[-1]}")

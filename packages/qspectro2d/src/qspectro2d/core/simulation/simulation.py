@@ -161,7 +161,9 @@ class SimulationModuleOQS:
             raise TypeError("t_coh must be provided to update_delays and cannot be None")
         wait_time = float(self.simulation_config.t_wait if t_wait is None else t_wait)
         self.simulation_config.t_wait = wait_time
-        self.laser.pulse_delays = [float(t_coh), wait_time]
+        t_coh_value = float(t_coh)
+        self.simulation_config.t_coh = t_coh_value
+        self.laser.pulse_delays = [t_coh_value, wait_time]
 
 
 __all__ = [

@@ -111,6 +111,11 @@ def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
         # Only process 1D artifacts, not already processed 2D
         if entry.metadata["sim_type"] == "2d":
             continue
+        # Skip runs that did not complete successfully
+        run_status = entry.metadata.get("run_status", "ok")
+        if run_status != "ok":
+            print(f"    ⚠️ Skipping {candidate.name}: run_status={run_status}")
+            continue
         entries.append(entry)
 
     return entries

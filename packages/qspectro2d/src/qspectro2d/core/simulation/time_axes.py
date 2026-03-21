@@ -125,13 +125,3 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
         return t_coh_axis
 
     raise ValueError(f"Unsupported sim_type: {sim_type}")
-
-
-def compute_global_t_det(cfg: "SimulationConfig") -> np.ndarray:
-    """Compute the global detection-time grid.
-
-    This is used for consistent output across all t_coh sweeps.
-    All signals are padded/cropped to match this grid.
-    Uses cfg.t_coh as the sweep upper bound for 2d simulations.
-    """
-    return compute_t_det(cfg, t_coh_override=float(cfg.t_coh))

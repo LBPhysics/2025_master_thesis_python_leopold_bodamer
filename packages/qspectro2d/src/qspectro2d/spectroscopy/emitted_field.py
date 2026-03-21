@@ -29,7 +29,7 @@ def _worker_polarisation(
     sim_oqs.system.update_frequencies_cm(freq_vector)
     sim_oqs.laser.pulse_phases = [phi1, phi2, 0.0]
 
-    detection_window = compute_t_det(sim_oqs.simulation_config)
+    detection_window = compute_t_det(sim_oqs.simulation_config, t_coh_override=t_coh)
     if active_pulses is None:
         t_det, polarisation = compute_polarisation_over_window(sim_oqs, detection_window)
     else:
@@ -48,6 +48,7 @@ def compute_emitted_field_components(
     *,
     lm: tuple[int, int] | None = None,
     time_cut: float | None = None,
+    detection_window: np.ndarray | list[float] | None = None,
 ) -> list[np.ndarray]:
     """Compute emitted-field components for the configured signal types."""
     from qspectro2d.config.factory import load_simulation_config
@@ -55,7 +56,21 @@ def compute_emitted_field_components(
     config = load_simulation_config(config_source)
     t_coh_value = float(t_coh)
 
-    t_det = compute_t_det(config)
+    if detection_window is None:
+        t_det = compute_t_det(config, t_coh_override=t_coh_value)
+    else:
+        t_det = np.asarray(detection_window, dtype=float)
+
+    if t_det.ndim != 1:
+        raise ValueError("detection_window must be one-dimensional")
+
+    sim_type = str(getattr(config, "sim_type", "1d"))
+    if len(t_det) == 0 and sim_type != "0d":
+        raise RuntimeError(
+            "Invariant violation: empty detection axis for non-0d run "
+            f"(sim_type={sim_type}, t_coh={t_coh_value:.6g}, t_det={float(config.t_det):.6g}, dt={float(config.dt):.6g})"
+        )
+
     signal_types = config.signal_types
     component_count = len(t_det)
 
