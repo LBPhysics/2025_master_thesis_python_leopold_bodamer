@@ -1,20 +1,22 @@
-from matplotlib.colors import TwoSlopeNorm
-import numpy as np
+from __future__ import annotations
+
+from typing import Literal
+
 import matplotlib.pyplot as plt
-from typing import Literal, Tuple, Optional
+import numpy as np
 import scipy.sparse as sp
+from matplotlib.colors import TwoSlopeNorm
+
+from plotstyle import COLORS, LINE_STYLES, init_style, simplify_figure_text
 
 from ..core.laser_system import (
     LaserPulseSequence,
-    # functions
-    pulse_envelopes,
-    single_pulse_envelope,
     e_pulses,
     epsilon_pulses,
+    pulse_envelopes,
+    single_pulse_envelope,
 )
-
-
-from plotstyle import init_style, COLORS, LINE_STYLES, simplify_figure_text
+from ..core.laser_system.laser import DEFAULT_ACTIVE_WINDOW_NFWHM
 
 init_style(
     rc_overrides={
@@ -23,244 +25,225 @@ init_style(
 )
 
 
-def plot_pulse_envelopes(
-    times: np.ndarray, pulse_seq: LaserPulseSequence, ax=None, show_legend=True
-):
-    """
-    Plot the combined pulse envelope over time for N pulses using LaserPulseSequence.
-
-    Parameters:
-        times (np.ndarray): Array of time values.
-        pulse_seq (LaserPulseSequence): LaserPulseSequence object containing pulses.
-        ax (matplotlib.axes.Axes, optional): Axes object to plot on. Defaults to None.
-
-    Returns:
-        tuple: (fig, ax) - Figure and axes objects with the plot.
-    """
-    # Calculate the combined envelope over time
-    envelope = pulse_envelopes(times, pulse_seq)
-
-    # Create figure and axis if not provided
+def _get_fig_ax(ax: plt.Axes | None = None, *, figsize: tuple[float, float] | None = None):
     if ax is None:
-        fig, ax = plt.subplots()  # Plot combined envelope
+        fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
-    ax.plot(
-        times,
-        envelope,
-        label=r"$\text{Combined Envelope}$",
-        linestyle=LINE_STYLES[0],
-        alpha=0.8,
-        color=COLORS[0],
-    )  # Styles for individual pulses will cycle
-    n_styles = len(LINE_STYLES)
-    n_colors = len(COLORS)
-    from qspectro2d.core.laser_system.laser import DEFAULT_ACTIVE_WINDOW_NFWHM
+    return fig, ax
 
-    # Plot individual envelopes and annotations (support any number of pulses)
-    for idx, pulse in enumerate(pulse_seq.pulses):
 
-        # get the individual envelope from the pulse_envelopes function
-        individual_envelope = single_pulse_envelope(times, pulse)
-        t_peak = pulse.pulse_peak_time
-        Delta_width = DEFAULT_ACTIVE_WINDOW_NFWHM * pulse.pulse_fwhm_fs
-        ax.plot(
-            times,
-            individual_envelope,
-            label=rf"$\text{{Pulse {idx + 1}}}$",
-            linestyle=LINE_STYLES[(idx + 1) % n_styles],  # avoid reusing 0 used above
-            alpha=0.6,
-            color=COLORS[(idx + 1) % n_colors],
-        )  # Annotate pulse key points
-        ax.axvline(
-            t_peak - Delta_width,
-            linestyle=LINE_STYLES[3],
-            label=rf"$t_{{peak, {idx + 1}}} - \Delta_{{{idx + 1}}}$",
-            alpha=0.4,
-            color=COLORS[(idx + 1) % n_colors],
-        )
-        ax.axvline(
-            t_peak,
-            linestyle=LINE_STYLES[0],
-            label=rf"$t_{{peak, {idx + 1}}}$",
-            alpha=0.8,
-            color=COLORS[(idx + 1) % n_colors],
-            linewidth=2,
-        )
-        ax.axvline(
-            t_peak + Delta_width,
-            linestyle=LINE_STYLES[3],
-            label=rf"$t_{{peak, {idx + 1}}} + \Delta_{{{idx + 1}}}$",
-            alpha=0.4,
-            color=COLORS[(idx + 1) % n_colors],
-        )
-
-    # Final plot labeling
-    ax.set_xlabel(r"Time $t$")
-    ax.set_ylabel(r"Envelope Amplitude")
-    ax.set_title(r"Pulse Envelopes for Up to Three Pulses")
+def _add_legend(ax: plt.Axes, show_legend: bool) -> None:
     if show_legend:
         ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
+
+def _pulse_color(index: int) -> str:
+    return COLORS[index % len(COLORS)]
+
+
+def _pulse_style(index: int) -> str:
+    return LINE_STYLES[index % len(LINE_STYLES)]
+
+
+def _plot_pulse_peak_lines(
+    ax: plt.Axes,
+    pulse_seq: LaserPulseSequence,
+    *,
+    show_window: bool = False,
+) -> None:
+    for idx, pulse in enumerate(pulse_seq.pulses):
+        color = _pulse_color(idx + 1)
+        t_peak = pulse.pulse_peak_time
+
+        ax.axvline(
+            t_peak,
+            linestyle=LINE_STYLES[3],
+            color=color,
+            alpha=0.8,
+            label=rf"$t_{{peak,{idx + 1}}}$",
+        )
+
+        if show_window:
+            delta = DEFAULT_ACTIVE_WINDOW_NFWHM * pulse.pulse_fwhm_fs
+            ax.axvline(
+                t_peak - delta,
+                linestyle=LINE_STYLES[2],
+                color=color,
+                alpha=0.35,
+            )
+            ax.axvline(
+                t_peak + delta,
+                linestyle=LINE_STYLES[2],
+                color=color,
+                alpha=0.35,
+            )
+
+
+def _complex_field_over_time(
+    times: np.ndarray,
+    pulse_seq: LaserPulseSequence,
+    field_func,
+) -> np.ndarray:
+    return np.asarray([field_func(float(t), pulse_seq) for t in times], dtype=complex)
+
+
+def _plot_complex_series(
+    times: np.ndarray,
+    values: np.ndarray,
+    *,
+    ax: plt.Axes,
+    real_label: str,
+    imag_label: str,
+    abs_label: str | None = None,
+    real_color: str = COLORS[0],
+    imag_color: str = COLORS[1],
+    abs_color: str = COLORS[2],
+) -> None:
+    ax.plot(
+        times,
+        np.real(values),
+        label=real_label,
+        linestyle=LINE_STYLES[0],
+        color=real_color,
+    )
+    ax.plot(
+        times,
+        np.imag(values),
+        label=imag_label,
+        linestyle=LINE_STYLES[1],
+        color=imag_color,
+    )
+    if abs_label is not None:
+        ax.plot(
+            times,
+            np.abs(values),
+            label=abs_label,
+            linestyle=LINE_STYLES[2],
+            color=abs_color,
+        )
+
+
+def plot_pulse_envelopes(
+    times: np.ndarray,
+    pulse_seq: LaserPulseSequence,
+    ax: plt.Axes | None = None,
+    show_legend: bool = True,
+):
+    """Plot combined and individual pulse envelopes."""
+    fig, ax = _get_fig_ax(ax)
+
+    ax.plot(
+        times,
+        pulse_envelopes(times, pulse_seq),
+        label=r"$\text{Combined Envelope}$",
+        linestyle=LINE_STYLES[0],
+        color=COLORS[0],
+        alpha=0.85,
+    )
+
+    for idx, pulse in enumerate(pulse_seq.pulses):
+        color = _pulse_color(idx + 1)
+        ax.plot(
+            times,
+            single_pulse_envelope(times, pulse),
+            label=rf"$\text{{Pulse {idx + 1}}}$",
+            linestyle=_pulse_style(idx + 1),
+            color=color,
+            alpha=0.65,
+        )
+
+    _plot_pulse_peak_lines(ax, pulse_seq, show_window=True)
+
+    ax.set_xlabel(r"Time $t$")
+    ax.set_ylabel(r"Envelope Amplitude")
+    ax.set_title(r"Pulse Envelopes")
+    _add_legend(ax, show_legend)
     simplify_figure_text(fig)
     return fig, ax
 
 
-def plot_e_pulses(times: np.ndarray, pulse_seq: LaserPulseSequence, ax=None, show_legend=True):
-    """
-    Plot the RWA electric field (envelope only) over time for N pulses using LaserPulseSequence.
+def plot_e_pulses(
+    times: np.ndarray,
+    pulse_seq: LaserPulseSequence,
+    ax: plt.Axes | None = None,
+    show_legend: bool = True,
+):
+    """Plot the complex RWA electric field."""
+    fig, ax = _get_fig_ax(ax, figsize=(10, 6))
+    e_field = _complex_field_over_time(times, pulse_seq, e_pulses)
 
-    Parameters:
-        times (np.ndarray): Array of time values.
-        pulse_seq (LaserPulseSequence): LaserPulseSequence object containing pulses.
-        ax (matplotlib.axes.Axes, optional): Axes object to plot on. Defaults to None.
-
-    Returns:
-        tuple: (fig, ax) - Figure and axes objects with the plot.
-    """
-    # Calculate the RWA electric field over time
-    E_field = np.array([e_pulses(t, pulse_seq) for t in times])
-
-    # Create figure and axis if not provided
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 6))  # Plot real and imaginary parts
-    else:
-        fig = ax.figure
-    ax.plot(
+    _plot_complex_series(
         times,
-        np.real(E_field),
-        label=r"$\mathrm{Re}[E(t)]$",
-        linestyle=LINE_STYLES[0],
-        color=COLORS[0],
+        e_field,
+        ax=ax,
+        real_label=r"$\mathrm{Re}[E(t)]$",
+        imag_label=r"$\mathrm{Im}[E(t)]$",
     )
-    ax.plot(
-        times,
-        np.imag(E_field),
-        label=r"$\mathrm{Im}[E(t)]$",
-        linestyle=LINE_STYLES[1],
-        color=COLORS[1],
-    )
+    _plot_pulse_peak_lines(ax, pulse_seq, show_window=False)
 
-    # Styles for any number of pulses (cycle through colors)
-    n_colors = len(COLORS)
-
-    # Plot pulse peak times for all pulses
-    for idx, pulse in enumerate(pulse_seq.pulses):
-        t_peak = pulse.pulse_peak_time
-        ax.axvline(
-            t_peak,
-            linestyle=LINE_STYLES[3],  # "dotted"
-            label=rf"$t_{{peak, {idx + 1}}}$",
-            color=COLORS[(idx + 2) % n_colors],  # offset to avoid field line colors
-        )
-
-    # Final plot labeling
     ax.set_xlabel(r"Time $t$")
     ax.set_ylabel(r"Electric Field (RWA)")
     ax.set_title(r"RWA Electric Field Components")
-    if show_legend:
-        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+    _add_legend(ax, show_legend)
     simplify_figure_text(fig)
     return fig, ax
 
 
 def plot_epsilon_pulses(
-    times: np.ndarray, pulse_seq: LaserPulseSequence, ax=None, show_legend=True
+    times: np.ndarray,
+    pulse_seq: LaserPulseSequence,
+    ax: plt.Axes | None = None,
+    show_legend: bool = True,
 ):
-    """
-    Plot the full electric field (with carrier) over time for N pulses using LaserPulseSequence.
+    """Plot the full electric field including carrier oscillation."""
+    fig, ax = _get_fig_ax(ax, figsize=(10, 6))
+    epsilon_field = _complex_field_over_time(times, pulse_seq, epsilon_pulses)
 
-    Parameters:
-        times (np.ndarray): Array of time values.
-        pulse_seq (LaserPulseSequence): LaserPulseSequence object containing pulses.
-        ax (matplotlib.axes.Axes, optional): Axes object to plot on. Defaults to None.
+    _plot_complex_series(
+        times,
+        epsilon_field,
+        ax=ax,
+        real_label=r"$\mathrm{Re}[\varepsilon(t)]$",
+        imag_label=r"$\mathrm{Im}[\varepsilon(t)]$",
+        abs_label=r"$|\varepsilon(t)|$",
+        real_color=COLORS[3 % len(COLORS)],
+        imag_color=COLORS[4 % len(COLORS)],
+        abs_color=COLORS[5 % len(COLORS)],
+    )
+    _plot_pulse_peak_lines(ax, pulse_seq, show_window=False)
 
-    Returns:
-        tuple: (fig, ax) - Figure and axes objects with the plot.
-    """
-    # Calculate the full electric field over time
-    Epsilon_field = np.array([epsilon_pulses(t, pulse_seq) for t in times])
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 6))
-    else:
-        fig = ax.figure
-    ax.plot(
-        times,
-        np.real(Epsilon_field),
-        label=r"$\mathrm{Re}[\varepsilon(t)]$",
-        linestyle=LINE_STYLES[0],
-        color=COLORS[3],
-    )
-    ax.plot(
-        times,
-        np.imag(Epsilon_field),
-        label=r"$\mathrm{Im}[\varepsilon(t)]$",
-        linestyle=LINE_STYLES[1],
-        color=COLORS[4],
-    )
-    ax.plot(
-        times,
-        np.abs(Epsilon_field),
-        label=r"$|\varepsilon(t)|$",
-        linestyle=LINE_STYLES[2],
-        color=COLORS[5],
-    )
-    n_colors = len(COLORS)
-    for idx, pulse in enumerate(pulse_seq.pulses):
-        t_peak = pulse.pulse_peak_time
-        ax.axvline(
-            t_peak,
-            linestyle=LINE_STYLES[3],
-            label=rf"$t_{{peak, {idx + 1}}}$",
-            color=COLORS[idx % n_colors],
-        )
     ax.set_xlabel(r"Time $t$")
     ax.set_ylabel(r"Electric Field (Full)")
     ax.set_title(r"Full Electric Field with Carrier")
-    if show_legend:
-        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-
+    _add_legend(ax, show_legend)
     simplify_figure_text(fig)
     return fig, ax
 
 
-def plot_all_pulse_components(times: np.ndarray, pulse_seq: LaserPulseSequence, ax=None):
-    """
-    Plot all pulse components: envelope, RWA field, and full field in a comprehensive figure.
-
-    Parameters:
-        times (np.ndarray): Array of time values.
-        pulse_seq (LaserPulseSequence): LaserPulseSequence object containing pulses.
-        ax (array-like of matplotlib.axes.Axes, optional): Array of axes objects to plot on. If None, creates new subplots.
-
-    Returns:
-        fig (matplotlib.figure.Figure): Figure object with all plots.
-    """
-    # Create figure with subplots if ax is None
+def plot_all_pulse_components(
+    times: np.ndarray,
+    pulse_seq: LaserPulseSequence,
+    ax=None,
+):
+    """Plot envelopes, RWA field, and full field in one figure."""
     if ax is None:
         fig, axes = plt.subplots(3, 1, figsize=(15, 12))
     else:
         axes = ax
         fig = axes[0].figure
 
-    # Plot pulse envelope
     plot_pulse_envelopes(times, pulse_seq, ax=axes[0])
-
-    # Plot RWA electric field
     plot_e_pulses(times, pulse_seq, ax=axes[1])
-
-    # Plot full electric field
     plot_epsilon_pulses(times, pulse_seq, ax=axes[2])
 
-    # Add overall title
     fig.suptitle(
-        f"Comprehensive Pulse Analysis - {len(pulse_seq.pulses)} Pulse(s)",
+        f"Pulse Analysis - {len(pulse_seq.pulses)} Pulse(s)",
         fontsize=16,
         y=0.98,
     )
-
     plt.tight_layout()
-
+    simplify_figure_text(fig)
     return fig
 
 
@@ -273,75 +256,39 @@ def plot_example_evo(
     ax=None,
     **kwargs: dict,
 ):
-    """
-    Plot the evolution of the electric field and expectation values for a given t_coh and t_wait.
+    """Plot field and expectation values over time."""
+    field_func = e_pulses if rwa_sl else epsilon_pulses
 
-    Parameters:
-        times_plot (np.ndarray): Time axis for the plot.
-        datas (list): List of arrays of expectation values to plot.
-        pulse_seq (LaserPulseSequence): Laser pulse sequence object.
-        t_coh (float): Coherence time.
-        t_wait (float): Waiting time.
-        system: System object containing all relevant parameters.
-        rwa_sl (bool): Whether to use RWA or full field.
-        ax (array-like of matplotlib.axes.Axes, optional): Array of axes objects to plot on. If None, creates new subplots.
-        **kwargs: Additional keyword arguments for annotation.
+    e0 = pulse_seq.E0
+    e_total = _complex_field_over_time(times_plot, pulse_seq, field_func) / e0
 
-    Returns:
-        matplotlib.figure.Figure: The figure object.
-    """
-    if rwa_sl:
-        field_func = e_pulses
-    else:
-        field_func = epsilon_pulses
-
-    # Calculate total electric field
-    E0 = pulse_seq.E0
-    E_total = np.array([field_func(t, pulse_seq) / E0 for t in times_plot])
-
-    # Create plot with appropriate size
     if ax is None:
-        fig, axes = plt.subplots(len(datas) + 1, 1, figsize=(14, 2 + 2 * len(datas)), sharex=True)
+        fig, axes = plt.subplots(
+            len(datas) + 1,
+            1,
+            figsize=(14, 2 + 2 * len(datas)),
+            sharex=True,
+        )
     else:
         axes = ax
         fig = axes[0].figure
 
-    # Plot electric field
-    axes[0].plot(
+    _plot_complex_series(
         times_plot,
-        np.real(E_total),
-        color=COLORS[0],
-        linestyle=LINE_STYLES[0],
-        label=r"$\mathrm{Re}[E(t)]$",
-    )
-    axes[0].plot(
-        times_plot,
-        np.imag(E_total),
-        color=COLORS[1],
-        linestyle=LINE_STYLES[1],
-        label=r"$\mathrm{Im}[E(t)]$",
+        e_total,
+        ax=axes[0],
+        real_label=r"$\mathrm{Re}[E(t)]$",
+        imag_label=r"$\mathrm{Im}[E(t)]$",
     )
     axes[0].set_ylabel(r"$E(t) / E_0$")
-    axes[0].legend(loc="center left", bbox_to_anchor=(1, 0.5))
+    _add_legend(axes[0], True)
 
-    # Plot expectation values
     for idx, data in enumerate(datas):
-        ax = axes[idx + 1]
-        if idx == len(observable_strs):
-            observable_str = r"\text{Pol}"
-            # also Plot imaginary part, because the polarisation is complex
-            ax.plot(
-                times_plot,
-                np.imag(data),
-                color=COLORS[1],
-                linestyle=LINE_STYLES[1],
-                label=r"$\mathrm{Im}" + observable_str + r" \rangle$",
-            )
-        else:
-            observable_str = observable_strs[idx]
+        axis = axes[idx + 1]
+        is_polarisation = idx >= len(observable_strs)
+        observable_str = r"\text{Pol}" if is_polarisation else observable_strs[idx]
 
-        # Plot real part
-        ax.plot(
+        axis.plot(
             times_plot,
             np.real(data),
             color=COLORS[0],
@@ -349,134 +296,193 @@ def plot_example_evo(
             label=r"$\mathrm{Re}\langle " + observable_str + r" \rangle$",
         )
 
-        ax.set_ylabel(r"$\langle " + observable_str + r" \rangle$")
-        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+        if is_polarisation:
+            axis.plot(
+                times_plot,
+                np.imag(data),
+                color=COLORS[1],
+                linestyle=LINE_STYLES[1],
+                label=r"$\mathrm{Im}\langle " + observable_str + r" \rangle$",
+            )
+
+        axis.set_ylabel(r"$\langle " + observable_str + r" \rangle$")
+        _add_legend(axis, True)
 
     add_text_box(ax=axes[0], kwargs=kwargs)
-
-    # Set x-label only on the bottom subplot
     axes[-1].set_xlabel(r"$t\,/\,\mathrm{fs}$")
 
     plt.tight_layout()
     simplify_figure_text(fig)
-
     return fig
 
 
 def plot_el_field(
     axis_det: np.ndarray,
     data: np.ndarray,
-    axis_coh: Optional[np.ndarray] = None,
+    axis_coh: np.ndarray | None = None,
     component: Literal["real", "imag", "abs", "phase"] = "real",
     domain: Literal["time", "freq"] = "time",
-    section: Optional[tuple[float, float]] = None,
-    ax: Optional[plt.Axes] = None,
+    section: tuple[float, float] | None = None,
+    ax: plt.Axes | None = None,
     cutoff_percent: float = 0.0,
     **kwargs: dict,
 ) -> plt.Figure:
-    if component not in ("real", "imag", "abs", "phase"):
-        raise ValueError("Invalid component. Must be 'real', 'imag', 'abs', or 'phase'.")
+    """Plot emitted field in 1D or 2D."""
+    if component not in {"real", "imag", "abs", "phase"}:
+        raise ValueError("component must be one of: 'real', 'imag', 'abs', 'phase'")
+    if domain not in {"time", "freq"}:
+        raise ValueError("domain must be 'time' or 'freq'")
 
-    # Convert sparse to dense if needed
     if isinstance(data, sp.spmatrix):
         data = data.toarray()
+    data = np.asarray(data)
 
-    # Handle 1D data stored as (n, 1)
     if axis_coh is None and data.ndim == 2 and data.shape[1] == 1:
         data = data.squeeze(axis=1)
 
-    # Crop data if section provided
     if section is not None:
         if data.ndim == 1:
             axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
         elif data.ndim == 2:
+            if axis_coh is None:
+                raise ValueError("axis_coh must be provided for 2D data")
             axis_coh, data = crop_nd_data_along_axis(axis_coh, data, section, axis=0)
             axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=1)
+        else:
+            raise ValueError("data must be 1D or 2D")
 
-    # Select the component to plot
     plot_data, base_title = _component_data(data, component)
 
-    if cutoff_percent > 0:
-        threshold = cutoff_percent / 100 * np.max(np.abs(plot_data))
-        mask = np.abs(plot_data) < threshold
-        plot_data = np.ma.masked_where(mask, plot_data)
+    if cutoff_percent > 0 and plot_data.size > 0:
+        threshold = cutoff_percent / 100.0 * np.max(np.abs(plot_data))
+        plot_data = np.ma.masked_where(np.abs(plot_data) < threshold, plot_data)
 
-    if ax is None:
-        fig, ax = plt.subplots()
+    fig, ax = _get_fig_ax(ax)
+
+    if plot_data.ndim == 1:
+        _plot_el_field_1d(
+            ax=ax,
+            axis_det=axis_det,
+            plot_data=plot_data,
+            component=component,
+            domain=domain,
+            base_title=base_title,
+        )
+    elif plot_data.ndim == 2:
+        if axis_coh is None:
+            raise ValueError("axis_coh must be provided for 2D data")
+        _plot_el_field_2d(
+            ax=ax,
+            axis_coh=axis_coh,
+            axis_det=axis_det,
+            plot_data=plot_data,
+            component=component,
+            domain=domain,
+            base_title=base_title,
+        )
     else:
-        fig = ax.figure
-    if data.ndim == 1:
-        # 1D plot
-        color, linestyle = _style_for_component(component, 1, domain=domain)
-        # Normalize to max absolute value
-        if plot_data.size > 0 and not np.all(np.isnan(plot_data)):
-            max_abs = np.max(np.abs(plot_data))
-            if max_abs > 0:
-                plot_data = plot_data / max_abs
-        ax.plot(
-            axis_det,
-            plot_data,
-            color=color,
-            linestyle=linestyle,
-            label=base_title.strip(),
-        )
-        x_label, y_label, title_suffix = _domain_labels(domain, 1)
-        ax.set_title(base_title + " " + title_suffix)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(r"$" + y_label.strip("$") + r" / \max(|" + y_label.strip("$") + r"|)$")
-        ax.legend()
-        fig.tight_layout()
-        add_text_box(ax, kwargs=kwargs)
-        return fig
+        raise ValueError("data must be 1D or 2D")
 
-    elif data.ndim == 2:
-        # 2D plot
-        colormap, norm = _style_for_component(component, 2, plot_data, domain)
-        im = ax.imshow(
-            plot_data.T,  # Transpose to have detection on y, coherence on x
-            extent=[axis_coh.min(), axis_coh.max(), axis_det.min(), axis_det.max()],
-            origin="lower",
-            aspect="auto",
-            cmap=colormap,
-            norm=norm,
-            interpolation="bilinear",
-        )
-        x_label, y_label, cbar_label, title_suffix = _domain_labels(domain, 2)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.set_title(base_title + " " + title_suffix)
-        plt.colorbar(im, ax=ax, label=cbar_label)
-        fig.tight_layout()
-        add_text_box(ax, kwargs=kwargs)
-        return fig
+    add_text_box(ax, kwargs=kwargs)
+    fig.tight_layout()
+    simplify_figure_text(fig)
+    return fig
 
 
-# HELPER FUNCTIONS
+def _plot_el_field_1d(
+    *,
+    ax: plt.Axes,
+    axis_det: np.ndarray,
+    plot_data: np.ndarray,
+    component: str,
+    domain: str,
+    base_title: str,
+) -> None:
+    color, linestyle = _style_for_component(component, 1, domain=domain)
+
+    values = np.asarray(plot_data, dtype=float)
+    if values.size > 0 and not np.all(np.isnan(values)):
+        max_abs = np.max(np.abs(values))
+        if max_abs > 0:
+            values = values / max_abs
+
+    x_label, y_label, title_suffix = _domain_labels(domain, 1)
+
+    ax.plot(
+        axis_det,
+        values,
+        color=color,
+        linestyle=linestyle,
+        label=base_title.strip(),
+    )
+    ax.set_title(base_title + " " + title_suffix)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(r"$" + y_label.strip("$") + r" / \max(|" + y_label.strip("$") + r"|)$")
+    ax.legend()
+
+
+def _plot_el_field_2d(
+    *,
+    ax: plt.Axes,
+    axis_coh: np.ndarray,
+    axis_det: np.ndarray,
+    plot_data: np.ndarray,
+    component: str,
+    domain: str,
+    base_title: str,
+) -> None:
+    colormap, norm = _style_for_component(component, 2, data=plot_data, domain=domain)
+
+    def _axis_extent(axis: np.ndarray) -> tuple[float, float]:
+        axis = np.asarray(axis, dtype=float)
+        if axis.size == 0:
+            raise ValueError("Axis must contain at least one point for 2D plotting")
+        if axis.size == 1:
+            center = float(axis[0])
+            # Avoid identical imshow limits for heavily cropped sections.
+            pad = max(abs(center) * 1e-6, 1e-9)
+            return center - pad, center + pad
+
+        # Convert center coordinates to edge coordinates for a stable image extent.
+        left = float(axis[0] - 0.5 * (axis[1] - axis[0]))
+        right = float(axis[-1] + 0.5 * (axis[-1] - axis[-2]))
+        if left == right:
+            pad = max(abs(left) * 1e-6, 1e-9)
+            return left - pad, right + pad
+        return left, right
+
+    coh_min, coh_max = _axis_extent(axis_coh)
+    det_min, det_max = _axis_extent(axis_det)
+
+    im = ax.imshow(
+        plot_data.T,
+        extent=[coh_min, coh_max, det_min, det_max],
+        origin="lower",
+        aspect="auto",
+        cmap=colormap,
+        norm=norm,
+        interpolation="bilinear",
+    )
+
+    x_label, y_label, cbar_label, title_suffix = _domain_labels(domain, 2)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_title(base_title + " " + title_suffix)
+    plt.colorbar(im, ax=ax, label=cbar_label)
+
+
 def crop_nd_data_along_axis(
     coord_array: np.ndarray,
     nd_data: np.ndarray,
-    section: tuple[float, float],
+    section: tuple[float, float] | list,
     axis: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Crop n-dimensional data along a specified axis.
+    """Crop N-dimensional data along one axis."""
+    coord_array = np.asarray(coord_array)
+    nd_data = np.asarray(nd_data)
 
-    Parameters:
-        coord_array (np.ndarray): 1D coordinate array for the specified axis
-        nd_data (np.ndarray): N-dimensional data array
-        section (tuple[float, float]): Section boundaries as (min_val, max_val)
-        axis (int): Axis along which to crop (default: 0)
-
-    Returns:
-        tuple: (cropped_coord_array, cropped_nd_data)
-
-    Raises:
-        ValueError: If coordinate array length doesn't match data shape along specified axis
-    """
-    ### Validate input dimensions
     if coord_array.ndim != 1:
         raise ValueError("Coordinate array must be 1-dimensional")
-
     if nd_data.shape[axis] != len(coord_array):
         raise ValueError(
             f"Data shape along axis {axis} ({nd_data.shape[axis]}) "
@@ -488,102 +494,71 @@ def crop_nd_data_along_axis(
     else:
         coord_min, coord_max = section
 
-    ### Validate coordinates are within data range
-    coord_min = max(coord_min, np.min(coord_array))
-    coord_max = min(coord_max, np.max(coord_array))
+    coord_min = max(coord_min, float(np.min(coord_array)))
+    coord_max = min(coord_max, float(np.max(coord_array)))
 
-    ### Find indices within the specified section
     indices = np.where((coord_array >= coord_min) & (coord_array <= coord_max))[0]
-
-    ### Ensure indices are within array bounds
-    indices = indices[indices < len(coord_array)]
-
-    ### Crop coordinate array
     cropped_coords = coord_array[indices]
-
-    ### Crop data along specified axis using advanced indexing
     cropped_data = np.take(nd_data, indices, axis=axis)
-
     return cropped_coords, cropped_data
 
 
-# INTERNAL HELPERS (1D/2D LABEL + COMPONENT LOGIC)
 def _style_for_component(
-    component: str, ndim: int, data: Optional[np.ndarray] = None, domain: str = "time"
-) -> Tuple:
-    """Return style parameters for a given component and dimension.
-
-    For 1D: returns (color, linestyle)
-    For 2D: returns (colormap, norm)
-    """
+    component: str,
+    ndim: int,
+    data: np.ndarray | None = None,
+    domain: str = "time",
+):
+    """Return style parameters for a component."""
     if ndim == 1:
-        color_map = {"abs": 0, "real": 1, "imag": 2, "phase": 3}
-        linestyle_map = {"abs": 0, "real": 1, "imag": 2, "phase": 3}
-        idx = color_map.get(component, 0)
-        style_idx = linestyle_map.get(component, 0)
-        color = COLORS[idx]
-        linestyle = LINE_STYLES[style_idx]
-        return color, linestyle
-    elif ndim == 2:
-        norm = None
-        if component in ("real", "imag", "phase"):
-            use_custom_colormap = True
-        else:
-            use_custom_colormap = False
+        color_index = {"abs": 0, "real": 1, "imag": 2, "phase": 3}.get(component, 0)
+        style_index = {"abs": 0, "real": 1, "imag": 2, "phase": 3}.get(component, 0)
+        return COLORS[color_index % len(COLORS)], LINE_STYLES[style_index % len(LINE_STYLES)]
 
-        if use_custom_colormap:
-            vmax = np.max(np.abs(data))
-            vmin = -vmax
-            vcenter = 0
-            colormap = plt.get_cmap("RdBu_r")
-            if vmin < vcenter < vmax:
-                norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
-            else:
-                print(
-                    f"Warning: Cannot use TwoSlopeNorm with vmin={vmin}, vcenter={vcenter}, vmax={vmax}. Using default normalization."
-                )
-        else:
-            # standard colormap
-            if domain == "time":
-                colormap = "viridis"
-            elif domain == "freq":
-                colormap = "plasma"
-            else:
-                colormap = "viridis"  # default
-        return colormap, norm
-    else:
-        raise ValueError("ndim must be 1 or 2")
+    if ndim == 2:
+        if component in {"real", "imag", "phase"}:
+            if data is None or np.size(data) == 0:
+                return plt.get_cmap("RdBu_r"), None
+
+            vmax = float(np.max(np.abs(data)))
+            if vmax > 0:
+                return plt.get_cmap("RdBu_r"), TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+            return plt.get_cmap("RdBu_r"), None
+
+        if domain == "freq":
+            return "plasma", None
+        return "viridis", None
+
+    raise ValueError("ndim must be 1 or 2")
 
 
-def _component_data(data: np.ndarray, component: str) -> Tuple[np.ndarray, str]:
-    """Return transformed data + base title according to component."""
-    if component not in ("real", "imag", "abs", "phase"):
-        raise ValueError("Invalid component.")
+def _component_data(data: np.ndarray, component: str) -> tuple[np.ndarray, str]:
+    """Return transformed data and a base title."""
     if component == "real":
-        return np.real(data), r"$\text{Real }$"
+        return np.real(data), r"$\text{Real}$"
     if component == "imag":
-        return np.imag(data), r"$\text{Imag }$"
+        return np.imag(data), r"$\text{Imag}$"
     if component == "abs":
-        return np.abs(data), r"$\text{Abs }$"
-    return np.angle(data), r"$\text{Phase }$"  # phase
+        return np.abs(data), r"$\text{Abs}$"
+    if component == "phase":
+        return np.angle(data), r"$\text{Phase}$"
+    raise ValueError("Invalid component.")
 
 
-def _domain_labels(domain: str, ndim: int) -> Tuple[str, ...]:
-    """Return labels for domain and dimension.
-
-    For 1D: (x_label, y_label, title_suffix)
-    For 2D: (x_label, y_label, colorbar_label, title_suffix)
-    """
-    if domain not in ("time", "freq"):
+def _domain_labels(domain: str, ndim: int):
+    """Return labels for a given domain and dimensionality."""
+    if domain not in {"time", "freq"}:
         raise ValueError("Invalid domain. Use 'time' or 'freq'.")
+
     signal_label = r"$E_{k_S}$"
     title_suffix = "Time domain signal" if domain == "time" else "Spectrum"
+
     if ndim == 1:
         if domain == "time":
             return r"$t_{\mathrm{det}}$ [fs]", signal_label, title_suffix
-        else:
-            return r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]", signal_label, title_suffix
-    elif ndim == 2:
+        return r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]", signal_label, title_suffix
+
+    if ndim == 2:
         if domain == "time":
             return (
                 r"$t_{\mathrm{coh}}$ [fs]",
@@ -591,15 +566,14 @@ def _domain_labels(domain: str, ndim: int) -> Tuple[str, ...]:
                 signal_label,
                 title_suffix,
             )
-        else:
-            return (
-                r"$\omega_{\mathrm{coh}}$ [$10^4$ cm$^{-1}$]",
-                r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]",
-                signal_label,
-                title_suffix,
-            )
-    else:
-        raise ValueError("ndim must be 1 or 2")
+        return (
+            r"$\omega_{\mathrm{coh}}$ [$10^4$ cm$^{-1}$]",
+            r"$\omega_{\mathrm{det}}$ [$10^4$ cm$^{-1}$]",
+            signal_label,
+            title_suffix,
+        )
+
+    raise ValueError("ndim must be 1 or 2")
 
 
 def add_custom_contour_lines(
@@ -608,165 +582,117 @@ def add_custom_contour_lines(
     data: np.ndarray,
     component: str,
     level_count: int = 10,
+    ax: plt.Axes | None = None,
 ) -> None:
-    """
-    Add custom contour lines to a 2D plot with different styles for positive/negative values.
+    """Add contour lines to a 2D plot."""
+    if ax is None:
+        ax = plt.gca()
 
-    Parameters:
-        x (np.ndarray): X-axis coordinate array
-        y (np.ndarray): Y-axis coordinate array
-        data (np.ndarray): 2D data array to contour
-        component (str): Data component type ("real", "imag", "phase", "abs")
-        level_count (int): Number of contour levels in each region (positive/negative).
-            If 10 (default), levels are placed at ±[5, 15, ..., 95]% of |max(data)|.
-    """
-    ### Add contour lines with different styles for positive and negative values
-    if component in ("real", "imag", "phase"):
-        ### Determine contour levels based on the data range
-        vmax = max(abs(np.min(data)), abs(np.max(data)))
-        vmin = -vmax
+    if component in {"real", "imag", "phase"}:
+        vmax = float(np.max(np.abs(data)))
+        if vmax <= 0:
+            return
 
-        ### Create evenly spaced levels for both positive and negative regions
-        if vmax > 0:
-            # Use exact 10% steps by default: 5%, 15%, ..., 95%
-            if level_count == 10:
-                percents = np.arange(0.05, 1.0, 0.10)
-            else:
-                # Fallback: linearly spaced in [5%, 95%]
-                percents = np.linspace(0.05, 0.95, level_count)
+        if level_count == 10:
+            percents = np.arange(0.05, 1.0, 0.10)
+        else:
+            percents = np.linspace(0.05, 0.95, level_count)
 
-            # Matplotlib requires levels strictly increasing
-            positive_levels = percents * vmax  # [0.05..0.95]*vmax ascending
-            negative_levels = -percents[::-1] * vmax  # [-0.95..-0.05]*vmax ascending
+        positive_levels = percents * vmax
+        negative_levels = -percents[::-1] * vmax
 
-            ### Plot positive contours (solid lines)
-            pos_contour = plt.contour(
-                x,
-                y,
-                data,
-                levels=positive_levels,
-                colors=COLORS[0],
-                linewidths=0.7,
-                alpha=0.8,
-            )
-
-            ### Plot negative contours (dashed lines)
-            neg_contour = plt.contour(
-                x,
-                y,
-                data,
-                levels=negative_levels,
-                colors=COLORS[1],
-                linewidths=0.7,
-                alpha=0.8,
-                linestyles=LINE_STYLES[1],
-            )
-
-            ### NOTE optional: Add contour labels to every other contour line
-            # plt.clabel(pos_contour, inline=True, fontsize=8, fmt='%.2f', levels=positive_levels[::2])
-            # plt.clabel(neg_contour, inline=True, fontsize=8, fmt='%.2f', levels=negative_levels[::2])
-    else:
-        ### For abs and phase, use standard contours
-        contour_plot = plt.contour(
+        ax.contour(
             x,
             y,
             data,
-            levels=level_count,
-            colors=COLORS[1],
+            levels=positive_levels,
+            colors=COLORS[0],
             linewidths=0.7,
             alpha=0.8,
         )
-        ### Optional: Add contour labels
-        plt.clabel(
-            contour_plot,
-            inline=True,
-            fontsize=8,
-            fmt="%.2f",
-            levels=contour_plot.levels[::2],
+        ax.contour(
+            x,
+            y,
+            data,
+            levels=negative_levels,
+            colors=COLORS[1],
+            linewidths=0.7,
+            alpha=0.8,
+            linestyles=LINE_STYLES[1],
         )
+        return
+
+    contour_plot = ax.contour(
+        x,
+        y,
+        data,
+        levels=level_count,
+        colors=COLORS[1],
+        linewidths=0.7,
+        alpha=0.8,
+    )
+    ax.clabel(
+        contour_plot,
+        inline=True,
+        fontsize=8,
+        fmt="%.2f",
+        levels=contour_plot.levels[::2],
+    )
+
+
+def _format_text_box_value(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.3g}"
+    if isinstance(value, (int, str)):
+        return str(value)
+    if isinstance(value, np.ndarray):
+        return f"array(shape={value.shape})"
+    return (
+        str(value).replace("_", r"\_").replace("^", r"\^").replace("{", r"\{").replace("}", r"\}")
+    )
 
 
 def add_text_box(
-    ax,
+    ax: plt.Axes,
     kwargs: dict,
-    position: tuple = (0.98, 0.98),
+    position: tuple[float, float] = (0.98, 0.98),
     fontsize: int = 7,
     coords: Literal["axes", "figure"] = "axes",
 ):
-    """
-    Add a text box with additional parameters without affecting subplot layout.
+    """Add a small info box that does not affect layout."""
+    if not kwargs:
+        return
 
-    Parameters:
-        ax (matplotlib.axes.Axes): Axes object (also used to access the parent Figure).
-        kwargs (dict): Dictionary of parameters to display in the text box.
-        position (tuple): Position of the text box in the chosen coordinate system.
-                          For ``coords='axes'`` this is in axis coordinates (default top-right).
-                          For ``coords='figure'`` this is in figure coordinates.
-        fontsize (int): Font size for the text box (default: 11).
-        coords (Literal["axes","figure"]): Coordinate system to place the text in.
-            - "axes": anchored to the given Axes (default; backwards compatible)
-            - "figure": anchored to the whole Figure (fully independent of Axes)
+    info_text = "\n".join(
+        f"{key}: {_format_text_box_value(value)}" for key, value in kwargs.items()
+    )
 
-    Notes:
-        - The created text artist is marked ``in_layout=False`` so that ``tight_layout``
-          or ``constrained_layout`` ignore it and do not shrink other subplots.
-        - ``clip_on=False`` is used so the text can extend beyond the Axes box if desired.
-    """
-    if kwargs:
-        text_lines = []
-        for key, value in kwargs.items():
-            if isinstance(value, float):
-                # Format floats to 3 significant digits
-                text_lines.append(f"{key}: {value:.3g}")
-            elif isinstance(value, (int, str)):
-                # Add integers and strings directly
-                text_lines.append(f"{key}: {value}")
-            elif isinstance(value, np.ndarray):
-                # Show shape for numpy arrays
-                text_lines.append(f"{key}: array(shape={value.shape})")
-            else:
-                # TODO insert this into my plotstyle package
-                # Convert other types to string and escape LaTeX special characters
-                safe_str = (
-                    str(value)
-                    .replace("_", "\_")
-                    .replace("^", "\^")
-                    .replace("{", "\{")
-                    .replace("}", "\}")
-                )
-                text_lines.append(f"{key}: {safe_str}")
+    if coords == "figure":
+        fig = ax.figure
+        artist = fig.text(
+            position[0],
+            position[1],
+            info_text,
+            transform=fig.transFigure,
+            fontsize=fontsize,
+            va="top",
+            ha="right",
+            bbox=dict(boxstyle="round,pad=0.3", alpha=0.05, edgecolor="black"),
+        )
+    else:
+        artist = ax.text(
+            position[0],
+            position[1],
+            info_text,
+            transform=ax.transAxes,
+            fontsize=fontsize,
+            va="top",
+            ha="right",
+            bbox=dict(boxstyle="round,pad=0.3", alpha=0.05, edgecolor="black"),
+            clip_on=False,
+        )
 
-        info_text = "\n".join(text_lines)
-
-        # Create the text artist either in axes or figure coordinates
-        if coords == "figure":
-            fig = ax.figure
-            artist = fig.text(
-                position[0],
-                position[1],
-                info_text,
-                transform=fig.transFigure,
-                fontsize=fontsize,
-                va="top",
-                ha="right",
-                bbox=dict(boxstyle="round,pad=0.3", alpha=0.05, edgecolor="black"),
-            )
-        else:
-            artist = ax.text(
-                position[0],
-                position[1],
-                info_text,
-                transform=ax.transAxes,
-                fontsize=fontsize,
-                verticalalignment="top",
-                horizontalalignment="right",
-                bbox=dict(boxstyle="round,pad=0.3", alpha=0.05, edgecolor="black"),
-                clip_on=False,  # allow text to extend beyond axes region
-            )
-
-        # Ensure layout engines ignore this artist so it doesn't shrink subplots
-        try:
-            artist.set_in_layout(False)
-        except Exception:
-            # Older Matplotlib versions may not have in_layout on Text; ignore gracefully
-            pass
+    try:
+        artist.set_in_layout(False)
+    except Exception:
+        pass

@@ -25,6 +25,8 @@ from pathlib import Path
 import numpy as np
 
 from qspectro2d.config.factory import load_simulation
+from qspectro2d.config.io import load_config
+from qspectro2d.config.validate import validate_config
 from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
 from qspectro2d.diagnostics import check_the_solver
 from qspectro2d.spectroscopy import compute_emitted_field_components, sample_from_gaussian
@@ -126,7 +128,7 @@ def main() -> None:
     parser.add_argument(
         "--sim_type",
         choices=["0d", "1d", "2d"],
-        default="1d",
+        default=None,
         help="Simulation dimensionality",
     )
     parser.add_argument(
@@ -148,15 +150,21 @@ def main() -> None:
     print("LOCAL ALL-COMBINATIONS RUNNER")
     print(f"Config path: {config_path}")
 
-    sim = load_simulation(config_path, run_validation=True)
-    print("✅ Simulation object constructed.")
+    merged_cfg = load_config(str(config_path))
+    effective_sim_type = (
+        args.sim_type if args.sim_type is not None else merged_cfg["config"]["sim_type"]
+    )
+    merged_cfg["config"]["sim_type"] = effective_sim_type
+
+    validate_config(merged_cfg)
+    print("✅ Merged config validated once.")
+
+    sim = load_simulation(merged_cfg, run_validation=False)
+    print("✅ Simulation object constructed from validated merged config.")
 
     time_cut = check_the_solver(sim)
     print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
 
-    effective_sim_type = (
-        args.sim_type if args.sim_type is not None else sim.simulation_config.sim_type
-    )
     sim.simulation_config.sim_type = effective_sim_type
 
     label_token = job_label_token(sim.simulation_config, sim.system, sim_type=effective_sim_type)
@@ -213,6 +221,7 @@ def main() -> None:
         "data_dir": str(job_paths.data_dir),
         "figures_dir": str(job_paths.figures_dir),
         "data_base_name": job_paths.base_name,
+        "merged_config": merged_cfg,
     }
 
     info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
@@ -256,7 +265,7 @@ def main() -> None:
         )
 
         e_components = compute_emitted_field_components(
-            config_path=str(config_path),
+            config_source=merged_cfg,
             t_coh=t_coh_val,
             freq_vector=freq_vector.tolist(),
             time_cut=time_cut,

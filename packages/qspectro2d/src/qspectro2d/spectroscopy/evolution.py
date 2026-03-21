@@ -34,6 +34,19 @@ __all__ = [
 ]
 
 
+def _validate_external_time_grid(tlist: np.ndarray) -> np.ndarray:
+    tlist = np.asarray(tlist, dtype=float)
+    if tlist.ndim != 1:
+        raise ValueError("solver_times must be a one-dimensional array")
+    if len(tlist) < 2:
+        raise ValueError("solver_times must contain at least two points")
+    if not np.all(np.isfinite(tlist)):
+        raise ValueError("solver_times must contain only finite values")
+    if not np.all(np.diff(tlist) > 0):
+        raise ValueError("solver_times must be strictly increasing")
+    return tlist
+
+
 def slice_polarisation_to_window(
     times: np.ndarray,
     polarisation: list,
@@ -47,19 +60,17 @@ def slice_polarisation_to_window(
     times = np.asarray(times)
     window = np.asarray(window)
 
-    # Nearest index for each window time.
     indices = np.searchsorted(times, window, side="left")
     indices = np.clip(indices, 0, len(times) - 1)
 
     selected_indices = np.zeros_like(indices)
     for position, (index, time_value) in enumerate(zip(indices, window)):
-        # Candidates: index-1, index, index+1 (if within bounds).
         candidates = [index]
         if index > 0:
             candidates.append(index - 1)
         if index < len(times) - 1:
             candidates.append(index + 1)
-        # Choose the candidate with minimal absolute difference.
+
         selected_indices[position] = min(
             candidates, key=lambda candidate: abs(times[candidate] - time_value)
         )
@@ -70,6 +81,8 @@ def slice_polarisation_to_window(
 def compute_evolution(
     sim_oqs: SimulationModuleOQS,
     e_ops=None,
+    *,
+    solver_times: np.ndarray | None = None,
     **override_options: dict,
 ) -> tuple[np.ndarray, list]:
     """Return the simulation time grid together with expectations or states.
@@ -77,14 +90,17 @@ def compute_evolution(
     Returns:
         (tlist, data), where data is expectations if e_ops is given and states otherwise.
     """
-    t_list = compute_times_local(sim_oqs.simulation_config)
+    if solver_times is None:
+        t_list = compute_times_local(sim_oqs.simulation_config)
+    else:
+        t_list = _validate_external_time_grid(solver_times)
+
     state0 = sim_oqs.initial_state
     hamiltonian = sim_oqs.evo_obj
 
     solver = sim_oqs.simulation_config.ode_solver
     run_kwargs, options = sim_oqs._solver_split()
     options.update(override_options or {})
-    # Silence QuTiP solver progress output unless explicitly overridden.
     options.setdefault("progress_bar", False)
 
     if e_ops is not None:
@@ -104,7 +120,7 @@ def compute_evolution(
                 options=options,
                 **run_kwargs,
             )
-        except Exception as exc:
+        except Exception:
             log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
             raise
     elif solver in {"lindblad", "paper_eqs"}:
@@ -134,6 +150,8 @@ def compute_evolution(
 def compute_polarisation_over_window(
     sim_oqs: SimulationModuleOQS,
     window: np.ndarray | list | None = None,
+    *,
+    solver_times: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Evolve once with current laser settings and return (t_det, P(t_det)),
@@ -143,8 +161,6 @@ def compute_polarisation_over_window(
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
-    # Build the dipole operator in the energy eigenbasis. The polarisation helper then selects
-    # the spectroscopic component consistently for both RWA and non-RWA branches.
     dipole_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
 
     def polarisation_density(state):
@@ -155,7 +171,6 @@ def compute_polarisation_over_window(
 
     if sim_oqs.simulation_config.rwa_sl:
 
-        # Rotate the states back to the lab frame before taking the polarisation expectation value.
         def polarisation(t, state):
             return time_dependent_polarisation_rwa(
                 dipole_op,
@@ -170,10 +185,12 @@ def compute_polarisation_over_window(
         def polarisation(_t, state):
             return complex_polarisation(dipole_op, polarisation_density(state))
 
-    # Get the polarisation on the global time grid.
-    times, polarisation_t = compute_evolution(sim_oqs, e_ops=[polarisation])
+    times, polarisation_t = compute_evolution(
+        sim_oqs,
+        e_ops=[polarisation],
+        solver_times=solver_times,
+    )
 
-    # Select the polarisation at the desired window times (nearest matches).
     return window, slice_polarisation_to_window(times, polarisation_t, window)
 
 

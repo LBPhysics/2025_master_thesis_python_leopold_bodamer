@@ -57,10 +57,7 @@ def compute_times_local(
     """
     dt = float(cfg.dt)
     t_det = float(cfg.t_det)
-    if t_coh_override is None:
-        t_coh_value = float(cfg.t_coh)
-    else:
-        t_coh_value = float(t_coh_override)
+    t_coh_value = float(cfg.t_coh if t_coh_override is None else t_coh_override)
     t0 = _solver_start_time(cfg, t_coh_value)
 
     n_steps = int(np.floor((t_det - t0) / dt)) + 1
@@ -69,29 +66,31 @@ def compute_times_local(
     return times_local
 
 
-def compute_t_det(cfg: "SimulationConfig") -> np.ndarray:
+def compute_t_det(
+    cfg: "SimulationConfig",
+    *,
+    t_coh_override: float | None = None,
+) -> np.ndarray:
     """Detection-time axis.
 
     Behavior depends on simulation type:
     - '0d': return a single detection time equal to t_det (as a 1-element array)
     - '1d'/'2d': return the usual grid starting from the first non-negative time in
-        times_local with spacing dt up to t_det.
+      the corresponding local solver grid with spacing dt up to t_det.
     """
     sim_type = _validated_sim_type(cfg)
 
-    # 0d: treat everything as a single detection sample
     if sim_type == "0d":
         return np.asarray([float(cfg.t_det)], dtype=float)
 
     dt = float(cfg.dt)
     t_det = float(cfg.t_det)
-    times_local = compute_times_local(cfg)
+    times_local = compute_times_local(cfg, t_coh_override=t_coh_override)
 
     x = _first_non_negative_grid_time(float(times_local[0]), dt)
 
-    # Ensure x is within bounds
     if x > t_det:
-        return np.array([])
+        return np.array([], dtype=float)
 
     n_steps = int(np.floor((t_det - x) / dt)) + 1
     t_det_grid = x + dt * np.arange(n_steps, dtype=float)
@@ -110,7 +109,6 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
     dt = float(cfg.dt)
 
     if sim_type in {"0d", "1d"}:
-        # 0d/1d run a single coherence-time value.
         t_coh_value = float(cfg.t_coh)
         return np.asarray([t_coh_value], dtype=float)
 
@@ -118,9 +116,9 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
         t_coh_max = float(cfg.t_coh)
         times_local = compute_times_local(cfg, t_coh_override=t_coh_max)
         x = _first_non_negative_grid_time(float(times_local[0]), dt)
-        # Ensure x is within bounds
+
         if x > t_coh_max:
-            return np.array([])
+            return np.array([], dtype=float)
 
         n_steps = int(np.floor((t_coh_max - x) / dt)) + 1
         t_coh_axis = x + dt * np.arange(n_steps, dtype=float)
@@ -130,26 +128,10 @@ def compute_t_coh(cfg: "SimulationConfig") -> np.ndarray:
 
 
 def compute_global_t_det(cfg: "SimulationConfig") -> np.ndarray:
-    """Compute the GLOBAL detection-time grid (for 2d sweeps).
+    """Compute the global detection-time grid.
 
     This is used for consistent output across all t_coh sweeps.
     All signals are padded/cropped to match this grid.
     Uses cfg.t_coh as the sweep upper bound for 2d simulations.
     """
-    sim_type = _validated_sim_type(cfg)
-
-    if sim_type == "0d":
-        return np.asarray([float(cfg.t_det)], dtype=float)
-
-    dt = float(cfg.dt)
-    t_det = float(cfg.t_det)
-
-    t0 = _solver_start_time(cfg, float(cfg.t_coh))
-    x = _first_non_negative_grid_time(t0, dt)
-
-    if x > t_det:
-        return np.array([])
-
-    n_steps = int(np.floor((t_det - x) / dt)) + 1
-    t_det_grid = x + dt * np.arange(n_steps, dtype=float)
-    return t_det_grid
+    return compute_t_det(cfg, t_coh_override=float(cfg.t_coh))

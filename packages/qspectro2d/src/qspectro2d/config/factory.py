@@ -15,7 +15,8 @@ from ..core.simulation.sim_config import SimulationConfig
 from ..core.simulation.simulation import SimulationModuleOQS
 from ..utils.constants import convert_cm_to_fs
 from .defaults import SUPPORTED_BATHS
-from .validate import ensure_config, validate_config
+from .io import load_config, merge_config
+from .validate import validate_config
 
 
 def _ohmic_exponent(raw_value: float | None) -> float:
@@ -24,16 +25,31 @@ def _ohmic_exponent(raw_value: float | None) -> float:
     return 1.0
 
 
-def _as_config(source: Mapping[str, Any] | str | Path | None) -> dict[str, Any]:
-    if isinstance(source, Path):
-        return ensure_config(str(source))
-    return ensure_config(source)
+def _as_merged_config(
+    source: Mapping[str, Any] | str | Path | None,
+    *,
+    run_validation: bool = False,
+) -> dict[str, Any]:
+    if source is None:
+        cfg = load_config()
+    elif isinstance(source, Path):
+        cfg = load_config(str(source))
+    elif isinstance(source, str):
+        cfg = load_config(source)
+    else:
+        cfg = merge_config(source)
+
+    if run_validation:
+        validate_config(cfg)
+    return cfg
 
 
 def load_simulation_config(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
+    run_validation: bool = False,
 ) -> SimulationConfig:
-    cfg = _as_config(source)
+    cfg = _as_merged_config(source, run_validation=run_validation)
     atomic_cfg = cfg["atomic"]
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
@@ -58,8 +74,10 @@ def load_simulation_config(
 
 def load_simulation_laser(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
+    run_validation: bool = False,
 ) -> LaserPulseSequence:
-    cfg = _as_config(source)
+    cfg = _as_merged_config(source, run_validation=run_validation)
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
 
@@ -75,8 +93,10 @@ def load_simulation_laser(
 
 def load_simulation_atomic_system(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
+    run_validation: bool = False,
 ) -> AtomicSystem:
-    cfg = _as_config(source)
+    cfg = _as_merged_config(source, run_validation=run_validation)
     atomic_cfg = cfg["atomic"]
 
     return AtomicSystem(
@@ -92,31 +112,37 @@ def load_simulation_atomic_system(
 
 def load_simulation_bath(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
+    run_validation: bool = False,
 ) -> BosonicEnvironment:
-    cfg = _as_config(source)
+    cfg = _as_merged_config(source, run_validation=run_validation)
+
     atomic_cfg = cfg["atomic"]
     bath_cfg = cfg["bath"]
 
-    freqs_cm = list(atomic_cfg["frequencies_cm"])
-    if not freqs_cm:
-        raise ValueError("Missing atomic.frequencies_cm; cannot determine bath scaling.")
-
-    freqs_fs = np.asarray(convert_cm_to_fs(freqs_cm), dtype=float)
-    w0_bar_fs = float(np.mean(freqs_fs))
+    frequencies_cm = np.asarray(atomic_cfg["frequencies_cm"], dtype=float)
+    mean_freq_cm = float(np.mean(frequencies_cm))
+    w0_fs = float(convert_cm_to_fs(mean_freq_cm))
 
     bath_type = str(bath_cfg["bath_type"])
-    temperature = float(bath_cfg["temperature"]) * w0_bar_fs
-    cutoff = float(bath_cfg["cutoff"]) * w0_bar_fs
-    coupling = float(bath_cfg["coupling"]) * w0_bar_fs
+    temperature = float(bath_cfg["temperature"]) * w0_fs
+    cutoff = float(bath_cfg["cutoff"]) * w0_fs
+    coupling = float(bath_cfg["coupling"])
     bath_s = _ohmic_exponent(bath_cfg.get("s"))
-    w_max = float(bath_cfg["wmax_factor"]) * cutoff
-
+    wmax_factor = float(bath_cfg["wmax_factor"])
     peak_strength = float(bath_cfg["peak_strength"]) * coupling
-    peak_width = float(bath_cfg["peak_width"]) * w0_bar_fs
-    peak_center = float(bath_cfg["peak_center"]) * w0_bar_fs
+    peak_width = float(bath_cfg["peak_width"]) * w0_fs
+    peak_center = float(bath_cfg["peak_center"]) * w0_fs
+    w_max = float(wmax_factor * cutoff)
 
     if bath_type == "ohmic":
-        return OhmicEnvironment(T=temperature, alpha=coupling, wc=cutoff, s=bath_s, tag=bath_type)
+        return OhmicEnvironment(
+            T=temperature,
+            alpha=coupling,
+            wc=cutoff,
+            s=bath_s,
+            tag=bath_type,
+        )
 
     if bath_type == "drudelorentz":
         return DrudeLorentzEnvironment(
@@ -177,17 +203,16 @@ def load_simulation_bath(
 
 def load_simulation(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
     run_validation: bool = False,
 ) -> SimulationModuleOQS:
-    cfg = _as_config(source)
-    if run_validation:
-        validate_config(cfg)
+    cfg = _as_merged_config(source, run_validation=run_validation)
 
     return SimulationModuleOQS(
-        simulation_config=load_simulation_config(cfg),
-        system=load_simulation_atomic_system(cfg),
-        laser=load_simulation_laser(cfg),
-        bath=load_simulation_bath(cfg),
+        simulation_config=load_simulation_config(cfg, run_validation=False),
+        system=load_simulation_atomic_system(cfg, run_validation=False),
+        laser=load_simulation_laser(cfg, run_validation=False),
+        bath=load_simulation_bath(cfg, run_validation=False),
     )
 
 

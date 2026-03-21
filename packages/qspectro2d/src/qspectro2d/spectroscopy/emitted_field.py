@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -14,7 +15,7 @@ __all__ = ["compute_emitted_field_components"]
 
 
 def _worker_polarisation(
-    config_path: str,
+    config_source: Mapping[str, Any] | str,
     t_coh: float,
     freq_vector: list[float],
     phi1: float,
@@ -23,7 +24,7 @@ def _worker_polarisation(
 ) -> tuple[np.ndarray, np.ndarray, float, list[float]]:
     from qspectro2d.config.factory import load_simulation
 
-    sim_oqs = load_simulation(config_path)
+    sim_oqs = load_simulation(config_source, run_validation=False)
     sim_oqs.update_delays(t_coh=t_coh)
     sim_oqs.system.update_frequencies_cm(freq_vector)
     sim_oqs.laser.pulse_phases = [phi1, phi2, 0.0]
@@ -41,7 +42,7 @@ def _worker_polarisation(
 
 
 def compute_emitted_field_components(
-    config_path: str,
+    config_source: Mapping[str, Any] | str,
     t_coh: float,
     freq_vector: list[float],
     *,
@@ -51,7 +52,7 @@ def compute_emitted_field_components(
     """Compute emitted-field components for the configured signal types."""
     from qspectro2d.config.factory import load_simulation_config
 
-    config = load_simulation_config(config_path)
+    config = load_simulation_config(config_source, run_validation=False)
     t_coh_value = float(t_coh)
 
     t_det = compute_t_det(config)
@@ -83,7 +84,7 @@ def compute_emitted_field_components(
             for phi2 in PHASE_CYCLING_PHASES:
                 futures[
                     executor.submit(
-                        _worker_polarisation, config_path, t_coh, freq_vector, phi1, phi2
+                        _worker_polarisation, config_source, t_coh, freq_vector, phi1, phi2
                     )
                 ] = ("total", float(phi1), float(phi2))
 
@@ -91,7 +92,7 @@ def compute_emitted_field_components(
             futures[
                 executor.submit(
                     _worker_polarisation,
-                    config_path,
+                    config_source,
                     t_coh,
                     freq_vector,
                     float(phi1),
@@ -104,7 +105,7 @@ def compute_emitted_field_components(
             futures[
                 executor.submit(
                     _worker_polarisation,
-                    config_path,
+                    config_source,
                     t_coh,
                     freq_vector,
                     0.0,
@@ -114,7 +115,7 @@ def compute_emitted_field_components(
             ] = ("single_2", 0.0, float(phi2))
 
         futures[
-            executor.submit(_worker_polarisation, config_path, t_coh, freq_vector, 0.0, 0.0, [2])
+            executor.submit(_worker_polarisation, config_source, t_coh, freq_vector, 0.0, 0.0, [2])
         ] = ("single_3", 0.0, 0.0)
 
         for future in as_completed(futures):
@@ -166,64 +167,11 @@ def compute_emitted_field_components(
                     phase_factor = np.exp(-1j * (l_index * phi1 + m_index * phi2))
                     accumulated[signal_type] += phase_factor * polarisation_component
 
-                if np.all(polarisation_component == 0):
-                    max_abs_total = float(np.max(np.abs(p_total))) if len(p_total) else 0.0
-                    max_abs_sub = float(np.max(np.abs(p_sub_sum))) if len(p_sub_sum) else 0.0
-                    max_abs_component = (
-                        float(np.max(np.abs(polarisation_component)))
-                        if len(polarisation_component)
-                        else 0.0
-                    )
-                    reason = ""
-                    if max_abs_total == 0.0 and max_abs_sub == 0.0:
-                        reason = " (P_total and P_sub_sum are zero)"
-                    elif max_abs_component == 0.0 and max_abs_total > 0.0:
-                        reason = " (P_total cancels P_sub_sum)"
-                    print(
-                        "Warning: All zero P_phi detected!"
-                        f" phi1={phi1:.3f}, phi2={phi2:.3f}, t_coh={t_coh:.3f} fs,"
-                        f" max|P_total|={max_abs_total:.3e}, max|P_sub|={max_abs_sub:.3e},"
-                        f" max|P_phi|={max_abs_component:.3e}, pulse_amps={pulse_amplitudes}{reason}"
-                    )
-
-        expected_total_pairs = len(PHASE_CYCLING_PHASES) ** 2
-        missing_total_pairs = expected_total_pairs - successful_phase_pairs
-        if missing_total_pairs > 0:
-            print(
-                "Warning: phase cycling completed with missing total phase-pair results."
-                f" successful_pairs={successful_phase_pairs}, missing_pairs={missing_total_pairs},"
-                f" t_coh={t_coh:.3f} fs",
-                flush=True,
-            )
-
-        missing_single_1 = len(PHASE_CYCLING_PHASES) - len(single_pulse_1)
-        missing_single_2 = len(PHASE_CYCLING_PHASES) - len(single_pulse_2)
-        missing_single_3 = 0 if single_pulse_3 is not None else 1
-        total_missing_single_terms = missing_single_1 + missing_single_2 + missing_single_3
-        if total_missing_single_terms > 0:
-            print(
-                "Warning: missing single-pulse subtraction terms; zero fallback used."
-                f" missing_p1={missing_single_1}, missing_p2={missing_single_2},"
-                f" missing_p3={missing_single_3}, failed_single_jobs={failed_single_pulse_jobs},"
-                f" t_coh={t_coh:.3f} fs",
-                flush=True,
-            )
-
-        if failed_phase_pairs:
-            print(
-                "Warning: phase cycling completed with failed total workers."
-                f" successful_pairs={successful_phase_pairs}, failed_pairs={failed_phase_pairs},"
-                f" t_coh={t_coh:.3f} fs",
-                flush=True,
-            )
-
     dphi = np.diff(PHASE_CYCLING_PHASES).mean() if len(PHASE_CYCLING_PHASES) > 1 else 1.0
     normalisation_base = (dphi / (2 * np.pi)) ** 2
     total_phase_pairs = len(PHASE_CYCLING_PHASES) ** 2
     if successful_phase_pairs > 0:
-        # Keep the same average scale even when some phase-pair workers failed.
-        missing_pair_correction = total_phase_pairs / float(successful_phase_pairs)
-        normalisation = normalisation_base * missing_pair_correction
+        normalisation = normalisation_base * (total_phase_pairs / float(successful_phase_pairs))
     else:
         normalisation = 0.0
 

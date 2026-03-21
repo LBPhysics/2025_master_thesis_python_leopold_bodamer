@@ -17,7 +17,11 @@ import numpy as np
 
 from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import save_run_artifact, build_run_metadata, pad_or_crop_signals
-from qspectro2d.core.simulation.time_axes import compute_global_t_det
+from qspectro2d.core.simulation.time_axes import (
+    compute_global_t_det,
+    compute_times_local,
+    compute_t_det,
+)
 from qspectro2d.config.factory import load_simulation_config
 
 
@@ -103,6 +107,7 @@ def main() -> None:
         raise ValueError("job_metadata.json not found")
 
     config_path = Path(job_metadata["config_path"])
+    merged_cfg = job_metadata["merged_config"]
 
     try:
         data_dir = Path(job_metadata["data_dir"]).resolve()
@@ -146,10 +151,19 @@ def main() -> None:
 
     signal_types = job_metadata["signal_types"]
 
-    # Compute global detection grid (all signals padded/cropped to this)
-    cfg = load_simulation_config(str(config_path))
-    global_t_det = compute_global_t_det(cfg)
+    cfg = load_simulation_config(merged_cfg, run_validation=False)
+    global_t_det = np.asarray(job_metadata.get("t_det", []), dtype=float)
+    if global_t_det.size == 0:
+        global_t_det = compute_global_t_det(cfg)
     global_n_t = len(global_t_det)
+
+    unique_t_coh_values = sorted({float(combo["t_coh_value"]) for combo in combinations})
+    axis_cache: dict[float, tuple[np.ndarray, np.ndarray]] = {}
+    for t_coh_value in unique_t_coh_values:
+        axis_cache[t_coh_value] = (
+            compute_times_local(cfg, t_coh_override=t_coh_value),
+            compute_t_det(cfg, t_coh_override=t_coh_value),
+        )
 
     t_start = time.time()
     saved_paths: list[str] = []
@@ -160,33 +174,33 @@ def main() -> None:
         inhom_idx = combo.get("inhom_index")
         global_idx = combo.get("index")
         local_idx = len(saved_paths)
-        t_coh_val = combo.get("t_coh_value")
+        t_coh_val = float(combo.get("t_coh_value"))
 
         if inhom_idx < 0 or inhom_idx >= n_inhom:
             raise IndexError(
                 f"inhom_index {inhom_idx} out of range for {n_inhom} inhomogeneous samples"
             )
 
-        # Update simulation configuration for this combination
         freq_vector = samples[inhom_idx, :].astype(float)
+        solver_times, detection_window = axis_cache[t_coh_val]
 
         print(
-            f"\n--- combo {local_idx} / {len(combinations)} (global {global_idx}): t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, "
-            f"inhom_idx={inhom_idx} ---"
+            f"\n--- combo {local_idx} / {len(combinations)} (global {global_idx}): "
+            f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
         )
 
         run_status = "ok"
         error_message = None
         try:
-            # Compute signals for this t_coh value
             e_components = compute_emitted_field_components(
-                config_path=str(config_path),
+                config_source=merged_cfg,
                 t_coh=t_coh_val,
                 freq_vector=freq_vector.tolist(),
                 time_cut=args.time_cut,
+                solver_times=solver_times,
+                detection_window=detection_window,
             )
 
-            # Pad/crop all signals to match global grid
             padded_components = pad_or_crop_signals(e_components, global_n_t)
         except Exception as exc:
             failed_combos += 1
@@ -233,18 +247,12 @@ def main() -> None:
         print(f"  {saved_paths[-1]}")
     print("=" * 80)
 
-    # If this is the last batch, suggest post-processing
     if (
         args.batch_id is not None
         and args.n_batches is not None
         and args.batch_id == args.n_batches - 1
     ):
-        job_dir_final = Path(job_metadata["job_dir"]).resolve()
-        print("\n🎯 All batches completed! Finalize and queue plotting from any cwd with:")
-        plot_dispatcher = (
-            Path(__file__).resolve().parents[1] / "hpc" / "plot_dispatcher.py"
-        ).resolve()
-        print(f'python "{plot_dispatcher}" --job_dir {job_dir_final}')
+        print("This was the final batch. You can now run post-processing/plotting.")
 
 
 if __name__ == "__main__":

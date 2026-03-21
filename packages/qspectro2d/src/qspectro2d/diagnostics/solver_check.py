@@ -103,7 +103,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     sim_copy = deepcopy(sim_oqs)
     times = compute_times_local(sim_oqs.simulation_config)
     t0 = times[0]
-    dt = times[1] - times[0]
+    dt = sim_copy.simulation_config.dt
     sim_copy.laser.pulse_phases = [1.0] * len(sim_copy.laser.pulses)
 
     print("\n \n=== SOLVER DIAGNOSTICS ===")

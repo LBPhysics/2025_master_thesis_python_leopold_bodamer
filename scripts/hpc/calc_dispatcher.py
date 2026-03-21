@@ -21,6 +21,7 @@ from typing import Sequence
 import numpy as np
 from qspectro2d.config.factory import load_simulation, load_simulation_config
 from qspectro2d.config.io import load_config
+from qspectro2d.config.validate import validate_config
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
@@ -315,7 +316,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--sim_type",
         choices=["0d", "1d", "2d"],
-        default="2d",
+        default=None,
         help="Simulation dimensionality",
     )
     parser.add_argument(
@@ -364,15 +365,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     print("GENERALIZED HPC DISPATCHER")
     print(f"Config path: {config_path}")
 
-    sim = load_simulation(config_path, run_validation=True)
-    print("✅ Simulation object constructed.")
+    merged_cfg = load_config(str(config_path))
+    effective_sim_type = (
+        args.sim_type if args.sim_type is not None else merged_cfg["config"]["sim_type"]
+    )
+    merged_cfg["config"]["sim_type"] = effective_sim_type
 
-    time_cut = np.inf  # TODO ONLY CHECK LOCALLY check_the_solver(sim)
+    validate_config(merged_cfg)
+    print("✅ Merged config validated once.")
+
+    sim = load_simulation(merged_cfg, run_validation=False)
+    print("✅ Simulation object constructed from validated merged config.")
+
+    time_cut = np.inf  # or local solver validation result if you want to pass that in
     print(f"✅ Solver NOT validated on hpc -> do it locally! time_cut = {time_cut:.6g}")
 
-    effective_sim_type = (
-        args.sim_type if args.sim_type is not None else sim.simulation_config.sim_type
-    )
     sim.simulation_config.sim_type = effective_sim_type
 
     n_inhom = sim.simulation_config.n_inhomogen
@@ -456,6 +463,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "data_base_name": job_paths.base_name,
         "data_base_path": str(data_base_path),
         "config_path": str(config_path),
+        "merged_config": merged_cfg,
     }
     write_json(job_dir / "job_metadata.json", job_metadata)
 
