@@ -27,7 +27,7 @@ def redfield_decay_channels(
     channels: list[tuple[Qobj, BosonicEnvironment]] = []
 
     def add_channel(operator: Qobj) -> None:
-        channels.append([system.to_eigenbasis(operator), bath])
+        channels.append((system.to_eigenbasis(operator), bath))
 
     for i_atom in range(1, system.n_atoms + 1):
         add_channel(_dephasing_projector(system, i_atom))

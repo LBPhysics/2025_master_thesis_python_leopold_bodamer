@@ -1,17 +1,10 @@
-"""Generate and (optionally) submit SLURM jobs for a parameter sweep.
-
-This script mirrors sweep_params.py but emits SLURM jobs so the sweep can be
-performed on the cluster to measure realistic runtimes. Each case writes a
-JSON result file that can be aggregated into a summary.
-"""
+"""Generate and optionally submit SLURM jobs for an OFAT parameter sweep."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import json
-import math
-import os
 import shutil
 import subprocess
 import sys
@@ -26,16 +19,15 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from local.sweep_params import (
+from common.sweeping import (
     BASELINE_OVERRIDES,
+    DATA_DIR,
     DEFAULT_CONFIG,
     apply_overrides,
-    build_ofat_cases,
     build_env,
+    build_ofat_cases,
+    load_yaml,
 )
-
-PROJECT_ROOT = SCRIPTS_DIR.parent
-DATA_DIR = PROJECT_ROOT / "jobs" / "sweeps"
 
 
 def _render_slurm_script(
@@ -45,16 +37,15 @@ def _render_slurm_script(
     sim_type: str,
     results_dir: Path,
     python_executable: Path,
+    pythonpath: str,
     partition: str,
     requested_mem: str,
     requested_time: str,
 ) -> str:
     python_cmd = str(python_executable)
     calc_datas = (SCRIPTS_DIR / "local" / "calc_datas.py").as_posix()
-    batch_path_str = str(batch_path)
-    results_dir_str = str(results_dir)
     return textwrap.dedent(
-        f"""\
+        f"""\\
 #!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/%x.out
@@ -67,45 +58,42 @@ def _render_slurm_script(
 set -euo pipefail
 
 mkdir -p logs
+export PYTHONPATH=\"{pythonpath}\"
 
-export PYTHONPATH=\"{os.environ.get('PYTHONPATH', '')}\"
-
-"{python_cmd}" - <<'PY'
+\"{python_cmd}\" - <<'PY'
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
 
-batch_path = Path(r"{batch_path_str}")
-results_dir = Path(r"{results_dir_str}")
+batch_path = Path(r\"{str(batch_path)}\")
+results_dir = Path(r\"{str(results_dir)}\")
 results_dir.mkdir(parents=True, exist_ok=True)
 
-with batch_path.open("r", encoding="utf-8") as handle:
+with batch_path.open(\"r\", encoding=\"utf-8\") as handle:
     cases = json.load(handle)
 
-python_cmd = r"{python_cmd}"
-calc_datas = r"{calc_datas}"
-sim_type = r"{sim_type}"
+python_cmd = r\"{python_cmd}\"
+calc_datas = r\"{calc_datas}\"
+sim_type = r\"{sim_type}\"
 
 for case in cases:
-    index = int(case["index"])
-    label = case["label"]
-    config_path = case["config_path"]
+    index = int(case[\"index\"])
+    label = case[\"label\"]
+    config_path = case[\"config_path\"]
     start = time.perf_counter()
-    proc = subprocess.run([python_cmd, calc_datas, "--sim_type", sim_type, "--config", config_path])
+    proc = subprocess.run([python_cmd, calc_datas, \"--sim_type\", sim_type, \"--config\", config_path])
     elapsed = time.perf_counter() - start
 
-    data = {{
-        "index": index,
-        "label": label,
-        "config_path": config_path,
-        "return_code": int(proc.returncode),
-        "runtime_s": round(elapsed, 3),
+    payload = {{
+        \"index\": index,
+        \"label\": label,
+        \"config_path\": config_path,
+        \"return_code\": int(proc.returncode),
+        \"runtime_s\": round(elapsed, 3),
     }}
-
-    out_path = results_dir / f"case_{{index:03d}}.json"
-    out_path.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
+    out_path = results_dir / f\"case_{{index:03d}}.json\"
+    out_path.write_text(json.dumps(payload, indent=2) + \"\\n\", encoding=\"utf-8\")
 PY
 """
     )
@@ -156,30 +144,10 @@ def main() -> None:
         default="1d",
         help="Simulation dimensionality",
     )
-    parser.add_argument(
-        "--n_batches",
-        type=int,
-        default=5,
-        help="Number of sweep batches (SLURM jobs)",
-    )
-    parser.add_argument(
-        "--partition",
-        type=str,
-        default="GPGPU,metis",
-        help="SLURM partition",
-    )
-    parser.add_argument(
-        "--mem",
-        type=str,
-        default="8G",
-        help="Memory per job",
-    )
-    parser.add_argument(
-        "--time",
-        type=str,
-        default="01:00:00",
-        help="Wall time per job",
-    )
+    parser.add_argument("--n_batches", type=int, default=5, help="Number of sweep batches")
+    parser.add_argument("--partition", type=str, default="GPGPU,metis", help="SLURM partition")
+    parser.add_argument("--mem", type=str, default="8G", help="Memory per job")
+    parser.add_argument("--time", type=str, default="01:00:00", help="Wall time per job")
     parser.add_argument(
         "--no_submit",
         action="store_true",
@@ -188,7 +156,7 @@ def main() -> None:
     parser.add_argument(
         "--collect",
         action="store_true",
-        help="Collect results from existing sweep directory",
+        help="Collect results from an existing sweep directory",
     )
     parser.add_argument(
         "--sweep_dir",
@@ -202,31 +170,23 @@ def main() -> None:
         if not args.sweep_dir:
             raise ValueError("--sweep_dir is required when using --collect")
         sweep_dir = Path(args.sweep_dir).expanduser().resolve()
-        results_dir = sweep_dir / "results"
-        _collect_results(results_dir, sweep_dir)
+        _collect_results(sweep_dir / "results", sweep_dir)
         return
 
     base_path = Path(args.config).expanduser().resolve()
     if not base_path.exists():
         raise FileNotFoundError(f"Config file not found: {base_path}")
 
-    with base_path.open("r", encoding="utf-8") as handle:
-        base_cfg = yaml.safe_load(handle)
-
-    base_cfg = apply_overrides(base_cfg, BASELINE_OVERRIDES)
+    base_cfg = apply_overrides(load_yaml(base_path), BASELINE_OVERRIDES)
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     label = base_path.stem
 
     sweep_dir = DATA_DIR / f"{label}_{args.sim_type}_{timestamp}"
     sweep_dir.mkdir(parents=True, exist_ok=True)
-
-    logs_dir = sweep_dir / "logs"
-    logs_dir.mkdir(exist_ok=True)
-
+    (sweep_dir / "logs").mkdir(exist_ok=True)
     slurm_dir = sweep_dir / "slurm"
     slurm_dir.mkdir(exist_ok=True)
-
     results_dir = sweep_dir / "results"
     results_dir.mkdir(exist_ok=True)
 
@@ -242,7 +202,7 @@ def main() -> None:
         python_executable = Path(candidate).resolve()
 
     print(f"Sweep directory: {sweep_dir}")
-    print(f"Total cases: {len(cases)}")
+    print(f"Total OFAT cases: {len(cases)}")
 
     case_entries: list[dict[str, Any]] = []
     for idx, case in enumerate(cases, start=1):
@@ -262,6 +222,8 @@ def main() -> None:
     batches: list[list[dict[str, Any]]] = [[] for _ in range(n_batches)]
     for idx, case in enumerate(case_entries):
         batches[idx % n_batches].append(case)
+
+    script_paths: list[Path] = []
     for batch_idx, batch_cases in enumerate(batches):
         if not batch_cases:
             continue
@@ -269,21 +231,22 @@ def main() -> None:
         batch_path.write_text(json.dumps(batch_cases, indent=2) + "\n", encoding="utf-8")
 
         job_name = f"sweep_b{batch_idx:02d}"
-        slurm_text = _render_slurm_script(
-            job_name=job_name,
-            batch_path=batch_path,
-            sim_type=args.sim_type,
-            results_dir=results_dir,
-            python_executable=python_executable,
-            partition=args.partition,
-            requested_mem=args.mem,
-            requested_time=args.time,
-        )
         script_path = slurm_dir / f"{job_name}.slurm"
-        script_path.write_text(slurm_text, encoding="utf-8")
-
-    env_for_submit = os.environ.copy()
-    env_for_submit.update(env)
+        script_path.write_text(
+            _render_slurm_script(
+                job_name=job_name,
+                batch_path=batch_path,
+                sim_type=args.sim_type,
+                results_dir=results_dir,
+                python_executable=python_executable,
+                pythonpath=env.get("PYTHONPATH", ""),
+                partition=args.partition,
+                requested_mem=args.mem,
+                requested_time=args.time,
+            ),
+            encoding="utf-8",
+        )
+        script_paths.append(script_path)
 
     print(f"Artifacts written to {sweep_dir}")
 
@@ -295,11 +258,11 @@ def main() -> None:
     if sbatch is None:
         raise RuntimeError("sbatch not found on PATH. Run this on your cluster login node.")
 
-    for script_path in sorted(slurm_dir.glob("*.slurm")):
+    for script_path in sorted(script_paths):
         result = subprocess.run(
             [sbatch, str(script_path)],
             cwd=str(sweep_dir),
-            env=env_for_submit,
+            env=env,
             capture_output=True,
             text=True,
             check=True,

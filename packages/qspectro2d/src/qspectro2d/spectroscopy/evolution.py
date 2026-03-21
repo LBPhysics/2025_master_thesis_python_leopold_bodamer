@@ -52,11 +52,7 @@ def slice_polarisation_to_window(
     polarisation: list,
     window: np.ndarray,
 ) -> np.ndarray:
-    """Slice the polarisation list to the requested detection-window times.
-
-    Returns:
-        Array of polarisation values corresponding to the window time points.
-    """
+    """Slice the polarisation list to the requested detection-window times."""
     times = np.asarray(times)
     window = np.asarray(window)
 
@@ -72,7 +68,8 @@ def slice_polarisation_to_window(
             candidates.append(index + 1)
 
         selected_indices[position] = min(
-            candidates, key=lambda candidate: abs(times[candidate] - time_value)
+            candidates,
+            key=lambda candidate: abs(times[candidate] - time_value),
         )
 
     return np.array([polarisation[int(index)] for index in selected_indices], dtype=complex)
@@ -85,11 +82,7 @@ def compute_evolution(
     solver_times: np.ndarray | None = None,
     **override_options: dict,
 ) -> tuple[np.ndarray, list]:
-    """Return the simulation time grid together with expectations or states.
-
-    Returns:
-        (tlist, data), where data is expectations if e_ops is given and states otherwise.
-    """
+    """Return the simulation time grid together with expectations or states."""
     if solver_times is None:
         t_list = compute_times_local(sim_oqs.simulation_config)
     else:
@@ -161,7 +154,7 @@ def compute_polarisation_over_window(
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
-    dipole_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
+    dipole_op = sim_oqs.dipole_op_eigenbasis
 
     def polarisation_density(state):
         rho = state.extract(0) if hasattr(state, "extract") else state
@@ -198,12 +191,8 @@ def simulation_with_pulses(
     sim_oqs: SimulationModuleOQS,
     active_indices: list[int],
 ) -> SimulationModuleOQS:
-    """Return a deep-copied simulation with only the selected pulses active.
-
-    Notes:
-        - Deep-copy is used to avoid mutating the input and to be process-safe.
-        - Phases and timings remain unchanged.
-    """
+    """Return a deep-copied simulation with only the selected pulses active."""
     sim_copy = deepcopy(sim_oqs)
     sim_copy.laser = sim_copy.laser.subset(active_indices)
+    sim_copy.refresh_cache()
     return sim_copy

@@ -47,8 +47,19 @@ class AtomicSystem:
             self.coupling_fs,
         )
 
+    def _zero_qobj(self) -> Qobj:
+        return ket2dm(self.basis[0]) * 0.0
+
     def reset_cache(self) -> None:
-        for key in ("eigenstates", "eigenbasis_transform"):
+        for key in (
+            "hamiltonian",
+            "coupling_op",
+            "lowering_op",
+            "dipole_op",
+            "number_op",
+            "eigenstates",
+            "eigenbasis_transform",
+        ):
             self.__dict__.pop(key, None)
 
     def update_frequencies_cm(self, new_freqs: list[float]) -> None:
@@ -72,9 +83,9 @@ class AtomicSystem:
             return 1 + self.n_atoms + math.comb(self.n_atoms, 2)
         raise ValueError(f"Unsupported max_excitation: {self.max_excitation}")
 
-    @property
+    @cached_property
     def hamiltonian(self) -> Qobj:
-        hamiltonian = 0.0
+        hamiltonian = self._zero_qobj()
         for i_site in range(1, self.n_atoms + 1):
             omega_i = float(self.frequencies_fs[i_site - 1])
             hamiltonian += HBAR * omega_i * ket2dm(self.basis[i_site])
@@ -83,7 +94,9 @@ class AtomicSystem:
             for i_site in range(1, self.n_atoms):
                 for j_site in range(i_site + 1, self.n_atoms + 1):
                     idx_d = pair_to_index(i_site, j_site, self.n_atoms)
-                    omega_sum = float(self.frequencies_fs[i_site - 1] + self.frequencies_fs[j_site - 1])
+                    omega_sum = float(
+                        self.frequencies_fs[i_site - 1] + self.frequencies_fs[j_site - 1]
+                    )
                     hamiltonian += HBAR * omega_sum * ket2dm(self.basis[idx_d])
 
         return hamiltonian + self.coupling_op
@@ -98,7 +111,9 @@ class AtomicSystem:
 
     def idx_double(self, i: int, j: int) -> int:
         if not (1 <= i <= self.n_atoms and 1 <= j <= self.n_atoms and i != j):
-            raise ValueError(f"double indices must be distinct in [1,{self.n_atoms}], got ({i},{j})")
+            raise ValueError(
+                f"double indices must be distinct in [1,{self.n_atoms}], got ({i},{j})"
+            )
         a, b = (i, j) if i < j else (j, i)
         return pair_to_index(a, b, self.n_atoms)
 
@@ -123,9 +138,9 @@ class AtomicSystem:
     def ground_state_dm(self) -> Qobj:
         return ket2dm(self.basis[self.idx_ground()])
 
-    @property
+    @cached_property
     def lowering_op(self) -> Qobj:
-        lowering_op = 0.0
+        lowering_op = self._zero_qobj()
         for i_site in range(1, self.n_atoms + 1):
             lowering_op += self.dip_moments[i_site - 1] * (self.basis[0] * self.basis[i_site].dag())
 
@@ -133,27 +148,33 @@ class AtomicSystem:
             for i_site in range(1, self.n_atoms):
                 for j_site in range(i_site + 1, self.n_atoms + 1):
                     idx = pair_to_index(i_site, j_site, self.n_atoms)
-                    lowering_op += self.dip_moments[i_site - 1] * (self.basis[j_site] * self.basis[idx].dag())
-                    lowering_op += self.dip_moments[j_site - 1] * (self.basis[i_site] * self.basis[idx].dag())
+                    lowering_op += self.dip_moments[i_site - 1] * (
+                        self.basis[j_site] * self.basis[idx].dag()
+                    )
+                    lowering_op += self.dip_moments[j_site - 1] * (
+                        self.basis[i_site] * self.basis[idx].dag()
+                    )
         return lowering_op
 
-    @property
+    @cached_property
     def dipole_op(self) -> Qobj:
         return self.lowering_op + self.lowering_op.dag()
 
-    @property
+    @cached_property
     def number_op(self) -> Qobj:
-        number_op = 0.0
+        number_op = self._zero_qobj()
         for index in range(self.dimension):
-            number_op += excitation_number_from_index(index, self.n_atoms) * ket2dm(self.basis[index])
+            number_op += excitation_number_from_index(index, self.n_atoms) * ket2dm(
+                self.basis[index]
+            )
         return number_op
 
-    @property
+    @cached_property
     def coupling_op(self) -> Qobj:
         if self.n_atoms <= 1:
-            return 0
+            return self._zero_qobj()
 
-        coupling_op = ket2dm(self.basis[0]) * 0.0
+        coupling_op = self._zero_qobj()
         for i_site in range(1, self.n_atoms + 1):
             for j_site in range(i_site + 1, self.n_atoms + 1):
                 coupling_ij = self._coupling_matrix_fs[i_site - 1, j_site - 1]
@@ -171,18 +192,36 @@ class AtomicSystem:
                     for k_site in range(1, self.n_atoms + 1):
                         if k_site in {i_site, j_site}:
                             continue
+
                         coupling_jk = self._coupling_matrix_fs[j_site - 1, k_site - 1]
                         if not np.isclose(coupling_jk, 0.0):
-                            idx_ik = pair_to_index(min(i_site, k_site), max(i_site, k_site), self.n_atoms)
+                            idx_ik = pair_to_index(
+                                min(i_site, k_site),
+                                max(i_site, k_site),
+                                self.n_atoms,
+                            )
                             if idx_ij < idx_ik:
                                 ket_ik = self.basis[idx_ik]
-                                coupling_op += HBAR * coupling_jk * (ket_ij * ket_ik.dag() + ket_ik * ket_ij.dag())
+                                coupling_op += (
+                                    HBAR
+                                    * coupling_jk
+                                    * (ket_ij * ket_ik.dag() + ket_ik * ket_ij.dag())
+                                )
+
                         coupling_ik = self._coupling_matrix_fs[i_site - 1, k_site - 1]
                         if not np.isclose(coupling_ik, 0.0):
-                            idx_kj = pair_to_index(min(k_site, j_site), max(k_site, j_site), self.n_atoms)
+                            idx_kj = pair_to_index(
+                                min(k_site, j_site),
+                                max(k_site, j_site),
+                                self.n_atoms,
+                            )
                             if idx_ij < idx_kj:
                                 ket_kj = self.basis[idx_kj]
-                                coupling_op += HBAR * coupling_ik * (ket_ij * ket_kj.dag() + ket_kj * ket_ij.dag())
+                                coupling_op += (
+                                    HBAR
+                                    * coupling_ik
+                                    * (ket_ij * ket_kj.dag() + ket_kj * ket_ij.dag())
+                                )
         return coupling_op
 
     @property
@@ -198,7 +237,12 @@ class AtomicSystem:
         return self.eigenstates[0][i] - self.eigenstates[0][j]
 
     def summary(self) -> str:
-        lines = ["=== AtomicSystem Summary ===", "", "# The system with:", f"    {'n_atoms':<20}: {self.n_atoms}"]
+        lines = [
+            "=== AtomicSystem Summary ===",
+            "",
+            "# The system with:",
+            f"    {'n_atoms':<20}: {self.n_atoms}",
+        ]
         if len(self.frequencies_cm_history) > 1:
             all_freqs = np.array(self.frequencies_cm_history)
             lines.extend(

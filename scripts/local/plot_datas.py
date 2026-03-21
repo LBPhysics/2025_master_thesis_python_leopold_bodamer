@@ -1,28 +1,28 @@
-"""
-Plot processed spectroscopy data: plot time-domain and frequency-domain electric field for each signal type and component.
-
-This script loads the final processed artifact from process_datas.py and generates
-time-domain and frequency-domain plots for each signal type (e.g., 'rephasing', 'non-rephasing') and each
-component ('real', 'imag', 'abs', 'phase').
-
-Examples:
-        python "<repo>/scripts/local/plot_datas.py" --abs_path '/path/to/final_averaged.npz'
-"""
+"""Plot processed spectroscopy data in time and frequency domains."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
 import argparse
-from functools import partial
 import time
+from functools import partial
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from plotstyle import FIG_FORMAT, save_fig
 from qspectro2d import load_simulation_data
-from qspectro2d.visualization.plotting import plot_el_field
 from qspectro2d.spectroscopy.post_processing import compute_spectra
-from plotstyle import save_fig, FIG_FORMAT
+from qspectro2d.visualization.plotting import plot_el_field
+
+from common.plot_settings import PLOT_PAD_FACTOR, SECTION
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
@@ -33,12 +33,6 @@ else:
     raise RuntimeError("Could not locate project root (missing .git directory)")
 
 print = partial(print, flush=True)
-
-# Section for cropping data
-SECTION = (1.5, 1.7)  # or None #for no cropping
-
-# PLOT_PAD_FACTOR factor for zero-padding
-PLOT_PAD_FACTOR = 20.0
 
 
 def _format_seconds(seconds: float) -> str:
@@ -53,143 +47,18 @@ def _format_seconds(seconds: float) -> str:
     return f"{int(hours)}h {int(mins)}m {secs:04.1f}s"
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Plot processed spectroscopy data in time and frequency domains."
-    )
-    parser.add_argument(
-        "--abs_path", type=str, required=True, help="Path to the processed .npz file"
-    )
-    parser.add_argument(
-        "--time_only",
-        action="store_true",
-        help="Only plot time-domain signals (skip frequency-domain plots).",
-    )
-    args = parser.parse_args()
-
-    start_all = time.perf_counter()
-    print(f"Starting plot_datas for: {args.abs_path}")
-
-    # Load the data
-    step_start = time.perf_counter()
-    data = load_simulation_data(args.abs_path)
-    required_keys = ["signals", "t_det", "simulation_config", "job_metadata"]
-    missing = [key for key in required_keys if key not in data]
-    if missing:
-        raise KeyError(f"Missing required data keys in artifact: {missing}")
-
-    signals = data["signals"]
-    print(
-        f"Available signals: {list(signals.keys())}, "
-        f"shapes={[s.shape for s in signals.values()]}"
-    )
-    t_det = data["t_det"]
-    t_coh = data["t_coh"] if "t_coh" in data else None
-    print(
-        f"Loaded t_det shape: {t_det.shape}; "
-        f"t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
-    )
-    if t_coh is not None and (t_coh.ndim == 0 or t_coh.size == 0):
-        t_coh = None
-    print(f"Loaded data from {args.abs_path}")
-    print(f"Signal types: {list(signals.keys())}")
-    print(f"Data dimension: {'2D' if t_coh is not None else '1D'}")
-    print(f"Load time: {_format_seconds(time.perf_counter() - step_start)}")
-
-    components = ["real", "imag", "abs"]
-    saved_files = []
-
-    job_metadata = data["job_metadata"]
-    figures_root = _resolve_figures_dir(job_metadata)
-
-    for st, sig_data in signals.items():
-        signal_start = time.perf_counter()
-        print(f"Plotting time-domain signal: {st}")
-        for comp in components:
-            fig = plot_el_field(
-                axis_det=t_det,
-                data=sig_data,
-                axis_coh=t_coh,
-                component=comp,
-                domain="time",
-            )
-            if fig is None:
-                print(f"  Skipping {st} {comp}: unsupported data shape")
-                continue
-
-            stem = _figure_stem(st, "time", comp)
-            filename = _unique_fig_path(figures_root, stem)
-
-            saved = save_fig(fig, filename=filename)
-            saved_files.append(str(saved))
-            print(f"Saved: {saved}")
-        print(f"Time-domain {st} done in {_format_seconds(time.perf_counter() - signal_start)}")
-    if args.time_only:
-        print("Skipping frequency-domain plots (--time_only set)")
-        print(f"Figures folder: {figures_root}")
-        print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
-        return
-    print("Plotting frequency domain...")
-    pad_factor = PLOT_PAD_FACTOR
-    step_start = time.perf_counter()
-    nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
-        list(signals.values()),
-        list(signals.keys()),
-        np.asarray(t_det),
-        np.asarray(t_coh) if t_coh is not None else None,
-        pad=pad_factor,
-        nu_win_coh=SECTION[1] if SECTION is not None else 2.0,
-        nu_win_det=SECTION[1] if SECTION is not None else 2.0,
-    )
-    print(f"Frequency-domain transform time: {_format_seconds(time.perf_counter() - step_start)}")
-
-    for idx, st in enumerate(out_types):
-        signal_start = time.perf_counter()
-        print(f"Plotting frequency-domain signal: {st}")
-
-        sig_data_freq = datas_nu[idx]
-        for comp in components:
-            fig = plot_el_field(
-                axis_det=nu_dets,
-                data=sig_data_freq,
-                axis_coh=nu_cohs,
-                component=comp,
-                domain="freq",
-                section=SECTION,
-            )
-            if fig is None:
-                print(f"  Skipping {st} {comp}: unsupported data shape")
-                continue
-
-            stem = _figure_stem(st, "freq", comp)
-            filename = _unique_fig_path(figures_root, stem)
-
-            saved = save_fig(fig, filename=filename)
-            saved_files.append(str(saved))
-            print(f"Saved: {saved}")
-        print(
-            f"Frequency-domain {st} done in {_format_seconds(time.perf_counter() - signal_start)}"
-        )
-
-    print(f"Figures folder: {figures_root}")
-    print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
-
-
 def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
     try:
         figures_dir = Path(job_metadata["figures_dir"]).expanduser()
     except KeyError as exc:
-        raise KeyError("job_metadata.json missing required key: figures_dir") from exc
-
+        raise KeyError("job_metadata missing required key: figures_dir") from exc
     figures_dir.mkdir(parents=True, exist_ok=True)
     return figures_dir
 
 
 def _figure_stem(signal: str, domain: str, component: str) -> str:
     safe_signal = str(signal).replace(" ", "_").replace("/", "-")
-    parts = [safe_signal, domain, component]
-    stem = "_".join(filter(None, parts)).lower()
-    return stem
+    return "_".join([safe_signal, domain, component]).lower()
 
 
 def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
@@ -202,6 +71,108 @@ def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
         candidate = base.with_name(f"{stem}_{counter:02d}")
         counter += 1
     return candidate
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Plot processed spectroscopy data in time and frequency domains."
+    )
+    parser.add_argument("--abs_path", type=str, required=True, help="Path to the processed .npz file")
+    parser.add_argument(
+        "--time_only",
+        action="store_true",
+        help="Only plot time-domain signals (skip frequency-domain plots).",
+    )
+    args = parser.parse_args()
+
+    start_all = time.perf_counter()
+    print(f"Starting plot_datas for: {args.abs_path}")
+
+    step_start = time.perf_counter()
+    data = load_simulation_data(args.abs_path)
+    required_keys = ["signals", "t_det", "simulation_config", "job_metadata"]
+    missing = [key for key in required_keys if key not in data]
+    if missing:
+        raise KeyError(f"Missing required data keys in artifact: {missing}")
+
+    signals = data["signals"]
+    t_det = np.asarray(data["t_det"], dtype=float)
+    t_coh = np.asarray(data.get("t_coh", []), dtype=float)
+    if t_coh.ndim == 0 or t_coh.size == 0:
+        t_coh = None
+
+    print(
+        f"Available signals: {list(signals.keys())}, "
+        f"shapes={[s.shape for s in signals.values()]}"
+    )
+    print(
+        f"Loaded t_det shape: {t_det.shape}; "
+        f"t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
+    )
+    print(f"Load time: {_format_seconds(time.perf_counter() - step_start)}")
+
+    components = ["real", "imag", "abs"]
+    figures_root = _resolve_figures_dir(data["job_metadata"])
+
+    for signal_type, sig_data in signals.items():
+        signal_start = time.perf_counter()
+        print(f"Plotting time-domain signal: {signal_type}")
+        for component in components:
+            fig = plot_el_field(
+                axis_det=t_det,
+                data=sig_data,
+                axis_coh=t_coh,
+                component=component,
+                domain="time",
+            )
+            stem = _figure_stem(signal_type, "time", component)
+            filename = _unique_fig_path(figures_root, stem)
+            saved = save_fig(fig, filename=filename)
+            print(f"Saved: {saved}")
+        print(f"Time-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}")
+
+    if args.time_only:
+        print("Skipping frequency-domain plots (--time_only set)")
+        print(f"Figures folder: {figures_root}")
+        print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
+        return
+
+    print("Plotting frequency domain...")
+    step_start = time.perf_counter()
+    nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
+        list(signals.values()),
+        list(signals.keys()),
+        t_det,
+        t_coh,
+        pad=PLOT_PAD_FACTOR,
+        nu_win_coh=SECTION[1] if SECTION is not None else 2.0,
+        nu_win_det=SECTION[1] if SECTION is not None else 2.0,
+    )
+    print(f"Frequency-domain transform time: {_format_seconds(time.perf_counter() - step_start)}")
+
+    for idx, signal_type in enumerate(out_types):
+        signal_start = time.perf_counter()
+        print(f"Plotting frequency-domain signal: {signal_type}")
+        sig_data_freq = datas_nu[idx]
+        for component in components:
+            fig = plot_el_field(
+                axis_det=nu_dets,
+                data=sig_data_freq,
+                axis_coh=nu_cohs,
+                component=component,
+                domain="freq",
+                section=SECTION,
+            )
+            stem = _figure_stem(signal_type, "freq", component)
+            filename = _unique_fig_path(figures_root, stem)
+            saved = save_fig(fig, filename=filename)
+            print(f"Saved: {saved}")
+        print(
+            f"Frequency-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}"
+        )
+
+    print(f"Figures folder: {figures_root}")
+    print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
 
 
 if __name__ == "__main__":

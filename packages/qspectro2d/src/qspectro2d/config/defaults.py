@@ -16,7 +16,7 @@ SUPPORTED_BATHS = [
     "drudelorentz+lorentzian",
 ]
 
-SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
+SUPPORTED_ENVELOPES = ["gaussian", "cos2", "delta"]
 
 SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
 
@@ -30,7 +30,7 @@ SOLVER_OPTIONS = {
         "nsteps": 10_000_000,
         "atol": 1e-3,
         "rtol": 1e-3,
-        "max_step": None,  # filled from pulse_fwhm_fs in io.merge_config
+        "max_step": None,
     },
     "lindblad": {
         "atol": 1e-5,
@@ -126,6 +126,14 @@ DEFAULTS = {
 }
 
 
+def phase_cycling_phases(n_phases: int) -> np.ndarray:
+    """Return an equidistant phase-cycling grid over [0, 2π)."""
+    n_phases = int(n_phases)
+    if n_phases <= 0:
+        raise ValueError("n_phases must be >= 1")
+    return (2 * np.pi / n_phases) * np.arange(n_phases, dtype=float)
+
+
 def get_defaults() -> dict:
     """Return a deep copy so callers can safely mutate merged configs."""
     return deepcopy(DEFAULTS)
@@ -151,4 +159,5 @@ __all__ = [
     "DEFAULT_PULSE_FWHM_FS",
     "T_WAIT",
     "DT",
+    "phase_cycling_phases",
 ]

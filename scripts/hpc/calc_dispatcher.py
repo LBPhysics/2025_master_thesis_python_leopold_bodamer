@@ -1,4 +1,9 @@
-"""Dispatch SLURM jobs for combined t_coh × inhomogeneity samples."""
+"""Dispatch SLURM jobs for combined t_coh × inhomogeneity samples.
+
+The main simplification in this version is that all shared preparation is done
+via ``common.workflow.prepare_workflow`` instead of re-implementing that logic
+in both the local and HPC runners.
+"""
 
 from __future__ import annotations
 
@@ -10,19 +15,11 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import numpy as np
 import yaml
 
-from qspectro2d.config import resolve_config, validate_config
-from qspectro2d.config.factory import load_simulation
-from qspectro2d.core.simulation.time_axes import (
-    compute_t_coh,
-    compute_t_det,
-    compute_times_local,
-)
-from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.utils.data_io import (
     allocate_job_dir,
     ensure_job_layout,
@@ -34,24 +31,23 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from local.calc_datas import RUNS_ROOT, build_combinations, pick_config_yaml, write_json
+from common.workflow import (
+    RUNS_ROOT,
+    build_job_metadata,
+    prepare_workflow,
+    write_json,
+)
+
 
 DEFAULT_CPUS_PER_TASK = 25
 DEFAULT_PARTITION = "GPGPU,metis"
 
 
-def _set_random_seed(seed: int | None) -> None:
-    if seed is not None:
-        np.random.seed(seed)
-
-
 def _split_indices(n_items: int, n_batches: int) -> list[np.ndarray]:
     if n_batches <= 0:
         raise ValueError("n_batches must be positive")
-
     if n_items == 0:
         return [np.array([], dtype=int) for _ in range(n_batches)]
-
     return [chunk.astype(int) for chunk in np.array_split(np.arange(n_items), n_batches)]
 
 
@@ -66,7 +62,6 @@ def _format_hms(total_seconds: float) -> str:
     hours = total_seconds // 3600
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
-
     if hours >= 72:
         return "72:00:00"
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
@@ -84,30 +79,16 @@ def estimate_slurm_resources(
     rwa_sl: bool,
     phase_cycling_jobs: int,
 ) -> tuple[str, str]:
-    """
-    Rough SLURM resource estimate.
-
-    Model:
-    - combinations are processed serially inside one batch job
-    - each combination launches phase-cycling worker tasks in parallel
-    - effective parallelism is limited by min(workers, phase_cycling_jobs)
-    """
     combos_total = n_inhom * n_t_coh
     combos_per_batch = max(1, math.ceil(combos_total / max(1, n_batches)))
 
-    # ---------------------- memory ----------------------
-    # Conservative but simple.
     base_mem_mb = 1500.0
     bytes_per_worker = max(1, n_times) * max(1, n_dim) * 16.0 * 100.0
     workers_mem_mb = workers * bytes_per_worker / (1024.0**2)
     combos_mem_mb = min(1000.0, 2.0 * combos_per_batch)
-
     requested_mem = f"{int(math.ceil(base_mem_mb + workers_mem_mb + combos_mem_mb))}M"
 
-    # ----------------------- time -----------------------
-    # Base runtime for one single worker solve at modest size.
     base_seconds_per_solve = 0.45
-
     solver_factor = {
         "paper_eqs": 1.0,
         "lindblad": 1.5,
@@ -132,7 +113,6 @@ def estimate_slurm_resources(
     safety_factor = 2.5
     minimum_batch_time_s = 600.0
     total_seconds = max(minimum_batch_time_s, seconds_per_combo * combos_per_batch * safety_factor)
-
     return requested_mem, _format_hms(total_seconds)
 
 
@@ -144,8 +124,6 @@ def _render_slurm_script(
     python_executable: Path,
     combos_path: Path,
     samples_path: Path,
-    time_cut: float,
-    sim_type: str,
     batch_idx: int,
     n_batches: int,
     cpus_per_task: int,
@@ -176,8 +154,6 @@ export NUMEXPR_NUM_THREADS=1
 {python_cmd} -u {worker_arg} \\
   --combos_file "{combos_path}" \\
   --samples_file "{samples_path}" \\
-  --time_cut {time_cut:.12g} \\
-  --sim_type {sim_type} \\
   --batch_id {batch_idx} \\
   --n_batches {n_batches}
 """
@@ -215,12 +191,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Simulation dimensionality override",
     )
-    parser.add_argument(
-        "--n_batches",
-        type=int,
-        default=1,
-        help="Number of SLURM batch jobs",
-    )
+    parser.add_argument("--n_batches", type=int, default=1, help="Number of SLURM batch jobs")
     parser.add_argument(
         "--rng_seed",
         type=int,
@@ -230,8 +201,8 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--time_cut",
         type=float,
-        default=float("inf"),
-        help="Safe evolution cutoff forwarded to run_batch.py",
+        default=None,
+        help="Optional override for the safe evolution cutoff",
     )
     parser.add_argument(
         "--cpus_per_task",
@@ -256,52 +227,35 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    if args.config:
-        config_path = Path(args.config).expanduser().resolve()
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-    else:
-        config_path = pick_config_yaml().resolve()
-
     print("=" * 80)
     print("HPC CALC DISPATCHER")
-    print(f"Config path: {config_path}")
 
-    merged_cfg = resolve_config(str(config_path))
-    if args.sim_type is not None:
-        merged_cfg["config"]["sim_type"] = args.sim_type
-
-    # Keep worker count consistent with SLURM allocation.
-    merged_cfg["config"]["max_workers"] = int(args.cpus_per_task)
-    validate_config(merged_cfg)
-
-    sim = load_simulation(merged_cfg)
-    effective_sim_type = sim.simulation_config.sim_type
-    print("✅ Merged config resolved and simulation object constructed.")
-
-    n_inhom = int(sim.simulation_config.n_inhomogen)
-    if n_inhom <= 0:
-        raise ValueError("n_inhom must be positive")
-
-    _set_random_seed(args.rng_seed)
-
-    samples = sample_from_gaussian(
-        n_samples=n_inhom,
-        fwhm=float(sim.system.delta_inhomogen_cm),
-        mu=np.asarray(sim.system.frequencies_cm, dtype=float),
+    prepared = prepare_workflow(
+        config_path=args.config,
+        sim_type=args.sim_type,
+        rng_seed=args.rng_seed,
+        max_workers=args.cpus_per_task,
+        run_solver_check=True,
     )
 
-    t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
-    t_det_values = np.asarray(compute_t_det(sim.simulation_config), dtype=float)
-    times_local = np.asarray(compute_times_local(sim.simulation_config), dtype=float)
-    combinations = build_combinations(t_coh_values, n_inhom)
+    print(f"Config path: {prepared.config_path}")
+    print("✅ Merged config resolved, validated, and simulation object constructed.")
+    print(f"✅ Solver validated once. time_cut = {prepared.time_cut:.6g}")
+
+    time_cut = float(prepared.time_cut if args.time_cut is None else args.time_cut)
 
     print(
-        f"Prepared {len(combinations)} combination(s) -> "
-        f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}, n_batches={args.n_batches}"
+        f"Prepared {len(prepared.combinations)} combination(s) -> "
+        f"|t_coh|={prepared.t_coh_values.size}, "
+        f"n_inhom={int(prepared.sim.simulation_config.n_inhomogen)}, "
+        f"n_batches={args.n_batches}"
     )
 
-    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=effective_sim_type)
+    label_token = job_label_token(
+        prepared.sim.simulation_config,
+        prepared.sim.system,
+        sim_type=prepared.sim_type,
+    )
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     job_dir = allocate_job_dir(RUNS_ROOT, f"hpc_{label_token}_{timestamp}")
     job_paths = ensure_job_layout(job_dir, base_name="raw")
@@ -309,25 +263,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     logs_dir = job_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
 
-    config_copy_path = job_dir / config_path.name
+    config_copy_path = job_dir / prepared.config_path.name
     with config_copy_path.open("w", encoding="utf-8") as handle:
-        yaml.safe_dump(merged_cfg, handle, sort_keys=False)
+        yaml.safe_dump(prepared.merged_cfg, handle, sort_keys=False)
 
     samples_path = job_dir / "samples.npy"
-    np.save(samples_path, samples.astype(float))
+    np.save(samples_path, prepared.samples.astype(float))
 
-    n_phases = int(sim.simulation_config.n_phases)
+    n_phases = int(prepared.sim.simulation_config.n_phases)
     phase_cycling_jobs = _phase_cycling_job_count(n_phases)
 
     requested_mem, requested_time = estimate_slurm_resources(
-        n_times=len(times_local),
-        n_inhom=n_inhom,
-        n_t_coh=len(t_coh_values),
+        n_times=len(prepared.times_local),
+        n_inhom=int(prepared.sim.simulation_config.n_inhomogen),
+        n_t_coh=len(prepared.t_coh_values),
         n_batches=args.n_batches,
         workers=int(args.cpus_per_task),
-        n_dim=int(sim.system.dimension),
-        solver=str(sim.simulation_config.ode_solver),
-        rwa_sl=bool(sim.simulation_config.rwa_sl),
+        n_dim=int(prepared.sim.system.dimension),
+        solver=str(prepared.sim.simulation_config.ode_solver),
+        rwa_sl=bool(prepared.sim.simulation_config.rwa_sl),
         phase_cycling_jobs=phase_cycling_jobs,
     )
     print(
@@ -335,48 +289,42 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"time={requested_time}, cpus={args.cpus_per_task}"
     )
 
-    job_metadata = {
-        "sim_type": effective_sim_type,
-        "signal_types": sim.simulation_config.signal_types,
-        "t_det": t_det_values.tolist(),
-        "t_coh": t_coh_values.tolist(),
-        "n_inhom": n_inhom,
-        "n_t_coh": int(t_coh_values.size),
-        "job_dir": str(job_paths.job_dir),
-        "data_dir": str(job_paths.data_dir),
-        "figures_dir": str(job_paths.figures_dir),
-        "data_base_name": job_paths.base_name,
-        "data_base_path": str(job_paths.data_base_path),
-        "config_path": str(config_copy_path),
-        "merged_config": merged_cfg,
-    }
+    job_metadata = build_job_metadata(
+        prepared,
+        job_dir=job_paths.job_dir,
+        data_dir=job_paths.data_dir,
+        figures_dir=job_paths.figures_dir,
+        data_base_name=job_paths.base_name,
+        data_base_path=job_paths.data_base_path,
+        config_path=config_copy_path,
+        time_cut=time_cut,
+    )
     write_json(job_dir / "job_metadata.json", job_metadata)
 
     info_path = job_paths.data_base_path.parent / f"{job_paths.data_base_path.name}.pkl"
-    if not info_path.exists():
-        save_info_file(
-            info_path,
-            sim.system,
-            sim.simulation_config,
-            bath=getattr(sim, "bath", None),
-            laser=getattr(sim, "laser", None),
-            extra_payload=job_metadata,
-        )
+    save_info_file(
+        info_path,
+        prepared.sim.system,
+        prepared.sim.simulation_config,
+        bath=getattr(prepared.sim, "bath", None),
+        laser=getattr(prepared.sim, "laser", None),
+        extra_payload=job_metadata,
+    )
 
     worker_path = (SCRIPTS_DIR / "hpc" / "run_batch.py").resolve()
     if not worker_path.exists():
         raise FileNotFoundError(f"Missing worker script: {worker_path}")
 
     python_executable = Path(sys.executable).resolve()
-    batch_indices = _split_indices(len(combinations), args.n_batches)
+    batch_indices = _split_indices(len(prepared.combinations), args.n_batches)
     script_paths: list[Path] = []
 
     for batch_idx, indices in enumerate(batch_indices):
-        combos_subset = [combinations[i].to_dict() for i in indices.tolist()]
+        combos_subset = [prepared.combinations[i].to_dict() for i in indices.tolist()]
         combos_path = job_dir / f"batch_{batch_idx:03d}.json"
         write_json(combos_path, {"combos": combos_subset})
 
-        job_name = f"{effective_sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
+        job_name = f"{prepared.sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
         script_path = job_dir / f"{job_name}.slurm"
         script_path.write_text(
             _render_slurm_script(
@@ -386,8 +334,6 @@ def main(argv: Sequence[str] | None = None) -> None:
                 python_executable=python_executable,
                 combos_path=combos_path.resolve(),
                 samples_path=samples_path.resolve(),
-                time_cut=float(args.time_cut),
-                sim_type=effective_sim_type,
                 batch_idx=batch_idx,
                 n_batches=args.n_batches,
                 cpus_per_task=int(args.cpus_per_task),

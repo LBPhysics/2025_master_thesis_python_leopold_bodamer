@@ -19,9 +19,8 @@ def split_solver_options(config: SimulationConfig) -> tuple[dict, dict]:
     solver = str(config.ode_solver)
     src = dict(config.solver_options)
     run_kwargs: dict = {}
-    if solver == "redfield":
-        if "sec_cutoff" in src:
-            run_kwargs["sec_cutoff"] = src.pop("sec_cutoff")
+    if solver == "redfield" and "sec_cutoff" in src:
+        run_kwargs["sec_cutoff"] = src.pop("sec_cutoff")
 
     if solver in SUPPORTED_SOLVERS:
         return run_kwargs, src
@@ -29,7 +28,9 @@ def split_solver_options(config: SimulationConfig) -> tuple[dict, dict]:
 
 
 def build_initial_state(
-    config: SimulationConfig, system: AtomicSystem, bath: BosonicEnvironment
+    config: SimulationConfig,
+    system: AtomicSystem,
+    bath: BosonicEnvironment,
 ) -> Qobj:
     init_choice = getattr(config, "initial_state", "ground")
     if init_choice == "ground":
@@ -93,13 +94,29 @@ class SimulationModuleOQS:
     bath: BosonicEnvironment
     bath_coupling: BathCoupling = field(init=False)
 
+    _CACHE_KEYS = (
+        "decay_channels",
+        "initial_state",
+        "lowering_op_eigenbasis",
+        "dipole_op_eigenbasis",
+        "number_op_eigenbasis",
+        "H0_diagonalized",
+        "observable_ops",
+        "observable_strs",
+        "evo_obj",
+    )
+
     def __post_init__(self) -> None:
         self.bath_coupling = BathCoupling(self.system, self.bath)
+
+    def refresh_cache(self) -> None:
+        for key in self._CACHE_KEYS:
+            self.__dict__.pop(key, None)
 
     def _solver_split(self) -> tuple[dict, dict]:
         return split_solver_options(self.simulation_config)
 
-    @property
+    @cached_property
     def evo_obj(self) -> Qobj | QobjEvo:
         if self.simulation_config.ode_solver == "paper_eqs":
             from .paper_solver import matrix_ODE_paper
@@ -107,7 +124,7 @@ class SimulationModuleOQS:
             return QobjEvo(lambda t: matrix_ODE_paper(t, self))
         return QobjEvo(self.H_total_t)
 
-    @property
+    @cached_property
     def decay_channels(self) -> list[Qobj] | list[tuple[Qobj, BosonicEnvironment]]:
         solver = self.simulation_config.ode_solver
         if solver == "lindblad":
@@ -122,27 +139,38 @@ class SimulationModuleOQS:
     def sb_coupling(self) -> BathCoupling:
         return self.bath_coupling
 
-    @property
+    @cached_property
     def initial_state(self) -> Qobj:
         return build_initial_state(self.simulation_config, self.system, self.bath)
 
-    @property
+    @cached_property
+    def lowering_op_eigenbasis(self) -> Qobj:
+        return self.system.to_eigenbasis(self.system.lowering_op)
+
+    @cached_property
+    def dipole_op_eigenbasis(self) -> Qobj:
+        return self.system.to_eigenbasis(self.system.dipole_op)
+
+    @cached_property
+    def number_op_eigenbasis(self) -> Qobj:
+        return self.system.to_eigenbasis(self.system.number_op)
+
+    @cached_property
     def H0_diagonalized(self) -> Qobj:
         energies, _ = self.system.eigenstates
         hamiltonian = Qobj(np.diag(energies), dims=self.system.hamiltonian.dims)
         if self.simulation_config.rwa_sl:
-            hamiltonian -= self.laser.carrier_freq_fs * self.system.to_eigenbasis(
-                self.system.number_op
-            )
+            hamiltonian -= self.laser.carrier_freq_fs * self.number_op_eigenbasis
         return hamiltonian
 
     def H_int_sl(self, t: float) -> Qobj:
-        lowering_op = self.system.to_eigenbasis(self.system.lowering_op)
         if self.simulation_config.rwa_sl:
             field_plus = e_pulses(t, self.laser)
+            lowering_op = self.lowering_op_eigenbasis
             return -(lowering_op * np.conj(field_plus) + lowering_op.dag() * field_plus)
-        dipole_op = lowering_op + lowering_op.dag()
+
         field_plus = epsilon_pulses(t, self.laser)
+        dipole_op = self.dipole_op_eigenbasis
         return -dipole_op * (field_plus + np.conj(field_plus))
 
     def H_total_t(self, t: float) -> Qobj:
@@ -160,8 +188,8 @@ class SimulationModuleOQS:
         if t_coh is None:
             raise TypeError("t_coh must be provided to update_delays and cannot be None")
         wait_time = float(self.simulation_config.t_wait if t_wait is None else t_wait)
-        self.simulation_config.t_wait = wait_time
         t_coh_value = float(t_coh)
+        self.simulation_config.t_wait = wait_time
         self.simulation_config.t_coh = t_coh_value
         self.laser.pulse_delays = [t_coh_value, wait_time]
 

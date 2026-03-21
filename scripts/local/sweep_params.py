@@ -1,111 +1,39 @@
 """Sweep key simulation parameters and record runtime.
 
-This script runs a one-factor-at-a-time (OFAT) sweep around a baseline YAML
-configuration. It generates temporary YAML configs, runs calc_datas.py for each
-case, and saves a CSV/JSON summary with timings.
+This version performs a true one-factor-at-a-time sweep around one baseline
+configuration. Shared sweep helpers live in ``common.sweeping`` so the local and
+HPC sweep scripts stay consistent.
 """
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
 import argparse
 import csv
 import json
-import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-import yaml
-
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = SCRIPTS_DIR.parent
-DATA_DIR = PROJECT_ROOT / "jobs" / "sweeps"
-DEFAULT_CONFIG = SCRIPTS_DIR / "simulation_configs" / "_monomer.yaml"
-BASELINE_OVERRIDES = {
-    "config.t_det": 10.0,
-    "config.t_coh": 0.0,
-    "config.t_wait": 0.0,
-    "config.dt": 1.0,
-    "config.n_inhomogen": 1,
-    "config.n_atoms": 1,
-    "config.solver": "paper_eqs",
-    "bath.bath_type": "ohmic",
-    "bath.coupling": 0.01,
-    "bath.temperature": 0.1,
-}
-
-
-@dataclass
-class SweepCase:
-    label: str
-    overrides: dict[str, Any]
-
-
-def set_nested(cfg: dict[str, Any], path: Iterable[str], value: Any) -> None:
-    node = cfg
-    keys = list(path)
-    for key in keys[:-1]:
-        node = node.setdefault(key, {})
-    node[keys[-1]] = value
-
-
-def apply_overrides(base_cfg: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
-    cfg = json.loads(json.dumps(base_cfg))  # deep copy via JSON
-    for dotted_key, value in overrides.items():
-        path = dotted_key.split(".")
-        set_nested(cfg, path, value)
-
-    solver = cfg.get("config", {}).get("solver")
-    if solver != "redfield":
-        cfg.get("config", {}).pop("solver_options", None)
-    return cfg
-
-
-def build_ofat_cases(base_cfg: dict[str, Any]) -> list[SweepCase]:
-    grids: dict[str, list[Any]] = {
-        "config.solver": ["paper_eqs", "redfield"],
-        "bath.bath_type": ["ohmic"],
-        "bath.temperature": [0.1],
-        "bath.coupling": [0.01],
-        "laser.rwa_sl": [True, False],
-        "config.t_det": [10.0, 20.0, 50.0],
-        "config.n_inhomogen": [1, 2],
-        "config.n_atoms": [1, 2],
-        "config.t_coh": [0.0, 10.0, 20.0],
-        "config.t_wait": [0.0, 10.0, 20.0],
-        "config.dt": [1.0, 0.5, 0.1],
-    }
-
-    cases: list[SweepCase] = []
-    keys = list(grids.keys())
-
-    def _walk(idx: int, current: dict[str, Any]) -> None:
-        if idx == len(keys):
-            label_parts = [f"{key.replace('.', '_')}={current[key]}" for key in keys]
-            cases.append(SweepCase("__".join(label_parts), dict(current)))
-            return
-        key = keys[idx]
-        for value in grids[key]:
-            current[key] = value
-            _walk(idx + 1, current)
-
-    _walk(0, {})
-    return cases
-
-
-def build_env() -> dict[str, str]:
-    env = os.environ.copy()
-    extra_paths = [
-        str(PROJECT_ROOT / "packages" / "qspectro2d" / "src"),
-        str(PROJECT_ROOT / "packages" / "plotstyle" / "src"),
-    ]
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = ";".join([p for p in extra_paths if p] + ([existing] if existing else []))
-    return env
+from common.sweeping import (
+    BASELINE_OVERRIDES,
+    DATA_DIR,
+    DEFAULT_CONFIG,
+    apply_overrides,
+    build_env,
+    build_ofat_cases,
+    load_yaml,
+)
+from common.workflow import SCRIPTS_DIR
 
 
 def main() -> None:
@@ -130,7 +58,7 @@ def main() -> None:
         nargs="+",
         default=None,
         help=(
-            "Space- or comma-separated list of sim types to sweep (e.g., 1d 2d or 1d,2d). "
+            "Space- or comma-separated list of sim types to sweep (e.g. 1d 2d or 1d,2d). "
             "Overrides --sim_type."
         ),
     )
@@ -146,10 +74,7 @@ def main() -> None:
     if not base_path.exists():
         raise FileNotFoundError(f"Config file not found: {base_path}")
 
-    with base_path.open("r", encoding="utf-8") as handle:
-        base_cfg = yaml.safe_load(handle)
-
-    base_cfg = apply_overrides(base_cfg, BASELINE_OVERRIDES)
+    base_cfg = apply_overrides(load_yaml(base_path), BASELINE_OVERRIDES)
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     label = args.label or base_path.stem
@@ -177,12 +102,14 @@ def main() -> None:
         results: list[dict[str, Any]] = []
 
         print(f"Sweep directory: {sweep_dir}")
-        print(f"Total cases: {len(cases)}")
+        print(f"Total OFAT cases: {len(cases)}")
 
         for idx, case in enumerate(cases, start=1):
             cfg = apply_overrides(base_cfg, case.overrides)
             case_path = sweep_dir / f"case_{idx:03d}.yaml"
             with case_path.open("w", encoding="utf-8") as handle:
+                import yaml
+
                 yaml.safe_dump(cfg, handle, sort_keys=False)
 
             cmd = [
@@ -204,7 +131,7 @@ def main() -> None:
                     "index": idx,
                     "label": case.label,
                     "config_path": str(case_path),
-                    "return_code": proc.returncode,
+                    "return_code": int(proc.returncode),
                     "runtime_s": round(elapsed, 3),
                 }
             )

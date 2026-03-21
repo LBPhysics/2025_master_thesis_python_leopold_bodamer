@@ -22,8 +22,7 @@ def complex_polarisation(
     Physics convention:
         - The negative-frequency part of the dipole operator corresponds to
             μ^(-) in this codebase's basis ordering and is represented by the
-            strictly upper-triangular part (m < n), selecting |lower⟩⟨higher|.
-        - Used for emission spectroscopy: P^(-)(t) ~ exp(-iωt).
+            strictly lower-triangular part (m > n), selecting |lower⟩⟨higher|.
 
     Accepts a single Qobj (ket or density matrix) or list of Qobj.
     """
@@ -80,5 +79,5 @@ def time_dependent_polarisation_rwa(
     state_lab = from_rotating_frame_op(state, t, n_atoms, carrier_freq_fs)
     return complex_polarisation(dipole_op, state_lab)
 
-__all__ = ["complex_polarisation", "time_dependent_polarisation_rwa"]
 
+__all__ = ["complex_polarisation", "time_dependent_polarisation_rwa"]

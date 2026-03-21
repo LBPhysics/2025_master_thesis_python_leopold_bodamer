@@ -1,57 +1,47 @@
 """Run all combinations of (t_coh, inhomogeneity) locally without batching.
 
-This script iterates over the Cartesian product of coherence times and
-inhomogeneous frequency samples, saving each combination as an individual
-artifact. The folder layout matches the HPC workflow so that downstream
-processing remains uniform between local and cluster executions.
-
-Examples
---------
-        python scripts/local/calc_datas.py --sim_type 1d
-        python scripts/local/calc_datas.py --sim_type 2d
+This version delegates all shared preparation to ``common.workflow`` so the
+same config resolution, validation, axis creation, and frequency sampling are
+used by both local and HPC workflows.
 """
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
 import argparse
-import json
-import shutil
 import time
 import warnings
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import yaml
 
-from qspectro2d.config.factory import load_simulation
-from qspectro2d.config import resolve_config, validate_config
-from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_t_det
-from qspectro2d.diagnostics import check_the_solver
-from qspectro2d.spectroscopy import compute_emitted_field_components, sample_from_gaussian
+from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import (
-    save_info_file,
-    save_run_artifact,
-    build_run_metadata,
-    pad_or_crop_signals,
     allocate_job_dir,
+    build_run_metadata,
     ensure_job_layout,
     job_label_token,
+    pad_or_crop_signals,
+    save_info_file,
+    save_run_artifact,
 )
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-for _parent in SCRIPTS_DIR.parents:
-    if (_parent / ".git").is_dir():
-        PROJECT_ROOT = _parent
-        break
-else:
-    raise RuntimeError("Could not locate project root (missing .git directory)")
+from common.workflow import (
+    PROJECT_ROOT,
+    RUNS_ROOT,
+    build_job_metadata,
+    prepare_workflow,
+    write_json,
+)
 
-DATA_DIR = (PROJECT_ROOT / "jobs").resolve()
-RUNS_ROOT = DATA_DIR
-SIM_CONFIGS_DIR = SCRIPTS_DIR / "simulation_configs"
-DATA_DIR.mkdir(exist_ok=True)
-RUNS_ROOT.mkdir(exist_ok=True)
 
 warnings.filterwarnings(
     "ignore",
@@ -59,58 +49,6 @@ warnings.filterwarnings(
     message=r".*c_ops, e_ops, args and options will be keyword only from qutip 5\.3.*",
     module=r"qutip\.solver\.brmesolve",
 )
-
-
-def pick_config_yaml(config_dir: Path | None = None) -> Path:
-    """Return the preferred YAML configuration from ``config_dir``."""
-
-    if config_dir is None:
-        config_dir = SIM_CONFIGS_DIR
-    candidates = sorted(config_dir.glob("*.yaml"))
-    if not candidates:
-        raise FileNotFoundError(f"No .yaml config files found in {config_dir}.")
-    marked = [entry for entry in candidates if entry.name.startswith("_")]
-    return marked[0] if marked else candidates[0]
-
-
-@dataclass(frozen=True)
-class Combination:
-    index: int
-    t_index: int
-    t_coh: float
-    inhom_index: int
-
-    def to_dict(self) -> dict[str, float | int]:
-        return {
-            "index": int(self.index),
-            "t_index": int(self.t_index),
-            "t_coh_value": float(self.t_coh),
-            "inhom_index": int(self.inhom_index),
-        }
-
-
-def build_combinations(t_coh_values: np.ndarray, n_inhom: int) -> list[Combination]:
-    combos: list[Combination] = []
-    index = 0
-    for t_idx, t_coh in enumerate(t_coh_values):
-        for inhom_idx in range(n_inhom):
-            combos.append(
-                Combination(
-                    index=index,
-                    t_index=t_idx,
-                    t_coh=float(t_coh),
-                    inhom_index=inhom_idx,
-                )
-            )
-            index += 1
-    return combos
-
-
-def write_json(path: Path, payload: dict | list) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
 
 
 def main() -> None:
@@ -128,7 +66,7 @@ def main() -> None:
         "--sim_type",
         choices=["0d", "1d", "2d"],
         default=None,
-        help="Simulation dimensionality",
+        help="Simulation dimensionality override",
     )
     parser.add_argument(
         "--rng_seed",
@@ -138,155 +76,105 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.config:
-        config_path = Path(args.config).expanduser().resolve()
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-    else:
-        config_path = pick_config_yaml().resolve()
-
     print("=" * 80)
     print("LOCAL ALL-COMBINATIONS RUNNER")
-    print(f"Config path: {config_path}")
 
-    merged_cfg = resolve_config(str(config_path))
-    effective_sim_type = (
-        args.sim_type if args.sim_type is not None else merged_cfg["config"]["sim_type"]
+    prepared = prepare_workflow(
+        config_path=args.config,
+        sim_type=args.sim_type,
+        rng_seed=args.rng_seed,
+        run_solver_check=True,
     )
-    merged_cfg["config"]["sim_type"] = effective_sim_type
 
-    validate_config(merged_cfg)
+    print(f"Config path: {prepared.config_path}")
     print("✅ Merged config validated once.")
-
-    sim = load_simulation(merged_cfg)
     print("✅ Simulation object constructed from validated merged config.")
+    print(f"✅ Solver validated. time_cut = {prepared.time_cut:.6g}")
 
-    time_cut = check_the_solver(sim)
-    print(f"✅ Solver validated. time_cut = {time_cut:.6g}")
-
-    sim.simulation_config.sim_type = effective_sim_type
-
-    label_token = job_label_token(sim.simulation_config, sim.system, sim_type=effective_sim_type)
+    label_token = job_label_token(
+        prepared.sim.simulation_config,
+        prepared.sim.system,
+        sim_type=prepared.sim_type,
+    )
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_label = f"local_{label_token}_{timestamp}"
-    job_dir = allocate_job_dir(RUNS_ROOT, job_label)
+    job_dir = allocate_job_dir(RUNS_ROOT, f"local_{label_token}_{timestamp}")
     job_paths = ensure_job_layout(job_dir, base_name="raw")
     data_base_path = job_paths.data_base_path
 
     print(f"Job workspace: {job_paths.job_dir}")
 
-    config_copy_path = job_paths.job_dir / config_path.name
-    if not config_copy_path.exists():
-        shutil.copy2(config_path, config_copy_path)
-        print(f"✅ Config file copied to {config_copy_path}")
-    config_path = config_copy_path
+    config_copy_path = job_paths.job_dir / prepared.config_path.name
+    with config_copy_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(prepared.merged_cfg, handle, sort_keys=False)
+    print(f"✅ Resolved config written to {config_copy_path}")
 
-    n_inhom = sim.simulation_config.n_inhomogen
-    if n_inhom <= 0:
-        raise ValueError("n_inhom must be positive")
-
-    if args.rng_seed is not None:
-        np.random.seed(args.rng_seed)
-
-    base_freqs = np.asarray(sim.system.frequencies_cm, dtype=float)
-    delta_cm = float(sim.system.delta_inhomogen_cm)
-    samples = sample_from_gaussian(
-        n_samples=n_inhom,
-        fwhm=delta_cm,
-        mu=base_freqs,
+    job_metadata = build_job_metadata(
+        prepared,
+        job_dir=job_paths.job_dir,
+        data_dir=job_paths.data_dir,
+        figures_dir=job_paths.figures_dir,
+        data_base_name=job_paths.base_name,
+        data_base_path=data_base_path,
+        config_path=config_copy_path,
+        time_cut=prepared.time_cut,
     )
-
-    t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
-
-    # Compute global detection axis (all signals padded/cropped to this)
-    t_det_axis = compute_t_det(sim.simulation_config).tolist()
-    if not t_det_axis and effective_sim_type != "0d":
-        raise RuntimeError(
-            "Invariant violation: empty global detection axis for non-0d local run "
-            f"(sim_type={effective_sim_type}, t_det={float(sim.simulation_config.t_det):.6g}, dt={float(sim.simulation_config.dt):.6g})"
-        )
-    global_n_t = len(t_det_axis)
-    combinations = build_combinations(t_coh_values, n_inhom)
-
-    print(
-        f"Prepared {len(combinations)} combination(s) → "
-        f"|t_coh|={t_coh_values.size}, n_inhom={n_inhom}"
-    )
-
-    job_metadata = {
-        "sim_type": effective_sim_type,
-        "signal_types": sim.simulation_config.signal_types,
-        "t_det": t_det_axis,
-        "t_coh": t_coh_values.tolist(),
-        "n_inhom": n_inhom,
-        "n_t_coh": int(t_coh_values.size),
-        "data_base_path": str(data_base_path),
-        "job_dir": str(job_paths.job_dir),
-        "data_dir": str(job_paths.data_dir),
-        "figures_dir": str(job_paths.figures_dir),
-        "data_base_name": job_paths.base_name,
-        "merged_config": merged_cfg,
-    }
 
     info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
-    if not info_path.exists():
-        save_info_file(
-            info_path,
-            sim.system,
-            sim.simulation_config,
-            bath=getattr(sim, "bath"),
-            laser=getattr(sim, "laser"),
-            extra_payload=job_metadata,
-        )
+    save_info_file(
+        info_path,
+        prepared.sim.system,
+        prepared.sim.simulation_config,
+        bath=getattr(prepared.sim, "bath", None),
+        laser=getattr(prepared.sim, "laser", None),
+        extra_payload=job_metadata,
+    )
 
     samples_target = data_base_path.parent / f"{data_base_path.name}_samples.npy"
-    if not samples_target.exists():
-        np.save(samples_target, samples.astype(float))
+    np.save(samples_target, prepared.samples.astype(float))
 
     combos_target = data_base_path.parent / f"{data_base_path.name}_combos.json"
-    if not combos_target.exists():
-        combos_dicts = [combo.to_dict() for combo in combinations]
-        write_json(combos_target, {"combos": combos_dicts})
+    write_json(combos_target, {"combos": [combo.to_dict() for combo in prepared.combinations]})
 
     print(f"Artifacts will be saved to {data_base_path.parent}")
+    print(
+        f"Prepared {len(prepared.combinations)} combination(s) → "
+        f"|t_coh|={prepared.t_coh_values.size}, "
+        f"n_inhom={int(prepared.sim.simulation_config.n_inhomogen)}"
+    )
 
-    signal_types = sim.simulation_config.signal_types
+    signal_types = list(prepared.sim.simulation_config.signal_types)
+    global_n_t = int(prepared.t_det_axis.size)
 
     t_start = time.time()
     saved_paths: list[str] = []
 
-    for combo in combinations:
-        t_idx = combo.t_index
-        inhom_idx = combo.inhom_index
-        global_idx = combo.index
-        t_coh_val = combo.t_coh
-
-        freq_vector = samples[inhom_idx, :].astype(float)
+    for combo in prepared.combinations:
+        freq_vector = prepared.samples[combo.inhom_index, :].astype(float)
 
         print(
-            f"\n--- combo {global_idx + 1} / {len(combinations)}: "
-            f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
+            f"\n--- combo {combo.index + 1} / {len(prepared.combinations)}: "
+            f"t_idx={combo.t_index}, t_coh={combo.t_coh:.4f} fs, "
+            f"inhom_idx={combo.inhom_index} ---"
         )
 
         e_components = compute_emitted_field_components(
-            config_source=merged_cfg,
-            t_coh=t_coh_val,
+            config_source=prepared.merged_cfg,
+            t_coh=combo.t_coh,
             freq_vector=freq_vector.tolist(),
-            time_cut=time_cut,
-            detection_window=t_det_axis,
+            time_cut=prepared.time_cut,
+            detection_window=prepared.t_det_axis,
         )
 
-        # Pad/crop all signals to match global grid
         padded_components = pad_or_crop_signals(e_components, global_n_t)
 
         metadata_combo = build_run_metadata(
             signal_types=signal_types,
-            sim_type="1d" if effective_sim_type == "2d" else effective_sim_type,
-            sample_index=inhom_idx,
-            t_coh_value=t_coh_val,
+            sim_type="1d" if prepared.sim_type == "2d" else prepared.sim_type,
+            sample_index=combo.inhom_index,
+            t_coh_value=combo.t_coh,
             run_status="ok",
-            t_index=int(t_idx),
-            global_index=int(global_idx),
+            t_index=int(combo.t_index),
+            global_index=int(combo.index),
         )
 
         path = save_run_artifact(
@@ -294,9 +182,8 @@ def main() -> None:
             metadata=metadata_combo,
             frequency_sample_cm=freq_vector,
             data_dir=data_base_path.parent,
-            filename=f"{data_base_path.name}_run_t{t_idx:03d}_s{inhom_idx:03d}.npz",
+            filename=f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz",
         )
-
         saved_paths.append(str(path))
         print(f"    ✅ saved {path}")
 

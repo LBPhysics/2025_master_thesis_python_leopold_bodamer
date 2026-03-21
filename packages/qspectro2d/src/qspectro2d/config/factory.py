@@ -18,10 +18,7 @@ from .config import resolve_config
 from .defaults import SUPPORTED_BATHS
 
 
-def load_simulation_config(
-    source: Mapping[str, Any] | str | Path | None = None,
-) -> SimulationConfig:
-    cfg = resolve_config(source)
+def _simulation_config_from_resolved(cfg: Mapping[str, Any]) -> SimulationConfig:
     atomic_cfg = cfg["atomic"]
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
@@ -44,7 +41,14 @@ def load_simulation_config(
     )
 
 
-def load_simulation_laser(cfg: dict[str, Any]) -> LaserPulseSequence:
+def load_simulation_config(
+    source: Mapping[str, Any] | str | Path | None = None,
+) -> SimulationConfig:
+    cfg = resolve_config(source)
+    return _simulation_config_from_resolved(cfg)
+
+
+def load_simulation_laser(cfg: Mapping[str, Any]) -> LaserPulseSequence:
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
 
@@ -58,7 +62,7 @@ def load_simulation_laser(cfg: dict[str, Any]) -> LaserPulseSequence:
     )
 
 
-def load_simulation_atomic_system(cfg: dict[str, Any]) -> AtomicSystem:
+def load_simulation_atomic_system(cfg: Mapping[str, Any]) -> AtomicSystem:
     atomic_cfg = cfg["atomic"]
 
     return AtomicSystem(
@@ -72,7 +76,7 @@ def load_simulation_atomic_system(cfg: dict[str, Any]) -> AtomicSystem:
     )
 
 
-def load_simulation_bath(cfg: dict[str, Any]) -> BosonicEnvironment:
+def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
     atomic_cfg = cfg["atomic"]
     bath_cfg = cfg["bath"]
 
@@ -128,7 +132,12 @@ def load_simulation_bath(cfg: dict[str, Any]) -> BosonicEnvironment:
                 tag="drudelorentz",
             )
 
-        def j_lorentz_peak(w, center=peak_center, gamma=peak_width, strength=peak_strength):
+        def j_lorentz_peak(
+            w,
+            center=peak_center,
+            gamma=peak_width,
+            strength=peak_strength,
+        ):
             w_arr = np.asarray(w, dtype=float)
             result = np.zeros_like(w_arr)
             positive = w_arr > 0
@@ -163,7 +172,7 @@ def load_simulation(
     cfg = resolve_config(source)
 
     return SimulationModuleOQS(
-        simulation_config=load_simulation_config(cfg),
+        simulation_config=_simulation_config_from_resolved(cfg),
         system=load_simulation_atomic_system(cfg),
         laser=load_simulation_laser(cfg),
         bath=load_simulation_bath(cfg),

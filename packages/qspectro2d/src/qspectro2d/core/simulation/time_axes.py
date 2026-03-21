@@ -27,7 +27,9 @@ def _validate_solver_time_grid(tlist: np.ndarray) -> None:
 
 def _solver_start_time(cfg: "SimulationConfig", t_coh: float) -> float:
     # Keep one consistent definition of the left solver boundary.
-    return float(np.floor(-(cfg.t_wait + t_coh + DEFAULT_ACTIVE_WINDOW_NFWHM * cfg.pulse_fwhm_fs)))
+    physical_left = -(cfg.t_wait + t_coh + DEFAULT_ACTIVE_WINDOW_NFWHM * cfg.pulse_fwhm_fs)
+    dt = float(cfg.dt)
+    return float(dt * np.floor(physical_left / dt))
 
 
 def _first_non_negative_grid_time(t0: float, dt: float) -> float:
