@@ -120,7 +120,8 @@ simulation = SimulationModuleOQS(
 
 ```python
 from pathlib import Path
-from qspectro2d.config.factory import create_base_sim_oqs, load_simulation
+from qspectro2d.config import resolve_config
+from qspectro2d.config.factory import load_simulation
 
 sim = load_simulation(Path("config/dimer.yaml"))
 sim_summary = sim.summary()
@@ -129,13 +130,13 @@ sim, time_cut = create_base_sim_oqs(Path("config/dimer.yaml"))
 print(f"Usable detection window: {time_cut:.1f} fs")
 ```
 
-The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `qspectro2d.config.validate.validate_config`).
+The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `qspectro2d.config.validate_config`).
 
 ### Solver options
 
 You can pass solver-specific knobs under `config.solver_options`. These are forwarded to the selected QuTiP solver backend.
 
-Defaults live in `qspectro2d.config.defaults.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validate.validate_config`.
+Defaults live in `qspectro2d.config.defaults.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validate_config`.
 Unknown keys raise an error to avoid silently ignored typos.
 
 Common keys (for the supported solvers):

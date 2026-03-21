@@ -24,7 +24,7 @@ def _worker_polarisation(
 ) -> tuple[np.ndarray, np.ndarray, float, list[float]]:
     from qspectro2d.config.factory import load_simulation
 
-    sim_oqs = load_simulation(config_source, run_validation=False)
+    sim_oqs = load_simulation(config_source)
     sim_oqs.update_delays(t_coh=t_coh)
     sim_oqs.system.update_frequencies_cm(freq_vector)
     sim_oqs.laser.pulse_phases = [phi1, phi2, 0.0]
@@ -52,7 +52,7 @@ def compute_emitted_field_components(
     """Compute emitted-field components for the configured signal types."""
     from qspectro2d.config.factory import load_simulation_config
 
-    config = load_simulation_config(config_source, run_validation=False)
+    config = load_simulation_config(config_source)
     t_coh_value = float(t_coh)
 
     t_det = compute_t_det(config)

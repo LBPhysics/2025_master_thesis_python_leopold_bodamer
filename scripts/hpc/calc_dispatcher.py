@@ -19,9 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 import numpy as np
-from qspectro2d.config.factory import load_simulation, load_simulation_config
-from qspectro2d.config.io import load_config
-from qspectro2d.config.validate import validate_config
+from qspectro2d.config import resolve_config, validate_config
 from qspectro2d.spectroscopy import sample_from_gaussian
 from qspectro2d.utils.data_io import save_info_file
 from qspectro2d.utils.data_io import allocate_job_dir, ensure_job_layout, job_label_token
@@ -143,7 +141,7 @@ def estimate_slurm_resources(
                     continue
 
                 cfg_obj = load_simulation_config(str(cfg_path))
-                cfg_dict = load_config(str(cfg_path))
+                cfg_dict = resolve_config(str(cfg_path))
                 solver_name = str(cfg_dict.get("config", {}).get("solver", "redfield"))
                 rwa_val = bool(cfg_dict.get("laser", {}).get("rwa_sl", True))
 
@@ -365,7 +363,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print("GENERALIZED HPC DISPATCHER")
     print(f"Config path: {config_path}")
 
-    merged_cfg = load_config(str(config_path))
+    merged_cfg = resolve_config(str(config_path))
     effective_sim_type = (
         args.sim_type if args.sim_type is not None else merged_cfg["config"]["sim_type"]
     )
@@ -374,7 +372,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     validate_config(merged_cfg)
     print("✅ Merged config validated once.")
 
-    sim = load_simulation(merged_cfg, run_validation=False)
+    sim = load_simulation(merged_cfg)
     print("✅ Simulation object constructed from validated merged config.")
 
     time_cut = np.inf  # or local solver validation result if you want to pass that in

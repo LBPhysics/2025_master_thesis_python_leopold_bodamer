@@ -56,7 +56,12 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
         L_minus[idx_ge, idx_gg] = -1j * mu
         L_minus[idx_ge, idx_ee] = +1j * mu
 
-        ctx = {"L0": L0, "L_plus": L_plus, "L_minus": L_minus, "dims": [[[size], [size]], [[size], [size]]]}
+        ctx = {
+            "L0": L0,
+            "L_plus": L_plus,
+            "L_minus": L_minus,
+            "dims": [[[size], [size]], [[size], [size]]],
+        }
         setattr(sim_oqs, "_paper_liouvillian_ctx", ctx)
         return ctx
 
@@ -205,7 +210,12 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
     L_plus[idx_33, :] = -L_plus[idx_00, :] - L_plus[idx_11, :] - L_plus[idx_22, :]
     L_minus[idx_33, :] = -L_minus[idx_00, :] - L_minus[idx_11, :] - L_minus[idx_22, :]
 
-    ctx = {"L0": L0, "L_plus": L_plus, "L_minus": L_minus, "dims": [[[size], [size]], [[size], [size]]]}
+    ctx = {
+        "L0": L0,
+        "L_plus": L_plus,
+        "L_minus": L_minus,
+        "dims": [[[size], [size]], [[size], [size]]],
+    }
     setattr(sim_oqs, "_paper_liouvillian_ctx", ctx)
     return ctx
 

@@ -25,8 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from qspectro2d.config.factory import load_simulation
-from qspectro2d.config.io import load_config
-from qspectro2d.config.validate import validate_config
+from qspectro2d.config import resolve_config, validate_config
 from qspectro2d.core.simulation.time_axes import compute_t_coh, compute_global_t_det
 from qspectro2d.diagnostics import check_the_solver
 from qspectro2d.spectroscopy import compute_emitted_field_components, sample_from_gaussian
@@ -150,7 +149,7 @@ def main() -> None:
     print("LOCAL ALL-COMBINATIONS RUNNER")
     print(f"Config path: {config_path}")
 
-    merged_cfg = load_config(str(config_path))
+    merged_cfg = resolve_config(str(config_path))
     effective_sim_type = (
         args.sim_type if args.sim_type is not None else merged_cfg["config"]["sim_type"]
     )
@@ -159,7 +158,7 @@ def main() -> None:
     validate_config(merged_cfg)
     print("✅ Merged config validated once.")
 
-    sim = load_simulation(merged_cfg, run_validation=False)
+    sim = load_simulation(merged_cfg)
     print("✅ Simulation object constructed from validated merged config.")
 
     time_cut = check_the_solver(sim)

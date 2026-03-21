@@ -14,42 +14,14 @@ from ..core.laser_system.laser import LaserPulseSequence
 from ..core.simulation.sim_config import SimulationConfig
 from ..core.simulation.simulation import SimulationModuleOQS
 from ..utils.constants import convert_cm_to_fs
+from .config import resolve_config
 from .defaults import SUPPORTED_BATHS
-from .io import load_config, merge_config
-from .validate import validate_config
-
-
-def _ohmic_exponent(raw_value: float | None) -> float:
-    if raw_value is not None:
-        return float(raw_value)
-    return 1.0
-
-
-def _as_merged_config(
-    source: Mapping[str, Any] | str | Path | None,
-    *,
-    run_validation: bool = False,
-) -> dict[str, Any]:
-    if source is None:
-        cfg = load_config()
-    elif isinstance(source, Path):
-        cfg = load_config(str(source))
-    elif isinstance(source, str):
-        cfg = load_config(source)
-    else:
-        cfg = merge_config(source)
-
-    if run_validation:
-        validate_config(cfg)
-    return cfg
 
 
 def load_simulation_config(
     source: Mapping[str, Any] | str | Path | None = None,
-    *,
-    run_validation: bool = False,
 ) -> SimulationConfig:
-    cfg = _as_merged_config(source, run_validation=run_validation)
+    cfg = resolve_config(source)
     atomic_cfg = cfg["atomic"]
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
@@ -72,12 +44,7 @@ def load_simulation_config(
     )
 
 
-def load_simulation_laser(
-    source: Mapping[str, Any] | str | Path | None = None,
-    *,
-    run_validation: bool = False,
-) -> LaserPulseSequence:
-    cfg = _as_merged_config(source, run_validation=run_validation)
+def load_simulation_laser(cfg: dict[str, Any]) -> LaserPulseSequence:
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
 
@@ -91,12 +58,7 @@ def load_simulation_laser(
     )
 
 
-def load_simulation_atomic_system(
-    source: Mapping[str, Any] | str | Path | None = None,
-    *,
-    run_validation: bool = False,
-) -> AtomicSystem:
-    cfg = _as_merged_config(source, run_validation=run_validation)
+def load_simulation_atomic_system(cfg: dict[str, Any]) -> AtomicSystem:
     atomic_cfg = cfg["atomic"]
 
     return AtomicSystem(
@@ -110,13 +72,7 @@ def load_simulation_atomic_system(
     )
 
 
-def load_simulation_bath(
-    source: Mapping[str, Any] | str | Path | None = None,
-    *,
-    run_validation: bool = False,
-) -> BosonicEnvironment:
-    cfg = _as_merged_config(source, run_validation=run_validation)
-
+def load_simulation_bath(cfg: dict[str, Any]) -> BosonicEnvironment:
     atomic_cfg = cfg["atomic"]
     bath_cfg = cfg["bath"]
 
@@ -128,7 +84,7 @@ def load_simulation_bath(
     temperature = float(bath_cfg["temperature"]) * w0_fs
     cutoff = float(bath_cfg["cutoff"]) * w0_fs
     coupling = float(bath_cfg["coupling"])
-    bath_s = _ohmic_exponent(bath_cfg.get("s"))
+    bath_s = float(bath_cfg["s"])
     wmax_factor = float(bath_cfg["wmax_factor"])
     peak_strength = float(bath_cfg["peak_strength"]) * coupling
     peak_width = float(bath_cfg["peak_width"]) * w0_fs
@@ -203,23 +159,21 @@ def load_simulation_bath(
 
 def load_simulation(
     source: Mapping[str, Any] | str | Path | None = None,
-    *,
-    run_validation: bool = False,
 ) -> SimulationModuleOQS:
-    cfg = _as_merged_config(source, run_validation=run_validation)
+    cfg = resolve_config(source)
 
     return SimulationModuleOQS(
-        simulation_config=load_simulation_config(cfg, run_validation=False),
-        system=load_simulation_atomic_system(cfg, run_validation=False),
-        laser=load_simulation_laser(cfg, run_validation=False),
-        bath=load_simulation_bath(cfg, run_validation=False),
+        simulation_config=load_simulation_config(cfg),
+        system=load_simulation_atomic_system(cfg),
+        laser=load_simulation_laser(cfg),
+        bath=load_simulation_bath(cfg),
     )
 
 
 def create_base_sim_oqs(
     config_path: Path | None = None,
 ) -> tuple[SimulationModuleOQS, float]:
-    sim = load_simulation(config_path, run_validation=True)
+    sim = load_simulation(config_path)
 
     print("Base simulation created from config.")
 

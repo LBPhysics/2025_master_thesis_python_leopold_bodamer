@@ -151,7 +151,7 @@ def main() -> None:
 
     signal_types = job_metadata["signal_types"]
 
-    cfg = load_simulation_config(merged_cfg, run_validation=False)
+    cfg = load_simulation_config(merged_cfg)
     global_t_det = np.asarray(job_metadata.get("t_det", []), dtype=float)
     if global_t_det.size == 0:
         global_t_det = compute_global_t_det(cfg)

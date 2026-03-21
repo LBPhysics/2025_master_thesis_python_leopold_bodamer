@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from .io import load_config
-from .validate import validate_config, validate_defaults
+from .config import resolve_config, validate_config
 
 __all__ = [
-  "load_config",
-  "validate_config",
-  "validate_defaults",
+    "resolve_config",
+    "validate_config",
 ]

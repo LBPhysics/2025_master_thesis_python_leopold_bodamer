@@ -1,23 +1,10 @@
-"""Single source of truth for configuration defaults.
-
-This module keeps all raw defaults in one place so the rest of the config
-package can work with one merged config object instead of reconstructing state
-from scattered module globals.
-"""
+"""Constants for configuration."""
 
 from __future__ import annotations
 
 from copy import deepcopy
 
 import numpy as np
-
-# --- Generic defaults ---
-INITIAL_STATE = "ground"
-
-# --- Time and grid defaults (kept as flat vars for backward compat) ---
-DT = 0.1
-T_WAIT = 0.0
-DEFAULT_PULSE_FWHM_FS = 5.0
 
 # --- Supported options ---
 SUPPORTED_SOLVERS = ["lindblad", "redfield", "paper_eqs"]
@@ -37,7 +24,9 @@ SOLVER_OPTIONS = {
     "paper_eqs": {},
     "redfield": {
         "sec_cutoff": 0,
-        "method": "lsoda",  # can automatically switch stiff/non-stiff methods
+        "method": (
+            "bdf"
+        ),  # or lsoda (DOESNT WORK!!) can automatically switch stiff/non-stiff methods
         "nsteps": 10_000_000,
         "atol": 1e-3,
         "rtol": 1e-3,
@@ -80,6 +69,14 @@ COMPONENT_MAP: dict[str, tuple[int, int]] = {
 
 NEGATIVE_EIGVAL_THRESHOLD = -1e-3
 TRACE_TOLERANCE = 1e-6
+
+# --- Time and grid defaults (kept as flat vars for backward compat) ---
+DT = 0.1
+T_WAIT = 0.0
+DEFAULT_PULSE_FWHM_FS = 5.0
+
+# --- Generic defaults ---
+INITIAL_STATE = "ground"
 
 DEFAULTS = {
     "atomic": {
@@ -139,6 +136,7 @@ __all__ = [
     "COMPONENT_MAP",
     "DEFAULTS",
     "DPHI",
+    "get_defaults",
     "INITIAL_STATE",
     "NEGATIVE_EIGVAL_THRESHOLD",
     "N_PHASES",
@@ -153,5 +151,4 @@ __all__ = [
     "DEFAULT_PULSE_FWHM_FS",
     "T_WAIT",
     "DT",
-    "get_defaults",
 ]
