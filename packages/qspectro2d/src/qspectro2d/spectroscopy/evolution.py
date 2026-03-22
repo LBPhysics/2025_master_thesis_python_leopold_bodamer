@@ -17,6 +17,7 @@ SimulationModuleOQS.
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 
 import numpy as np
 from qutip import brmesolve, mesolve
@@ -32,6 +33,12 @@ __all__ = [
     "compute_polarisation_over_window",
     "simulation_with_pulses",
 ]
+
+
+def _redfield_debug_enabled() -> bool:
+    """Return whether verbose Redfield diagnostics are enabled explicitly."""
+    value = os.getenv("QSPECTRO2D_REDFIELD_DEBUG", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _validate_external_time_grid(tlist: np.ndarray) -> np.ndarray:
@@ -114,7 +121,8 @@ def compute_evolution(
                 **run_kwargs,
             )
         except Exception:
-            log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
+            if _redfield_debug_enabled():
+                log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
             raise
     elif solver in {"lindblad", "paper_eqs"}:
         result = mesolve(
