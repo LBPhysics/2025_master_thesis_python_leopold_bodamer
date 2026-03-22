@@ -34,7 +34,6 @@ from qspectro2d.core.simulation.time_axes import (
 from qspectro2d.diagnostics import check_the_solver
 from qspectro2d.spectroscopy import sample_from_gaussian
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
     if (_parent / ".git").is_dir():
@@ -183,6 +182,15 @@ def prepare_workflow(
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
     t_det_axis = np.asarray(compute_t_det(sim.simulation_config), dtype=float)
     times_local = np.asarray(compute_times_local(sim.simulation_config), dtype=float)
+
+    # Ensure pulses do not overlap by enforcing minimum delays
+    dt = float(sim.simulation_config.dt)
+    if effective_sim_type in {"1d", "2d"}:
+        t_coh_values = t_coh_values[t_coh_values >= dt]
+        if t_coh_values.size == 0:
+            raise ValueError(
+                f"No valid t_coh values >= dt={dt:.3f} fs after filtering to prevent pulse overlap"
+            )
 
     if t_det_axis.size == 0 and effective_sim_type != "0d":
         raise RuntimeError(

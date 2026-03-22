@@ -136,14 +136,13 @@ The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging a
 
 You can pass solver-specific knobs under `config.solver_options`. These are forwarded to the selected QuTiP solver backend.
 
-Defaults live in `qspectro2d.config.defaults.SOLVER_OPTIONS`, and the allowed keys are validated in `qspectro2d.config.validate_config`.
+Default solver options live in `qspectro2d.config.defaults.DEFAULTS["config"]["solver_options"]`, and the allowed keys are validated in `qspectro2d.config.validate_config`.
 Unknown keys raise an error to avoid silently ignored typos.
 
 Common keys (for the supported solvers):
 - `atol`, `rtol`: absolute/relative tolerances (must be > 0)
 - `nsteps`: maximum allowed internal steps (must be > 0)
 - `method`: ODE method string (e.g. `"bdf"`)
-- `max_step`, `min_step`: optional step size limits
 
 Solver-specific keys:
 - `redfield`:

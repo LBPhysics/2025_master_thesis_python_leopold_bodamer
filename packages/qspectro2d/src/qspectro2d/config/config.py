@@ -12,7 +12,6 @@ import yaml
 from .defaults import (
     ALLOWED_SOLVER_OPTIONS,
     COMPONENT_MAP,
-    SOLVER_OPTIONS,
     SUPPORTED_BATHS,
     SUPPORTED_ENVELOPES,
     SUPPORTED_SIM_TYPES,
@@ -41,8 +40,7 @@ def _merge_dict(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, 
 
 
 def _normalize_solver_options(solver: str, solver_options: Mapping[str, Any]) -> dict[str, Any]:
-    merged = dict(SOLVER_OPTIONS.get(solver, {}))
-    merged.update(dict(solver_options))
+    merged = dict(solver_options)
     allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(solver, []))
 
     normalized: dict[str, Any] = {}
@@ -104,8 +102,8 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         sim_cfg.get("solver_options", {}),
     )
 
-    if solver == "redfield" and sim_cfg["solver_options"].get("max_step") is None:
-        sim_cfg["solver_options"]["max_step"] = float(laser_cfg["pulse_fwhm_fs"]) / 4.0
+    if solver in {"lindblad", "redfield"}:
+        sim_cfg["solver_options"]["max_step"] = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
 
     return cfg
 
@@ -167,10 +165,10 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
 
     if dt <= 0:
         raise ValueError("dt must be > 0")
-    if t_coh < 0:
-        raise ValueError("t_coh must be >= 0")
-    if t_wait < 0:
-        raise ValueError("t_wait must be >= 0")
+    if t_coh < dt:
+        raise ValueError("t_coh must be >= dt")
+    if t_wait < dt:
+        raise ValueError("t_wait must be >= dt")
     if t_det <= 0:
         raise ValueError("t_det must be > 0")
 
@@ -233,19 +231,14 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
     rtol = solver_options.get("rtol")
     nsteps = solver_options.get("nsteps")
     max_step = solver_options.get("max_step")
-    min_step = solver_options.get("min_step")
     if atol is not None and atol <= 0:
         raise ValueError("solver_options.atol must be > 0")
     if rtol is not None and rtol <= 0:
         raise ValueError("solver_options.rtol must be > 0")
     if nsteps is not None and nsteps <= 0:
         raise ValueError("solver_options.nsteps must be > 0")
-    if min_step is not None and min_step < 0:
-        raise ValueError("solver_options.min_step must be >= 0")
     if max_step is not None and max_step < 0:
         raise ValueError("solver_options.max_step must be >= 0")
-    if min_step is not None and max_step is not None and min_step > max_step:
-        raise ValueError("solver_options.min_step must be <= solver_options.max_step")
 
     allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(ode_solver, []))
     unknown_keys = set(solver_options) - allowed_keys

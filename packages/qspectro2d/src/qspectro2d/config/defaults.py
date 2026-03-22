@@ -20,37 +20,16 @@ SUPPORTED_ENVELOPES = ["gaussian", "cos2", "delta"]
 
 SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
 
-SOLVER_OPTIONS = {
-    "paper_eqs": {},
-    "redfield": {
-        "sec_cutoff": 0,
-        "method": (
-            "bdf"
-        ),  # or lsoda (DOESNT WORK!!) can automatically switch stiff/non-stiff methods
-        "nsteps": 10_000_000,
-        "atol": 1e-3,
-        "rtol": 1e-3,
-        "max_step": None,
-    },
-    "lindblad": {
-        "atol": 1e-5,
-        "rtol": 1e-3,
-        "nsteps": 200_000,
-        "method": "bdf",
-    },
-}
-
 ALLOWED_SOLVER_OPTIONS = {
     "paper_eqs": [],
-    "lindblad": ["atol", "rtol", "nsteps", "method", "max_step", "min_step"],
+    "lindblad": ["atol", "rtol", "nsteps", "method", "max_step"],
     "redfield": [
         "atol",
         "rtol",
         "nsteps",
         "method",
-        "max_step",
-        "min_step",
         "sec_cutoff",
+        "max_step",
     ],
 }
 
@@ -72,11 +51,14 @@ TRACE_TOLERANCE = 1e-6
 
 # --- Time and grid defaults (kept as flat vars for backward compat) ---
 DT = 0.1
-T_WAIT = 0.0
+T_DET = 1.0
+T_COH = T_DET
+T_WAIT = DT
 DEFAULT_PULSE_FWHM_FS = 5.0
 
 # --- Generic defaults ---
 INITIAL_STATE = "ground"
+
 
 DEFAULTS = {
     "atomic": {
@@ -112,16 +94,22 @@ DEFAULTS = {
     },
     "config": {
         "solver": "redfield",
-        "solver_options": {},
+        "solver_options": {
+            "sec_cutoff": -1,
+            "method": "bdf",
+            "nsteps": 10_000,
+            "atol": 1e-5,
+            "rtol": 1e-4,
+        },
         "sim_type": "1d",
-        "t_det": 20.0,
-        "t_coh": 20.0,
+        "t_det": T_DET,
+        "t_coh": T_COH,
         "t_wait": T_WAIT,
         "dt": DT,
         "n_phases": N_PHASES,
         "signal_types": list(SIGNAL_TYPES),
         "initial_state": INITIAL_STATE,
-        "max_workers": None,
+        "max_workers": 1,
     },
 }
 
@@ -150,7 +138,6 @@ __all__ = [
     "N_PHASES",
     "PHASE_CYCLING_PHASES",
     "SIGNAL_TYPES",
-    "SOLVER_OPTIONS",
     "SUPPORTED_BATHS",
     "SUPPORTED_ENVELOPES",
     "SUPPORTED_SIM_TYPES",

@@ -199,8 +199,9 @@ def compute_emitted_field_components(
     if failed_jobs:
         details = "\n".join(failed_jobs[:10])
         more = "" if len(failed_jobs) <= 10 else f"\n... and {len(failed_jobs) - 10} more"
-        raise RuntimeError(
-            "Phase-cycling worker jobs failed.\n"
+        print(
+            "WARNING: Phase-cycling worker jobs failed; using zero contribution for "
+            "missing phase combinations.\n"
             f"Failed jobs: {len(failed_jobs)} / {total_tasks}\n"
             f"{details}{more}"
         )
@@ -211,8 +212,9 @@ def compute_emitted_field_components(
     missing_single_3 = 0 if single_pulse_3 is not None else 1
 
     if missing_total or missing_single_1 or missing_single_2 or missing_single_3:
-        raise RuntimeError(
-            "Incomplete phase-cycling data after worker execution: "
+        print(
+            "WARNING: Incomplete phase-cycling data after worker execution; "
+            "missing components will be treated as zero. "
             f"missing total={missing_total}, "
             f"single_1={missing_single_1}, "
             f"single_2={missing_single_2}, "

@@ -32,12 +32,12 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from common.workflow import (
+    PROJECT_ROOT,
     RUNS_ROOT,
     build_job_metadata,
     prepare_workflow,
     write_json,
 )
-
 
 DEFAULT_CPUS_PER_TASK = 25
 DEFAULT_PARTITION = "GPGPU,metis"
@@ -347,6 +347,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"  batch {batch_idx}: {len(combos_subset)} combo(s) -> {script_path.name}")
 
     print(f"Artifacts written to {job_dir}")
+
+    print("AFTERWORDS \n🎯 Plot with:")
+    plot_script = (PROJECT_ROOT / "scripts" / "hpc" / "plot_dispatcher.py").resolve()
+    print(f"python {plot_script} --job_dir {job_dir}")
 
     if args.no_submit:
         print("Skipping submission (--no_submit set).")
