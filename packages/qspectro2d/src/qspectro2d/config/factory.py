@@ -43,8 +43,10 @@ def _simulation_config_from_resolved(cfg: Mapping[str, Any]) -> SimulationConfig
 
 def load_simulation_config(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
+    emit_runtime_warnings: bool = True,
 ) -> SimulationConfig:
-    cfg = resolve_config(source)
+    cfg = resolve_config(source, emit_runtime_warnings=emit_runtime_warnings)
     return _simulation_config_from_resolved(cfg)
 
 
@@ -168,8 +170,10 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
 
 def load_simulation(
     source: Mapping[str, Any] | str | Path | None = None,
+    *,
+    emit_runtime_warnings: bool = True,
 ) -> SimulationModuleOQS:
-    cfg = resolve_config(source)
+    cfg = resolve_config(source, emit_runtime_warnings=emit_runtime_warnings)
 
     return SimulationModuleOQS(
         simulation_config=_simulation_config_from_resolved(cfg),

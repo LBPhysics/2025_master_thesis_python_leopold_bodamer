@@ -115,7 +115,7 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     return merge_config(_read_yaml(Path(path)))
 
 
-def validate_config(cfg: Mapping[str, Any]) -> None:
+def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = True) -> None:
     atomic_cfg = cfg["atomic"]
     laser_cfg = cfg["laser"]
     bath_cfg = cfg["bath"]
@@ -258,7 +258,7 @@ def validate_config(cfg: Mapping[str, Any]) -> None:
     if unknown_signal_types:
         raise ValueError(f"Unsupported signal_types: {unknown_signal_types}")
 
-    if rwa_sl:
+    if rwa_sl and emit_runtime_warnings:
         freqs_array = np.asarray(frequencies_cm, dtype=float)
         max_detuning = np.max(np.abs(freqs_array - carrier_freq_cm))
         rel_detuning = max_detuning / carrier_freq_cm if carrier_freq_cm != 0 else np.inf
@@ -276,14 +276,18 @@ def validate_defaults() -> None:
     validate_config(load_config())
 
 
-def resolve_config(config_or_path: Mapping[str, Any] | str | Path | None = None) -> dict[str, Any]:
+def resolve_config(
+    config_or_path: Mapping[str, Any] | str | Path | None = None,
+    *,
+    emit_runtime_warnings: bool = True,
+) -> dict[str, Any]:
     """Resolve config from path or dict, merging and validating."""
     cfg: dict[str, Any]
     if config_or_path is None or isinstance(config_or_path, (str, Path)):
         cfg = load_config(config_or_path)
     else:
         cfg = merge_config(config_or_path)
-    validate_config(cfg)
+    validate_config(cfg, emit_runtime_warnings=emit_runtime_warnings)
     return cfg
 
 

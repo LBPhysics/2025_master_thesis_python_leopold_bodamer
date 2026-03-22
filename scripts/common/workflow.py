@@ -163,8 +163,8 @@ def prepare_workflow(
     if max_workers is not None:
         merged_cfg.setdefault("config", {})["max_workers"] = int(max_workers)
 
-    validate_config(merged_cfg)
-    sim = load_simulation(merged_cfg)
+    validate_config(merged_cfg, emit_runtime_warnings=False)
+    sim = load_simulation(merged_cfg, emit_runtime_warnings=False)
     effective_sim_type = str(sim.simulation_config.sim_type)
 
     _set_random_seed(rng_seed)

@@ -51,7 +51,7 @@ def _worker_polarisation(
     """Worker for one phase-cycling polarisation calculation."""
     from qspectro2d.config.factory import load_simulation
 
-    sim_oqs = load_simulation(config_source)
+    sim_oqs = load_simulation(config_source, emit_runtime_warnings=False)
     sim_oqs.update_delays(t_coh=t_coh)
     sim_oqs.system.update_frequencies_cm(freq_vector)
     sim_oqs.refresh_cache()
@@ -76,7 +76,7 @@ def compute_emitted_field_components(
     """Compute emitted-field components for the configured signal types."""
     from qspectro2d.config.factory import load_simulation_config
 
-    config = load_simulation_config(config_source)
+    config = load_simulation_config(config_source, emit_runtime_warnings=False)
     t_coh_value = float(t_coh)
 
     if detection_window is None:
