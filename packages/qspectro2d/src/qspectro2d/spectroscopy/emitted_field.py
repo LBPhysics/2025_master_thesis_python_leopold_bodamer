@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
 from typing import Any, Mapping
 
 import numpy as np
@@ -72,8 +72,13 @@ def compute_emitted_field_components(
     lm: tuple[int, int] | None = None,
     time_cut: float | None = None,
     detection_window: np.ndarray | list[float] | None = None,
+    executor: Executor | None = None,
 ) -> list[np.ndarray]:
-    """Compute emitted-field components for the configured signal types."""
+    """Compute emitted-field components for the configured signal types.
+
+    When ``executor`` is provided, it is reused for the phase-cycling tasks.
+    This avoids creating a fresh process pool for every single (t_coh, sample) combo.
+    """
     from qspectro2d.config.factory import load_simulation_config
 
     config = load_simulation_config(config_source, emit_runtime_warnings=False)
@@ -96,7 +101,7 @@ def compute_emitted_field_components(
         )
 
     signal_types = config.signal_types
-    phase_values = phase_cycling_phases(config.n_phases)
+    phase_values = [float(phi) for phi in phase_cycling_phases(config.n_phases)]
 
     component_count = len(t_det)
 
@@ -118,8 +123,14 @@ def compute_emitted_field_components(
 
     total_tasks = len(phase_values) ** 2 + 2 * len(phase_values) + 1
     detection_window_list = t_det.tolist()
+    max_workers = max(1, min(int(config.max_workers), total_tasks))
 
-    with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
+    owns_executor = executor is None
+    if owns_executor:
+        executor = ProcessPoolExecutor(max_workers=max_workers)
+
+    assert executor is not None
+    try:
         futures = {}
 
         for phi1 in phase_values:
@@ -195,6 +206,9 @@ def compute_emitted_field_components(
                 single_pulse_3 = polarisation
             else:
                 raise RuntimeError(f"Unexpected worker kind: {worker_kind}")
+    finally:
+        if owns_executor:
+            executor.shutdown(wait=True)
 
     if failed_jobs:
         details = "\n".join(failed_jobs[:10])
@@ -203,7 +217,8 @@ def compute_emitted_field_components(
             "WARNING: Phase-cycling worker jobs failed; using zero contribution for "
             "missing phase combinations.\n"
             f"Failed jobs: {len(failed_jobs)} / {total_tasks}\n"
-            f"{details}{more}"
+            f"{details}{more}",
+            flush=True,
         )
 
     missing_total = len(phase_values) ** 2 - len(total_polarisations)
@@ -218,7 +233,8 @@ def compute_emitted_field_components(
             f"missing total={missing_total}, "
             f"single_1={missing_single_1}, "
             f"single_2={missing_single_2}, "
-            f"single_3={missing_single_3}"
+            f"single_3={missing_single_3}",
+            flush=True,
         )
 
     for phi1 in phase_values:

@@ -39,7 +39,7 @@ from common.workflow import (
     write_json,
 )
 
-DEFAULT_CPUS_PER_TASK = 25
+DEFAULT_CPUS_PER_TASK = 25  # makes sense if each phase combo is as costly as the others
 DEFAULT_PARTITION = "GPGPU,metis"
 
 
@@ -92,7 +92,7 @@ def estimate_slurm_resources(
     solver_factor = {
         "paper_eqs": 1.0,
         "lindblad": 1.5,
-        "redfield": 4.0,
+        "redfield": 20.0,
     }
     if solver not in solver_factor:
         raise ValueError(f"Unsupported solver '{solver}'.")
@@ -124,6 +124,8 @@ def _render_slurm_script(
     python_executable: Path,
     combos_path: Path,
     samples_path: Path,
+    time_cut: float,
+    sim_type: str,
     batch_idx: int,
     n_batches: int,
     cpus_per_task: int,
@@ -154,6 +156,8 @@ export NUMEXPR_NUM_THREADS=1
 {python_cmd} -u {worker_arg} \\
   --combos_file "{combos_path}" \\
   --samples_file "{samples_path}" \\
+  --time_cut {time_cut:.12g} \\
+  --sim_type {sim_type} \\
   --batch_id {batch_idx} \\
   --n_batches {n_batches}
 """
@@ -334,6 +338,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 python_executable=python_executable,
                 combos_path=combos_path.resolve(),
                 samples_path=samples_path.resolve(),
+                time_cut=time_cut,
+                sim_type=prepared.sim_type,
                 batch_idx=batch_idx,
                 n_batches=args.n_batches,
                 cpus_per_task=int(args.cpus_per_task),

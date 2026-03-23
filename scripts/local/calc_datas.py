@@ -42,7 +42,6 @@ from common.workflow import (
     write_json,
 )
 
-
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -145,47 +144,60 @@ def main() -> None:
     signal_types = list(prepared.sim.simulation_config.signal_types)
     global_n_t = int(prepared.t_det_axis.size)
 
+    from concurrent.futures import ProcessPoolExecutor
+
     t_start = time.time()
     saved_paths: list[str] = []
 
-    for combo in prepared.combinations:
-        freq_vector = prepared.samples[combo.inhom_index, :].astype(float)
+    max_workers = int(prepared.sim.simulation_config.max_workers)
 
-        print(
-            f"\n--- combo {combo.index + 1} / {len(prepared.combinations)}: "
-            f"t_idx={combo.t_index}, t_coh={combo.t_coh:.4f} fs, "
-            f"inhom_idx={combo.inhom_index} ---"
-        )
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for combo in prepared.combinations:
+            freq_vector = prepared.samples[combo.inhom_index, :].astype(float)
 
-        e_components = compute_emitted_field_components(
-            config_source=prepared.merged_cfg,
-            t_coh=combo.t_coh,
-            freq_vector=freq_vector.tolist(),
-            time_cut=prepared.time_cut,
-            detection_window=prepared.t_det_axis,
-        )
+            print(
+                f"\n--- combo {combo.index + 1} / {len(prepared.combinations)}: "
+                f"t_idx={combo.t_index}, t_coh={combo.t_coh:.4f} fs, "
+                f"inhom_idx={combo.inhom_index} ---"
+            )
 
-        padded_components = pad_or_crop_signals(e_components, global_n_t)
+            print("    ▶ entering compute_emitted_field_components()", flush=True)
+            call_start = time.time()
+            e_components = compute_emitted_field_components(
+                config_source=prepared.merged_cfg,
+                t_coh=combo.t_coh,
+                freq_vector=freq_vector.tolist(),
+                time_cut=prepared.time_cut,
+                detection_window=prepared.t_det_axis,
+                executor=executor,
+            )
+            call_elapsed = time.time() - call_start
+            print(
+                f"    ✔ compute_emitted_field_components() returned in {call_elapsed:.2f} s",
+                flush=True,
+            )
 
-        metadata_combo = build_run_metadata(
-            signal_types=signal_types,
-            sim_type="1d" if prepared.sim_type == "2d" else prepared.sim_type,
-            sample_index=combo.inhom_index,
-            t_coh_value=combo.t_coh,
-            run_status="ok",
-            t_index=int(combo.t_index),
-            global_index=int(combo.index),
-        )
+            padded_components = pad_or_crop_signals(e_components, global_n_t)
 
-        path = save_run_artifact(
-            signal_arrays=padded_components,
-            metadata=metadata_combo,
-            frequency_sample_cm=freq_vector,
-            data_dir=data_base_path.parent,
-            filename=f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz",
-        )
-        saved_paths.append(str(path))
-        print(f"    ✅ saved {path}")
+            metadata_combo = build_run_metadata(
+                signal_types=signal_types,
+                sim_type="1d" if prepared.sim_type == "2d" else prepared.sim_type,
+                sample_index=combo.inhom_index,
+                t_coh_value=combo.t_coh,
+                run_status="ok",
+                t_index=int(combo.t_index),
+                global_index=int(combo.index),
+            )
+
+            path = save_run_artifact(
+                signal_arrays=padded_components,
+                metadata=metadata_combo,
+                frequency_sample_cm=freq_vector,
+                data_dir=data_base_path.parent,
+                filename=f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz",
+            )
+            saved_paths.append(str(path))
+            print(f"    ✅ saved {path}")
 
     elapsed = time.time() - t_start
     print("=" * 80)
