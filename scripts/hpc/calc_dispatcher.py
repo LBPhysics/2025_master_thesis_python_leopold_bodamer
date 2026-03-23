@@ -1,14 +1,15 @@
 """Dispatch SLURM jobs for combined t_coh × inhomogeneity samples.
 
-The main simplification in this version is that all shared preparation is done
-via ``common.workflow.prepare_workflow`` instead of re-implementing that logic
-in both the local and HPC runners.
+This version centralises shared preparation and additionally wires an automatic
+1D retry pass for incomplete phase-cycling points. The retry pass is submitted
+as a dependent dispatcher job after the primary batch jobs finish.
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+import re
 import shlex
 import shutil
 import subprocess
@@ -41,6 +42,10 @@ from common.workflow import (
 
 DEFAULT_CPUS_PER_TASK = 25  # makes sense if each phase combo is as costly as the others
 DEFAULT_PARTITION = "GPGPU,metis"
+DEFAULT_RETRY_CPUS_PER_TASK = 8
+DEFAULT_RETRY_BATCH_SIZE = 10
+DEFAULT_RETRY_TIME = "01:00:00"
+DEFAULT_RETRY_MEM = "2048M"
 
 
 def _split_indices(n_items: int, n_batches: int) -> list[np.ndarray]:
@@ -163,23 +168,65 @@ export NUMEXPR_NUM_THREADS=1
 """
 
 
-def submit_sbatch(script_path: Path) -> str:
+def _render_retry_dispatcher_script(
+    *,
+    job_name: str,
+    log_dir: Path,
+    dispatcher_path: Path,
+    python_executable: Path,
+    job_dir: Path,
+    retry_batch_size: int,
+    retry_cpus_per_task: int,
+    retry_mem: str,
+    retry_time: str,
+    partition: str,
+) -> str:
+    python_cmd = shlex.quote(str(python_executable))
+    dispatcher_arg = shlex.quote(str(dispatcher_path))
+    return f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --output={log_dir}/%x.out
+#SBATCH --error={log_dir}/%x.err
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=512M
+#SBATCH --time=00:10:00
+#SBATCH --partition={partition}
+
+set -euo pipefail
+export PYTHONUNBUFFERED=1
+
+{python_cmd} -u {dispatcher_arg} \\
+  --job_dir "{job_dir}" \\
+  --retry_batch_size {retry_batch_size} \\
+  --cpus_per_task {retry_cpus_per_task} \\
+  --mem {retry_mem} \\
+  --time {retry_time} \\
+  --partition {partition}
+"""
+
+
+def _parse_sbatch_job_id(message: str) -> str | None:
+    match = re.search(r"Submitted batch job\s+(\d+)", message)
+    return match.group(1) if match else None
+
+
+def submit_sbatch(script_path: Path, *, dependency: str | None = None) -> str:
     sbatch = shutil.which("sbatch")
     if sbatch is None:
         raise RuntimeError("sbatch not found on PATH. Run this on your cluster login node.")
 
-    try:
-        result = subprocess.run(
-            [sbatch, str(script_path)],
-            cwd=str(script_path.parent),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-        raise RuntimeError(f"sbatch failed with exit code {exc.returncode}: {message}") from exc
+    cmd = [sbatch]
+    if dependency is not None:
+        cmd.append(f"--dependency={dependency}")
+    cmd.append(str(script_path))
 
+    result = subprocess.run(
+        cmd,
+        cwd=str(script_path.parent),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     return result.stdout.strip()
 
 
@@ -212,7 +259,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--cpus_per_task",
         type=int,
         default=DEFAULT_CPUS_PER_TASK,
-        help="SLURM CPUs per batch job",
+        help="SLURM CPUs per primary batch job",
     )
     parser.add_argument(
         "--partition",
@@ -224,6 +271,11 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--no_submit",
         action="store_true",
         help="Only generate job artifacts and SLURM scripts",
+    )
+    parser.add_argument(
+        "--no_auto_retry",
+        action="store_true",
+        help="Do not submit the dependent retry dispatcher job automatically",
     )
     return parser.parse_args(argv)
 
@@ -352,6 +404,29 @@ def main(argv: Sequence[str] | None = None) -> None:
         script_paths.append(script_path)
         print(f"  batch {batch_idx}: {len(combos_subset)} combo(s) -> {script_path.name}")
 
+    retry_dispatcher_script = None
+    if not args.no_auto_retry:
+        retry_dispatcher_path = (SCRIPTS_DIR / "hpc" / "dispatch_phase_retry.py").resolve()
+        if not retry_dispatcher_path.exists():
+            raise FileNotFoundError(f"Missing retry dispatcher script: {retry_dispatcher_path}")
+        retry_dispatcher_script = job_dir / "dispatch_retry.slurm"
+        retry_dispatcher_script.write_text(
+            _render_retry_dispatcher_script(
+                job_name="retrydispatch",
+                log_dir=logs_dir.resolve(),
+                dispatcher_path=retry_dispatcher_path,
+                python_executable=python_executable,
+                job_dir=job_dir.resolve(),
+                retry_batch_size=DEFAULT_RETRY_BATCH_SIZE,
+                retry_cpus_per_task=DEFAULT_RETRY_CPUS_PER_TASK,
+                retry_mem=DEFAULT_RETRY_MEM,
+                retry_time=DEFAULT_RETRY_TIME,
+                partition=args.partition,
+            ),
+            encoding="utf-8",
+        )
+        print(f"  auto-retry dispatcher -> {retry_dispatcher_script.name}")
+
     print(f"Artifacts written to {job_dir}")
 
     print("AFTERWORDS \n🎯 Plot with:")
@@ -363,9 +438,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     print("Submitting SLURM jobs...")
+    main_job_ids: list[str] = []
     for script_path in script_paths:
         submit_msg = submit_sbatch(script_path)
         print(f"  {script_path.name}: {submit_msg}")
+        job_id = _parse_sbatch_job_id(submit_msg)
+        if job_id:
+            main_job_ids.append(job_id)
+
+    if retry_dispatcher_script is not None and main_job_ids:
+        dependency = "afterany:" + ":".join(main_job_ids)
+        retry_submit_msg = submit_sbatch(retry_dispatcher_script, dependency=dependency)
+        print(f"  {retry_dispatcher_script.name}: {retry_submit_msg}")
 
     print("Done.")
 

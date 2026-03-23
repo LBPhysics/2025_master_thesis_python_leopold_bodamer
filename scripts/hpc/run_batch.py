@@ -18,9 +18,15 @@ from typing import Any, Iterable
 import numpy as np
 
 from qspectro2d.spectroscopy import compute_emitted_field_components
-from qspectro2d.utils.data_io import save_run_artifact, build_run_metadata, pad_or_crop_signals
+from qspectro2d.utils.data_io import build_run_metadata, pad_or_crop_signals, save_run_artifact
 from qspectro2d.core.simulation.time_axes import compute_t_det
 from qspectro2d.config.factory import load_simulation_config
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in os.sys.path:
+    os.sys.path.insert(0, str(SCRIPTS_DIR))
+
+from common.retry_queue import append_retry_candidate, ensure_retry_dir
 
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
@@ -117,15 +123,13 @@ def main() -> None:
             merged_cfg.setdefault("config", {})["max_workers"] = cpus_per_task
             print(f"Using max_workers={cpus_per_task} from SLURM_CPUS_PER_TASK", flush=True)
 
-    try:
-        data_dir = Path(job_metadata["data_dir"]).resolve()
-        prefix = str(job_metadata["data_base_name"])
-        data_base_path = Path(job_metadata["data_base_path"]).resolve()
-    except KeyError as exc:
-        missing = exc.args[0]
-        raise KeyError(f"job_metadata.json missing required key: {missing}") from exc
-
+    data_dir = Path(job_metadata["data_dir"]).resolve()
+    prefix = str(job_metadata["data_base_name"])
+    data_base_path = Path(job_metadata["data_base_path"]).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    retry_dir = ensure_retry_dir(job_dir)
+    retry_candidates_path = retry_dir / f"retry_candidates_batch_{args.batch_id:03d}.jsonl"
 
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")
@@ -140,13 +144,18 @@ def main() -> None:
         return
 
     print(f"Loaded {len(combinations)} combination(s).")
+    total_global_combinations = int(job_metadata.get("n_t_coh", 0)) * int(
+        job_metadata.get("n_inhom", 0)
+    )
+    if total_global_combinations <= 0:
+        total_global_combinations = len(combinations)
 
     samples = np.load(samples_path)
     if samples.ndim != 2:
         raise ValueError(
             f"Expected samples array with shape (n_inhom, n_atoms); got {samples.shape}"
         )
-    n_inhom, _ = samples.shape
+    n_inhom, _n_atoms = samples.shape
 
     samples_target = data_dir / f"{prefix}_samples.npy"
     if not samples_target.exists():
@@ -170,7 +179,7 @@ def main() -> None:
         )
     global_n_t = len(global_t_det)
 
-    phase_jobs = cfg.n_phases * cfg.n_phases + 2 * cfg.n_phases + 1
+    phase_jobs = int(cfg.n_phases) ** 2 + 2 * int(cfg.n_phases) + 1
     pool_workers = max(1, min(int(cfg.max_workers), phase_jobs))
     print(
         f"Reusing one shared phase-cycling process pool for this batch: "
@@ -182,6 +191,7 @@ def main() -> None:
     saved_paths: list[str] = []
     failed_combos = 0
     all_zero_combos = 0
+    incomplete_combos = 0
 
     with ProcessPoolExecutor(max_workers=pool_workers) as executor:
         for combo_idx, combo in enumerate(_iter_combos(combinations), start=1):
@@ -189,6 +199,11 @@ def main() -> None:
             inhom_idx = combo.get("inhom_index")
             global_idx = combo.get("index")
             t_coh_val = float(combo.get("t_coh_value"))
+
+            try:
+                global_progress = int(global_idx) + 1
+            except (TypeError, ValueError):
+                global_progress = combo_idx
 
             if inhom_idx < 0 or inhom_idx >= n_inhom:
                 raise IndexError(
@@ -198,14 +213,15 @@ def main() -> None:
             freq_vector = samples[inhom_idx, :].astype(float)
 
             print(
-                f"\n--- combo {combo_idx} / {len(combinations)} (global {global_idx}): "
+                f"\n--- combo {combo_idx} / {len(combinations)} "
+                f"(global {global_progress} / {total_global_combinations}): "
                 f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
             )
 
             run_status = "ok"
             error_message = None
             try:
-                print("    ▶ entering compute_emitted_field_components()", flush=True)
+                # print("    ▶ entering compute_emitted_field_components()", flush=True)
                 call_start = time.time()
                 e_components, run_status, error_message = compute_emitted_field_components(
                     config_source=merged_cfg,
@@ -224,6 +240,7 @@ def main() -> None:
                 padded_components = pad_or_crop_signals(e_components, global_n_t)
 
                 if run_status != "ok":
+                    incomplete_combos += 1
                     print(
                         f"    ⚠️ combo marked as {run_status}; it will be skipped by process_datas.py",
                         flush=True,
@@ -236,9 +253,9 @@ def main() -> None:
                     print("    ⚠️ combo returned all-zero signal arrays", flush=True)
 
             except Exception as exc:
-                if isinstance(
-                    exc, RuntimeError
-                ) and "Invariant violation: empty detection axis" in str(exc):
+                if isinstance(exc, RuntimeError) and "Invariant violation: empty detection axis" in str(
+                    exc
+                ):
                     raise
                 failed_combos += 1
                 run_status = "failed_fallback_zero"
@@ -263,16 +280,34 @@ def main() -> None:
                 **({"error": error_message} if error_message is not None else {}),
             )
 
+            filename = f"{prefix}_run_t{t_idx:03d}_s{inhom_idx:03d}.npz"
             path = save_run_artifact(
                 signal_arrays=padded_components,
                 metadata=metadata_combo,
                 frequency_sample_cm=freq_vector,
                 data_dir=data_dir,
-                filename=f"{prefix}_run_t{t_idx:03d}_s{inhom_idx:03d}.npz",
+                filename=filename,
             )
 
             saved_paths.append(str(path))
             print(f"    ✅ saved {path}")
+
+            if run_status != "ok":
+                append_retry_candidate(
+                    retry_candidates_path,
+                    {
+                        "resolved_config_path": str(config_path.resolve()),
+                        "t_index": int(t_idx),
+                        "t_coh_value": float(t_coh_val),
+                        "inhom_index": int(inhom_idx),
+                        "freq_vector": freq_vector.astype(float).tolist(),
+                        "time_cut": float(args.time_cut),
+                        "original_run_status": run_status,
+                        "original_error": error_message,
+                        "original_artifact_path": str(path),
+                        "job_dir": str(job_dir.resolve()),
+                    },
+                )
 
     elapsed = time.time() - t_start
     print("=" * 80)
@@ -282,19 +317,17 @@ def main() -> None:
     )
     if failed_combos:
         print(f"Fallback zero-signal outputs written for {failed_combos} failed combination(s).")
+    if incomplete_combos:
+        print(
+            f"Retry candidates written to {retry_candidates_path} "
+            f"({incomplete_combos} incomplete combination(s))."
+        )
     if all_zero_combos:
-        print(f"All-zero outputs returned without exception for {all_zero_combos} combination(s).")
+        print(f"All-zero signal outputs observed for {all_zero_combos} combination(s).")
     if saved_paths:
         print("Latest artifact:")
         print(f"  {saved_paths[-1]}")
     print("=" * 80)
-
-    if (
-        args.batch_id is not None
-        and args.n_batches is not None
-        and args.batch_id == args.n_batches - 1
-    ):
-        print("This was the final batch. You can now run post-processing/plotting.")
 
 
 if __name__ == "__main__":

@@ -17,8 +17,8 @@ if str(SCRIPTS_DIR) not in sys.path:
 import argparse
 import time
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import yaml
@@ -34,6 +34,12 @@ from qspectro2d.utils.data_io import (
     save_run_artifact,
 )
 
+from common.retry_queue import (
+    append_retry_candidate,
+    dedupe_retry_candidates,
+    ensure_retry_dir,
+    load_retry_candidates,
+)
 from common.workflow import (
     PROJECT_ROOT,
     RUNS_ROOT,
@@ -41,6 +47,7 @@ from common.workflow import (
     prepare_workflow,
     write_json,
 )
+
 
 warnings.filterwarnings(
     "ignore",
@@ -100,12 +107,12 @@ def main() -> None:
     job_paths = ensure_job_layout(job_dir, base_name="raw")
     data_base_path = job_paths.data_base_path
 
-    print(f"Job workspace: {job_paths.job_dir}")
+    # print(f"Job workspace: {job_paths.job_dir}")
 
     config_copy_path = job_paths.job_dir / prepared.config_path.name
     with config_copy_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(prepared.merged_cfg, handle, sort_keys=False)
-    print(f"✅ Resolved config written to {config_copy_path}")
+    # print(f"✅ Resolved config written to {config_copy_path}")
 
     job_metadata = build_job_metadata(
         prepared,
@@ -134,6 +141,9 @@ def main() -> None:
     combos_target = data_base_path.parent / f"{data_base_path.name}_combos.json"
     write_json(combos_target, {"combos": [combo.to_dict() for combo in prepared.combinations]})
 
+    retry_dir = ensure_retry_dir(job_paths.job_dir)
+    retry_candidates_path = retry_dir / "retry_candidates_local.jsonl"
+
     print(f"Artifacts will be saved to {data_base_path.parent}")
     print(
         f"Prepared {len(prepared.combinations)} combination(s) → "
@@ -144,10 +154,9 @@ def main() -> None:
     signal_types = list(prepared.sim.simulation_config.signal_types)
     global_n_t = int(prepared.t_det_axis.size)
 
-    from concurrent.futures import ProcessPoolExecutor
-
     t_start = time.time()
     saved_paths: list[str] = []
+    incomplete_count = 0
 
     max_workers = int(prepared.sim.simulation_config.max_workers)
 
@@ -161,7 +170,7 @@ def main() -> None:
                 f"inhom_idx={combo.inhom_index} ---"
             )
 
-            print("    ▶ entering compute_emitted_field_components()", flush=True)
+            # print("    ▶ entering compute_emitted_field_components()", flush=True)
             call_start = time.time()
             e_components, run_status, status_message = compute_emitted_field_components(
                 config_source=prepared.merged_cfg,
@@ -180,6 +189,7 @@ def main() -> None:
             padded_components = pad_or_crop_signals(e_components, global_n_t)
 
             if run_status != "ok":
+                incomplete_count += 1
                 print(
                     f"    ⚠️ saving combo as {run_status}; it will be skipped by process_datas.py",
                     flush=True,
@@ -196,19 +206,56 @@ def main() -> None:
                 **({"error": status_message} if status_message else {}),
             )
 
+            filename = f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz"
             path = save_run_artifact(
                 signal_arrays=padded_components,
                 metadata=metadata_combo,
                 frequency_sample_cm=freq_vector,
                 data_dir=data_base_path.parent,
-                filename=f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz",
+                filename=filename,
             )
             saved_paths.append(str(path))
             print(f"    ✅ saved {path}")
 
+            if run_status != "ok":
+                append_retry_candidate(
+                    retry_candidates_path,
+                    {
+                        "resolved_config_path": str(config_copy_path.resolve()),
+                        "t_index": int(combo.t_index),
+                        "t_coh_value": float(combo.t_coh),
+                        "inhom_index": int(combo.inhom_index),
+                        "freq_vector": freq_vector.astype(float).tolist(),
+                        "time_cut": float(prepared.time_cut),
+                        "original_run_status": run_status,
+                        "original_error": status_message,
+                        "original_artifact_path": str(path),
+                        "job_dir": str(job_paths.job_dir.resolve()),
+                    },
+                )
+
     elapsed = time.time() - t_start
     print("=" * 80)
     print(f"Completed {len(saved_paths)} combination(s) in {elapsed:.2f} s")
+    if incomplete_count:
+        print(
+            f"Retry candidates written to {retry_candidates_path} "
+            f"({incomplete_count} incomplete combination(s))"
+        )
+
+        retry_candidates = dedupe_retry_candidates(
+            load_retry_candidates([retry_candidates_path])
+        )
+        local_retry_batch_path = retry_dir / "retry_batch_local.json"
+        write_json(local_retry_batch_path, {"retries": retry_candidates})
+
+        retry_script = (PROJECT_ROOT / "scripts" / "hpc" / "run_retry_batch.py").resolve()
+
+        print("\n To  run local 1D reruns of incomplete points:")
+        print(
+            f'  python "{retry_script}" '
+            f'--retry_file "{local_retry_batch_path}" --batch_id 0'
+        )
 
     if saved_paths:
         print("Latest artifact:")
@@ -216,9 +263,6 @@ def main() -> None:
         print("\n🎯 Next step:")
         process_script = (PROJECT_ROOT / "scripts" / "local" / "process_datas.py").resolve()
         print(f"     python \"{process_script}\" --abs_path '{saved_paths[-1]}' --skip_if_exists")
-
-    print("=" * 80)
-    print("DONE")
 
 
 if __name__ == "__main__":

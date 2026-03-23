@@ -171,7 +171,7 @@ def save_info_file(
 
         with open(abs_info_path, "wb") as info_file:
             pickle.dump(payload, info_file)
-        print(f"Info saved: {abs_info_path}")
+        # print(f"Info saved: {abs_info_path}")
     except Exception as e:
         print(f"Failed to save info: {e}")
         raise

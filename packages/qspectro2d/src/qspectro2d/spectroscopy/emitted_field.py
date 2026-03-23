@@ -79,8 +79,8 @@ def compute_emitted_field_components(
     Returns
     -------
     emitted_fields, run_status, status_message
-        run_status is "ok" if all phase-cycling jobs completed,
-        otherwise "phase_cycling_incomplete".
+        ``run_status`` is ``"ok"`` if all phase-cycling jobs completed,
+        otherwise ``"phase_cycling_incomplete"``.
     """
     from qspectro2d.config.factory import load_simulation_config
 
@@ -103,7 +103,7 @@ def compute_emitted_field_components(
             f"t_det={float(config.t_det):.6g}, dt={float(config.dt):.6g})"
         )
 
-    signal_types = config.signal_types
+    signal_types = list(config.signal_types)
     phase_values = [float(phi) for phi in phase_cycling_phases(config.n_phases)]
 
     component_count = len(t_det)
@@ -226,12 +226,12 @@ def compute_emitted_field_components(
         run_status = "phase_cycling_incomplete"
         details = "\n".join(failed_jobs[:10])
         more = "" if len(failed_jobs) <= 10 else f"\n... and {len(failed_jobs) - 10} more"
-        message = (
+        print(
             "WARNING: Phase-cycling worker jobs failed; saving artifact as incomplete.\n"
             f"Failed jobs: {len(failed_jobs)} / {total_tasks}\n"
-            f"{details}{more}"
+            f"{details}{more}",
+            flush=True,
         )
-        print(message, flush=True)
         status_parts.append(
             f"failed_jobs={len(failed_jobs)}/{total_tasks}; "
             + "; ".join(failed_jobs[:10])
@@ -240,20 +240,20 @@ def compute_emitted_field_components(
 
     if missing_total or missing_single_1 or missing_single_2 or missing_single_3:
         run_status = "phase_cycling_incomplete"
-        message = (
+        print(
             "WARNING: Incomplete phase-cycling data after worker execution; "
             "saving artifact as incomplete. "
             f"missing total={missing_total}, "
             f"single_1={missing_single_1}, "
             f"single_2={missing_single_2}, "
-            f"single_3={missing_single_3}"
+            f"single_3={missing_single_3}",
+            flush=True,
         )
-        print(message, flush=True)
         status_parts.append(
             f"missing total={missing_total}, "
             f"single_1={missing_single_1}, "
             f"single_2={missing_single_2}, "
-            f"single_3={missing_single_3}",
+            f"single_3={missing_single_3}"
         )
 
     for phi1 in phase_values:
