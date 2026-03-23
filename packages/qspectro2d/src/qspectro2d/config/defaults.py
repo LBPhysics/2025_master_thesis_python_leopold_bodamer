@@ -95,11 +95,10 @@ DEFAULTS = {
     "config": {
         "solver": "redfield",
         "solver_options": {
-            "sec_cutoff": -1,
+            "sec_cutoff": 0.0,
             "method": "bdf",
-            "nsteps": 10_000,
-            "atol": 1e-5,
-            "rtol": 1e-4,
+            "atol": 1e-6,
+            "rtol": 1e-5,
         },
         "sim_type": "1d",
         "t_det": T_DET,

@@ -207,7 +207,7 @@ def main() -> None:
             try:
                 print("    ▶ entering compute_emitted_field_components()", flush=True)
                 call_start = time.time()
-                e_components = compute_emitted_field_components(
+                e_components, run_status, error_message = compute_emitted_field_components(
                     config_source=merged_cfg,
                     t_coh=t_coh_val,
                     freq_vector=freq_vector.tolist(),
@@ -222,10 +222,19 @@ def main() -> None:
                 )
 
                 padded_components = pad_or_crop_signals(e_components, global_n_t)
+
+                if run_status != "ok":
+                    print(
+                        f"    ⚠️ combo marked as {run_status}; it will be skipped by process_datas.py",
+                        flush=True,
+                    )
+
                 if all(np.allclose(arr, 0.0) for arr in padded_components):
                     all_zero_combos += 1
-                    run_status = "returned_all_zero"
+                    if run_status == "ok":
+                        run_status = "returned_all_zero"
                     print("    ⚠️ combo returned all-zero signal arrays", flush=True)
+
             except Exception as exc:
                 if isinstance(
                     exc, RuntimeError

@@ -163,7 +163,7 @@ def main() -> None:
 
             print("    ▶ entering compute_emitted_field_components()", flush=True)
             call_start = time.time()
-            e_components = compute_emitted_field_components(
+            e_components, run_status, status_message = compute_emitted_field_components(
                 config_source=prepared.merged_cfg,
                 t_coh=combo.t_coh,
                 freq_vector=freq_vector.tolist(),
@@ -179,14 +179,21 @@ def main() -> None:
 
             padded_components = pad_or_crop_signals(e_components, global_n_t)
 
+            if run_status != "ok":
+                print(
+                    f"    ⚠️ saving combo as {run_status}; it will be skipped by process_datas.py",
+                    flush=True,
+                )
+
             metadata_combo = build_run_metadata(
                 signal_types=signal_types,
                 sim_type="1d" if prepared.sim_type == "2d" else prepared.sim_type,
                 sample_index=combo.inhom_index,
                 t_coh_value=combo.t_coh,
-                run_status="ok",
+                run_status=run_status,
                 t_index=int(combo.t_index),
                 global_index=int(combo.index),
+                **({"error": status_message} if status_message else {}),
             )
 
             path = save_run_artifact(

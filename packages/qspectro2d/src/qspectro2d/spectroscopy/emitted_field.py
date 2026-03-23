@@ -73,11 +73,14 @@ def compute_emitted_field_components(
     time_cut: float | None = None,
     detection_window: np.ndarray | list[float] | None = None,
     executor: Executor | None = None,
-) -> list[np.ndarray]:
+) -> tuple[list[np.ndarray], str, str | None]:
     """Compute emitted-field components for the configured signal types.
 
-    When ``executor`` is provided, it is reused for the phase-cycling tasks.
-    This avoids creating a fresh process pool for every single (t_coh, sample) combo.
+    Returns
+    -------
+    emitted_fields, run_status, status_message
+        run_status is "ok" if all phase-cycling jobs completed,
+        otherwise "phase_cycling_incomplete".
     """
     from qspectro2d.config.factory import load_simulation_config
 
@@ -110,7 +113,8 @@ def compute_emitted_field_components(
         time_mask = (t_det <= time_cut).astype(np.float64)
 
     accumulated = {
-        signal_type: np.zeros(component_count, dtype=np.complex128) for signal_type in signal_types
+        signal_type: np.zeros(component_count, dtype=np.complex128)
+        for signal_type in signal_types
     }
     zero_component = np.zeros(component_count, dtype=np.complex128)
 
@@ -210,31 +214,46 @@ def compute_emitted_field_components(
         if owns_executor:
             executor.shutdown(wait=True)
 
-    if failed_jobs:
-        details = "\n".join(failed_jobs[:10])
-        more = "" if len(failed_jobs) <= 10 else f"\n... and {len(failed_jobs) - 10} more"
-        print(
-            "WARNING: Phase-cycling worker jobs failed; using zero contribution for "
-            "missing phase combinations.\n"
-            f"Failed jobs: {len(failed_jobs)} / {total_tasks}\n"
-            f"{details}{more}",
-            flush=True,
-        )
-
     missing_total = len(phase_values) ** 2 - len(total_polarisations)
     missing_single_1 = len(phase_values) - len(single_pulse_1)
     missing_single_2 = len(phase_values) - len(single_pulse_2)
     missing_single_3 = 0 if single_pulse_3 is not None else 1
 
+    run_status = "ok"
+    status_parts: list[str] = []
+
+    if failed_jobs:
+        run_status = "phase_cycling_incomplete"
+        details = "\n".join(failed_jobs[:10])
+        more = "" if len(failed_jobs) <= 10 else f"\n... and {len(failed_jobs) - 10} more"
+        message = (
+            "WARNING: Phase-cycling worker jobs failed; saving artifact as incomplete.\n"
+            f"Failed jobs: {len(failed_jobs)} / {total_tasks}\n"
+            f"{details}{more}"
+        )
+        print(message, flush=True)
+        status_parts.append(
+            f"failed_jobs={len(failed_jobs)}/{total_tasks}; "
+            + "; ".join(failed_jobs[:10])
+            + (f"; ... and {len(failed_jobs) - 10} more" if len(failed_jobs) > 10 else "")
+        )
+
     if missing_total or missing_single_1 or missing_single_2 or missing_single_3:
-        print(
+        run_status = "phase_cycling_incomplete"
+        message = (
             "WARNING: Incomplete phase-cycling data after worker execution; "
-            "missing components will be treated as zero. "
+            "saving artifact as incomplete. "
+            f"missing total={missing_total}, "
+            f"single_1={missing_single_1}, "
+            f"single_2={missing_single_2}, "
+            f"single_3={missing_single_3}"
+        )
+        print(message, flush=True)
+        status_parts.append(
             f"missing total={missing_total}, "
             f"single_1={missing_single_1}, "
             f"single_2={missing_single_2}, "
             f"single_3={missing_single_3}",
-            flush=True,
         )
 
     for phi1 in phase_values:
@@ -261,4 +280,5 @@ def compute_emitted_field_components(
             field_component = field_component * time_mask
         emitted_fields.append(field_component)
 
-    return emitted_fields
+    status_message = " | ".join(status_parts) if status_parts else None
+    return emitted_fields, run_status, status_message
