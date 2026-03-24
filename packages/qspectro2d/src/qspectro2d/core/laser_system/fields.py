@@ -52,7 +52,21 @@ def pulse_envelopes(t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence) 
 
 
 def e_pulses(t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence) -> Union[complex, np.ndarray]:
-    """Return the rotating-frame positive-frequency field."""
+    """Return the rotating-frame positive-frequency field.
+
+    Convention
+    ----------
+    The lab-frame field of pulse ``k`` is
+        ε_k^(+)(t) = A_k s_k(t) exp[-i (ω_L (t - t_k) + φ_k)],
+    where ``t_k`` is the pulse peak time and ``φ_k`` is the explicit
+    phase-cycling phase. Transforming with the project convention
+    ``U(t) = exp(+i ω_L N t)`` gives the rotating-frame coefficient
+        e_k(t) = A_k s_k(t) exp[-i (φ_k - ω_L t_k)].
+
+    This keeps the physical carrier phase at the pulse centre equal to
+    ``-φ_k`` in the lab frame and makes the RWA and no-RWA Hamiltonians
+    represent the same pulse train.
+    """
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
     if is_scalar:
@@ -66,8 +80,9 @@ def e_pulses(t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence) -> Unio
         pulse_seq.pulse_peak_times,
         pulse_seq.pulse_amplitudes,
     ):
-        phi_eff = phase + omega * t_peak
-        field_total += amplitude * np.exp(-1j * phi_eff) * single_pulse_envelope(t_array, pulse)
+        phi_eff = phase - omega * t_peak
+        envelope = single_pulse_envelope(t_array, pulse) 
+        field_total += amplitude * np.exp(-1j * phi_eff) * envelope
     return field_total[0] if is_scalar else field_total
 
 

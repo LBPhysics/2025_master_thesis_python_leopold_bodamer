@@ -29,6 +29,12 @@ def compute_spectra(
 ) -> Tuple[Optional[np.ndarray], np.ndarray, List[ArrayOrSparse], List[str]]:
     """Compute spectra along detection (and optional coherence) axes.
     Based on the paper: https://doi.org/10.1063/5.0214023
+    Convention note:
+    - The detection-axis IFFT assumes the upstream time-domain signal is the
+      analytic emitted field / positive-frequency polarisation convention.
+      If a full real field or opposite-frequency convention is supplied, the
+      spectrum can mirror into the opposite frequency quadrant.
+
     For each input data array:
     - Along detection time: S(w_det) = ∫ E(t) e^{+i w t} dt
         (implemented via IFFT with virtual padding, no normalization scaling applied).

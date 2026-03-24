@@ -101,10 +101,11 @@ def _check_density_matrix_state(
 def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     """Stress-test the configured solver and return the first failing time, if any."""
     sim_copy = deepcopy(sim_oqs)
-    times = compute_times_local(sim_oqs.simulation_config)
+    t_coh_max = sim_copy.simulation_config.t_coh
+    times = compute_times_local(sim_oqs.simulation_config, t_coh_override=t_coh_max)
     t0 = times[0]
     dt = sim_copy.simulation_config.dt
-    sim_copy.laser.pulse_phases = [1.0] * len(sim_copy.laser.pulses)
+    sim_copy.laser.pulse_phases = [0.0] * len(sim_copy.laser.pulses)
 
     print("\n \n=== SOLVER DIAGNOSTICS ===")
     print(f"Solver: {sim_copy.simulation_config.ode_solver}")

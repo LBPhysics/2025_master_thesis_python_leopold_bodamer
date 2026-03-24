@@ -97,8 +97,6 @@ DEFAULTS = {
         "solver_options": {
             "sec_cutoff": 0.0,
             "method": "bdf",
-            "atol": 1e-6,
-            "rtol": 1e-5,
         },
         "sim_type": "1d",
         "t_det": T_DET,

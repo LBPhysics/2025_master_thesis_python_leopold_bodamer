@@ -47,15 +47,20 @@ def _excitation_number_vector(dim: int, n_atoms: int) -> np.ndarray:
 
 # --- Simple unitary-based API -------------------------------------------------------
 def rotating_frame_unitary(ref: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
-    """Return U(t) = exp(-i * omega_laser * N * t) matching the dims of `ref`.
+    """Return U(t) = exp(+i * omega_laser * N * t) matching the dims of `ref`.
 
     - Basis ordering: [0-ex], [1-ex (n_atoms states)], [2-ex (remainder)].
     - ρ_RWA(t) = U(t) ρ_lab(t) U†(t)
     - ρ_lab(t) = U†(t) ρ_RWA(t) U(t)
+
+    The positive sign is required by the Hamiltonian convention used in the
+    simulation layer,
+        H_RWA = U H_lab U† + i dU/dt U† = H_lab - omega_laser * N,
+    which is exactly how ``H0_diagonalized`` is constructed.
     """
     dim = ref.shape[0]
     n = _excitation_number_vector(dim, n_atoms)
-    phases = np.exp(-1j * omega_laser * t * n)
+    phases = np.exp(+1j * omega_laser * t * n)
     U_full = np.diag(phases)
     return Qobj(U_full, dims=ref.dims)
 

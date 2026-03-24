@@ -1,9 +1,9 @@
 """Polarisation related helper functions.
 
-Pphys(t) = Tr[μ ρ(t)] = ∑_{m,n} μ_{mn} ρ_{nm}(t)
+P_phys(t) = Tr[μ ρ(t)] = ∑_{m,n} μ_{mn} ρ_{nm}(t)
 
 but for emission spectroscopy we are interested in
-P^-(t) = Tr[μ^- ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
+positive-frequency emitted polarisation = Tr[μ^+ ρ(t)] = ∑_{m>n} μ_{mn} ρ_{nm}(t)
 """
 
 from __future__ import annotations
@@ -17,12 +17,12 @@ from qutip import Qobj, expect, ket2dm
 def complex_polarisation(
     dipole_op: Qobj, state: Union[Qobj, List[Qobj]]
 ) -> Union[complex, np.ndarray]:
-    """Return complex/analytical polarisation(s) P^(-)(t) for given state(s).
+    """Return complex/analytical polarisation(s) P^(+)(t) for given state(s).
 
     Physics convention:
-        - The negative-frequency part of the dipole operator corresponds to
-            μ^(-) in this codebase's basis ordering and is represented by the
-            strictly lower-triangular part (m > n), selecting |lower⟩⟨higher|.
+        - The positive-frequency part of the dipole operator corresponds to
+            μ^(+) in this codebase's basis ordering and is represented by the
+            strictly lower-triangular part (m > n), selecting |higher⟩⟨lower|.
 
     Accepts a single Qobj (ket or density matrix) or list of Qobj.
     """
@@ -64,7 +64,6 @@ def _complex_polarisation_single(dipole_op: Qobj, state: Qobj) -> complex:
     pol = expect(dipole_op_pos, rho)
 
     return complex(pol)
-
 
 def time_dependent_polarisation_rwa(
     dipole_op: Qobj,

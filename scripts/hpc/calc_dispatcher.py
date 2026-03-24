@@ -83,32 +83,47 @@ def estimate_slurm_resources(
     workers_mem_mb = workers * bytes_per_worker / (1024.0**2)
     combos_mem_mb = min(1000.0, 2.0 * combos_per_batch)
     requested_mem = f"{int(math.ceil(base_mem_mb + workers_mem_mb + combos_mem_mb))}M"
-    base_seconds_per_solve = 0.45
-    solver_factor = {
-        "paper_eqs": 1.0,
-        "lindblad": 1.5,
-        "redfield": 20.0,
-    }
-    if solver not in solver_factor:
-        raise ValueError(f"Unsupported solver '{solver}'.")
 
-    rwa_factor = 1.0 if rwa_sl else 3.0
+    ref_n_times = 500.0
+    ref_n_dim = 2.0
+
+    ref_seconds_per_combo = {
+        ("paper_eqs", True): 0.08,
+        ("lindblad", True): 0.1,
+        ("lindblad", False): 1.0,
+        ("redfield", True): 4.0,
+        ("redfield", False): 10.0,
+    }
+
+    key = (solver, bool(rwa_sl))
+
     effective_parallelism = max(1, min(workers, phase_cycling_jobs))
     phase_rounds = math.ceil(phase_cycling_jobs / effective_parallelism)
 
+    time_scale = (max(1, n_times) / ref_n_times) ** 1.10
+    atomic_dim_scale = (max(1, n_dim) / ref_n_dim) ** 2.0
+
     seconds_per_combo = (
-        base_seconds_per_solve
-        * solver_factor[solver]
-        * rwa_factor
-        * (max(1, n_times) / 1000.0)
-        * (max(1, n_dim) ** 2)
+        ref_seconds_per_combo[key]
+        * time_scale
+        * atomic_dim_scale
         * phase_rounds
     )
 
+    batch_startup_s = 90.0
+    io_per_combo_s = 0.03
     safety_factor = 2.5
-    minimum_batch_time_s = 600.0
-    total_seconds = max(minimum_batch_time_s, seconds_per_combo * combos_per_batch * safety_factor)
-    return requested_mem, _format_hms(total_seconds)
+
+    total_seconds = (
+        batch_startup_s
+        + combos_per_batch * io_per_combo_s
+        + combos_per_batch * seconds_per_combo * safety_factor
+    )
+
+    minimum_batch_time_s = 300.0
+    total_seconds = max(minimum_batch_time_s, total_seconds)
+    requested_time = _format_hms(total_seconds)
+    return requested_mem, requested_time
 
 
 def _render_slurm_script(
