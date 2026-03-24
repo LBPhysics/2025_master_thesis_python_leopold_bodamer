@@ -26,8 +26,6 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in os.sys.path:
     os.sys.path.insert(0, str(SCRIPTS_DIR))
 
-from common.retry_queue import append_retry_candidate, ensure_retry_dir
-
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
     """Load combination descriptors from JSON.
@@ -127,9 +125,6 @@ def main() -> None:
     prefix = str(job_metadata["data_base_name"])
     data_base_path = Path(job_metadata["data_base_path"]).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
-
-    retry_dir = ensure_retry_dir(job_dir)
-    retry_candidates_path = retry_dir / f"retry_candidates_batch_{args.batch_id:03d}.jsonl"
 
     print("=" * 80)
     print("GENERALIZED BATCH RUNNER")
@@ -292,23 +287,6 @@ def main() -> None:
             saved_paths.append(str(path))
             print(f"    ✅ saved {path}")
 
-            if run_status != "ok":
-                append_retry_candidate(
-                    retry_candidates_path,
-                    {
-                        "resolved_config_path": str(config_path.resolve()),
-                        "t_index": int(t_idx),
-                        "t_coh_value": float(t_coh_val),
-                        "inhom_index": int(inhom_idx),
-                        "freq_vector": freq_vector.astype(float).tolist(),
-                        "time_cut": float(args.time_cut),
-                        "original_run_status": run_status,
-                        "original_error": error_message,
-                        "original_artifact_path": str(path),
-                        "job_dir": str(job_dir.resolve()),
-                    },
-                )
-
     elapsed = time.time() - t_start
     print("=" * 80)
     print(
@@ -317,11 +295,6 @@ def main() -> None:
     )
     if failed_combos:
         print(f"Fallback zero-signal outputs written for {failed_combos} failed combination(s).")
-    if incomplete_combos:
-        print(
-            f"Retry candidates written to {retry_candidates_path} "
-            f"({incomplete_combos} incomplete combination(s))."
-        )
     if all_zero_combos:
         print(f"All-zero signal outputs observed for {all_zero_combos} combination(s).")
     if saved_paths:
