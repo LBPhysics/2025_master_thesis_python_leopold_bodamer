@@ -90,7 +90,7 @@ def estimate_slurm_resources(
     ref_seconds_per_combo = {
         ("paper_eqs", True): 0.08,
         ("lindblad", True): 0.1,
-        ("lindblad", False): 1.0,
+        ("lindblad", False): 1.5,
         ("redfield", True): 4.0,
         ("redfield", False): 10.0,
     }

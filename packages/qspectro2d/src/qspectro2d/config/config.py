@@ -165,10 +165,10 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
 
     if dt <= 0:
         raise ValueError("dt must be > 0")
-    if t_coh < dt:
-        raise ValueError("t_coh must be >= dt")
-    if t_wait < dt:
-        raise ValueError("t_wait must be >= dt")
+    if t_coh < 0:
+        raise ValueError("t_coh must be >= 0")
+    if t_wait < 0:
+        raise ValueError("t_wait must be >= 0")
     if t_det <= 0:
         raise ValueError("t_det must be > 0")
 

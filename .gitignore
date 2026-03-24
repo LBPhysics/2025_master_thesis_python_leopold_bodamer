@@ -196,3 +196,4 @@ archive/
 # all error filed from suptercomputer proteus
 **/.err
 **/logs
+command_to_replace.txt

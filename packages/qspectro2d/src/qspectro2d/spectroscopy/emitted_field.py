@@ -1,4 +1,9 @@
-"""Compute emitted-field components from phase-cycled polarisation signals."""
+"""Compute emitted-field components from phase-cycled polarisation signals.
+
+The emitted field is assembled using the photon-echo convention compatible
+with the ``P^+(t)`` readout used in ``polarisation.py``. After phase selection,
+this module returns field components proportional to ``+i P_sig(t)``.
+"""
 
 from __future__ import annotations
 
@@ -275,7 +280,7 @@ def compute_emitted_field_components(
 
     emitted_fields: list[np.ndarray] = []
     for signal_type in signal_types:
-        field_component = 1j * accumulated[signal_type] * normalisation
+        field_component = -1j * accumulated[signal_type] * normalisation
         if time_mask is not None:
             field_component = field_component * time_mask
         emitted_fields.append(field_component)

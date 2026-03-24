@@ -1,4 +1,16 @@
-"""Laser pulse data structures."""
+"""Laser pulse data structures.
+
+Convention
+----------
+Pulse centres are stored as absolute peak times ``pulse_peak_time`` on the
+solver time axis. For multi-pulse sequences created from non-negative
+inter-pulse delays, the stored peak times are
+
+    t_k = t_forward[k] - t_forward[-1],
+
+so that the last pulse is centred at ``0`` and earlier pulses have negative
+peak times. This is the time-label convention used by ``fields.py``.
+"""
 
 from __future__ import annotations
 

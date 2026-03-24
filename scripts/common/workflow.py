@@ -183,15 +183,6 @@ def prepare_workflow(
     t_det_axis = np.asarray(compute_t_det(sim.simulation_config), dtype=float)
     times_local = np.asarray(compute_times_local(sim.simulation_config), dtype=float)
 
-    # Ensure pulses do not overlap by enforcing minimum delays
-    dt = float(sim.simulation_config.dt)
-    if effective_sim_type in {"1d", "2d"}:
-        t_coh_values = t_coh_values[t_coh_values >= dt]
-        if t_coh_values.size == 0:
-            raise ValueError(
-                f"No valid t_coh values >= dt={dt:.3f} fs after filtering to prevent pulse overlap"
-            )
-
     if t_det_axis.size == 0 and effective_sim_type != "0d":
         raise RuntimeError(
             "Invariant violation: empty global detection axis for non-0d run "

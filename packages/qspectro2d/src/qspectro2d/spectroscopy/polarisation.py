@@ -38,32 +38,12 @@ def complex_polarisation(
 
 
 def _complex_polarisation_single(dipole_op: Qobj, state: Qobj) -> complex:
-    """
-    Calculate polarisation for a single quantum state or density matrix.
-
-    Parameters
-    ----------
-    dipole_op : Qobj
-        Dipole operator
-    state : Qobj
-        Quantum state (ket) or density matrix.
-
-    Returns
-    -------
-    complex
-        Complex polarisation value.
-
-    Raises
-    ------
-    TypeError
-        If state is not a ket or density matrix.
-    """
+    """Calculate emitted polarisation for a single ket or density matrix."""
     rho = ket2dm(state) if state.isket else state
     dipole_op_pos = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
-
     pol = expect(dipole_op_pos, rho)
-
     return complex(pol)
+
 
 def time_dependent_polarisation_rwa(
     dipole_op: Qobj,

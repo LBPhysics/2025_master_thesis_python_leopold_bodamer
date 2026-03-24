@@ -1,4 +1,19 @@
-"""Rotating frame helpers (RWA phase transforms)."""
+"""Rotating-frame helpers (RWA phase transforms).
+
+Convention
+----------
+The rotating frame is defined by
+
+    U(t) = exp(+i omega_laser N t),
+
+so that
+
+    rho_rot(t) = U(t) rho_lab(t) U^dagger(t),
+    H0_rot = H0 - omega_laser N.
+
+This matches the field convention in ``fields.py`` and the RWA interaction used
+in ``simulation.py`` and ``paper_solver.py``.
+"""
 
 from __future__ import annotations
 
@@ -66,14 +81,14 @@ def rotating_frame_unitary(ref: Qobj, t: float, n_atoms: int, omega_laser: float
 
 
 def to_rotating_frame_op(rho_lab: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
-    """Compute ρ_RWA(t) = U(t) ρ_lab(t) U†(t)."""
+    """Compute rho_rot(t) = U(t) rho_lab(t) U^dagger(t)."""
     rho_lab = _ensure_density(rho_lab)
     U = rotating_frame_unitary(rho_lab, t, n_atoms, omega_laser)
     return U * rho_lab * U.dag()
 
 
 def from_rotating_frame_op(rho_rot: Qobj, t: float, n_atoms: int, omega_laser: float) -> Qobj:
-    """Compute ρ_lab(t) = U†(t) ρ_RWA(t) U(t)."""
+    """Compute rho_lab(t) = U^dagger(t) rho_rot(t) U(t)."""
     rho_rot = _ensure_density(rho_rot)
     U = rotating_frame_unitary(rho_rot, t, n_atoms, omega_laser)
     return U.dag() * rho_rot * U
@@ -85,9 +100,7 @@ def to_rotating_frame_list(
     n_atoms: int,
     omega_laser: float,
 ) -> List[Qobj]:
-    """Batch version of ρ_RWA = U ρ_lab U† with simple broadcasting.
-    - times: array-like → must match len(states)
-    """
+    """Batch version of rho_rot = U rho_lab U^dagger."""
     if not all(isinstance(s, Qobj) for s in states):
         raise TypeError("All states must be Qobj instances.")
 
@@ -106,9 +119,7 @@ def from_rotating_frame_list(
     n_atoms: int,
     omega_laser: float,
 ) -> List[Qobj]:
-    """Batch version of ρ_lab = U† ρ_RWA U with simple broadcasting.
-    - times: array-like → must match len(states)
-    """
+    """Batch version of rho_lab = U^dagger rho_rot U."""
     if not all(isinstance(s, Qobj) for s in states):
         raise TypeError("All states must be Qobj instances.")
 
@@ -116,12 +127,7 @@ def from_rotating_frame_list(
     if len(times_arr) != len(states):
         raise ValueError(f"Length mismatch: {len(states)} states vs {times_arr.shape[0]} times")
     return [
-        from_rotating_frame_op(
-            _ensure_density(rho),
-            float(t),
-            n_atoms,
-            omega_laser,
-        )
+        from_rotating_frame_op(_ensure_density(rho), float(t), n_atoms, omega_laser)
         for rho, t in zip(states, times_arr)
     ]
 

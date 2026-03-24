@@ -1,4 +1,20 @@
-"""Thin simulation assembly object."""
+"""Thin simulation assembly object.
+
+Convention
+----------
+The rotating frame is defined by
+
+    U(t) = exp(+i omega_L N t).
+
+Accordingly, for ``rwa_sl=True`` this module uses
+
+    H0_RWA = H0 - omega_L N,
+    H_int_RWA(t) = -(raising_op e(t) + lowering_op e*(t)),
+
+with ``e(t)`` provided
+by ``fields.e_pulses``. This matches the paper-equation Liouvillian assembled in
+``paper_solver.py``.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,12 @@
-"""Specialized paper-equation Liouvillian builder."""
+"""Specialized paper-equation Liouvillian builder.
+
+Implements the appendix-style RWA equations in the convention
+
+    L(t) = L0 + E(t) L_plus + E*(t) L_minus,
+
+with ``E(t) = e_pulses(t, sim_oqs.laser)``. This is the same rotating-frame
+field convention used by ``simulation.py`` for the generic RWA Hamiltonian.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +34,9 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
     if n_atoms == 1:
         size = 2
         pulse_seq = sim_oqs.laser
-        mu = sim_oqs.system.dip_moments[0]
+        dip_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
+        mu_eg = complex(dip_op[1, 0])  # raising branch
+        mu_ge = complex(dip_op[0, 1])  # lowering branch = conj(mu_eg) for Hermitian dipole
         detuning = sim_oqs.system.frequencies_fs[0] - pulse_seq.carrier_freq_fs
         deph_rate_tot = DEPH_RATE_FS + 0.5 * (DOWN_RATE_FS + UP_RATE_FS)
 
@@ -46,15 +56,15 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
         L0[idx_eg, idx_eg] = -deph_rate_tot - 1j * detuning
         L0[idx_ge, idx_ge] = -deph_rate_tot + 1j * detuning
 
-        L_plus[idx_gg, idx_ge] = -1j * mu
-        L_plus[idx_ee, idx_ge] = +1j * mu
-        L_plus[idx_eg, idx_gg] = +1j * mu
-        L_plus[idx_eg, idx_ee] = -1j * mu
+        L_plus[idx_gg, idx_ge] = -1j * mu_eg
+        L_plus[idx_ee, idx_ge] = +1j * mu_eg
+        L_plus[idx_eg, idx_gg] = +1j * mu_eg
+        L_plus[idx_eg, idx_ee] = -1j * mu_eg
 
-        L_minus[idx_gg, idx_eg] = +1j * mu
-        L_minus[idx_ee, idx_eg] = -1j * mu
-        L_minus[idx_ge, idx_gg] = -1j * mu
-        L_minus[idx_ge, idx_ee] = +1j * mu
+        L_minus[idx_gg, idx_eg] = +1j * mu_ge
+        L_minus[idx_ee, idx_eg] = -1j * mu_ge
+        L_minus[idx_ge, idx_gg] = -1j * mu_ge
+        L_minus[idx_ge, idx_ee] = +1j * mu_ge
 
         ctx = {
             "L0": L0,
