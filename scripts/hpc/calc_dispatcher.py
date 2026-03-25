@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import re
 import shlex
 import shutil
 import subprocess
@@ -34,6 +33,7 @@ from common.workflow import (
     prepare_workflow,
     write_json,
 )
+from qspectro2d.core.simulation.time_axes import compute_times_local
 
 DEFAULT_CPUS_PER_TASK = 25  # makes sense if each phase combo is as costly as the others
 DEFAULT_PARTITION = "GPGPU,metis"
@@ -88,11 +88,11 @@ def estimate_slurm_resources(
     ref_n_dim = 2.0
 
     ref_seconds_per_combo = {
-        ("paper_eqs", True): 0.08,
-        ("lindblad", True): 0.1,
+        ("paper_eqs", True): 0.1,
+        ("lindblad", True): 0.2,
         ("lindblad", False): 1.5,
-        ("redfield", True): 4.0,
-        ("redfield", False): 10.0,
+        ("redfield", True): 6.0,
+        ("redfield", False): 20.0,
     }
 
     key = (solver, bool(rwa_sl))
@@ -100,18 +100,13 @@ def estimate_slurm_resources(
     effective_parallelism = max(1, min(workers, phase_cycling_jobs))
     phase_rounds = math.ceil(phase_cycling_jobs / effective_parallelism)
 
-    time_scale = (max(1, n_times) / ref_n_times) ** 1.10
+    time_scale = (max(1, n_times) / ref_n_times) ** 1.30
     atomic_dim_scale = (max(1, n_dim) / ref_n_dim) ** 2.0
 
-    seconds_per_combo = (
-        ref_seconds_per_combo[key]
-        * time_scale
-        * atomic_dim_scale
-        * phase_rounds
-    )
+    seconds_per_combo = ref_seconds_per_combo[key] * time_scale * atomic_dim_scale * phase_rounds
 
     batch_startup_s = 90.0
-    io_per_combo_s = 0.03
+    io_per_combo_s = 0.05
     safety_factor = 2.5
 
     total_seconds = (
@@ -285,10 +280,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     n_phases = int(prepared.sim.simulation_config.n_phases)
     phase_cycling_jobs = _phase_cycling_job_count(n_phases)
 
+    coh_vals = prepared.t_coh_values
+    n_t_coh = len(coh_vals)
+    last_t_coh = coh_vals[-1]
+    global_times = compute_times_local(prepared.sim.simulation_config, t_coh_override=last_t_coh)
     requested_mem, requested_time = estimate_slurm_resources(
-        n_times=len(prepared.times_local),
+        n_times=len(global_times),
         n_inhom=int(prepared.sim.simulation_config.n_inhomogen),
-        n_t_coh=len(prepared.t_coh_values),
+        n_t_coh=n_t_coh,
         n_batches=args.n_batches,
         workers=int(args.cpus_per_task),
         n_dim=int(prepared.sim.system.dimension),

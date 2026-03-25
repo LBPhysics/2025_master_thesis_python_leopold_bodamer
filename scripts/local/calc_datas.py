@@ -42,7 +42,6 @@ from common.workflow import (
     write_json,
 )
 
-
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
@@ -143,7 +142,7 @@ def main() -> None:
     )
 
     signal_types = list(prepared.sim.simulation_config.signal_types)
-    global_n_t = int(prepared.t_det_axis.size)
+    detection_times_length = int(prepared.t_det_axis.size)
 
     t_start = time.time()
     saved_paths: list[str] = []
@@ -176,7 +175,7 @@ def main() -> None:
                 flush=True,
             )
 
-            padded_components = pad_or_crop_signals(e_components, global_n_t)
+            padded_components = pad_or_crop_signals(e_components, detection_times_length)
 
             if run_status != "ok":
                 print(
@@ -195,7 +194,9 @@ def main() -> None:
                 **({"error": status_message} if status_message else {}),
             )
 
-            filename = f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz"
+            filename = (
+                f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz"
+            )
             path = save_run_artifact(
                 signal_arrays=padded_components,
                 metadata=metadata_combo,

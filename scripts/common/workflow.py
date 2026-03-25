@@ -29,7 +29,6 @@ from qspectro2d.config.factory import load_simulation
 from qspectro2d.core.simulation.time_axes import (
     compute_t_coh,
     compute_t_det,
-    compute_times_local,
 )
 from qspectro2d.diagnostics import check_the_solver
 from qspectro2d.spectroscopy import sample_from_gaussian
@@ -72,7 +71,6 @@ class PreparedWorkflow:
     samples: np.ndarray
     t_coh_values: np.ndarray
     t_det_axis: np.ndarray
-    times_local: np.ndarray
     combinations: list[Combination]
     time_cut: float
 
@@ -181,7 +179,6 @@ def prepare_workflow(
 
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)
     t_det_axis = np.asarray(compute_t_det(sim.simulation_config), dtype=float)
-    times_local = np.asarray(compute_times_local(sim.simulation_config), dtype=float)
 
     if t_det_axis.size == 0 and effective_sim_type != "0d":
         raise RuntimeError(
@@ -201,7 +198,6 @@ def prepare_workflow(
         samples=np.asarray(samples, dtype=float),
         t_coh_values=t_coh_values,
         t_det_axis=t_det_axis,
-        times_local=times_local,
         combinations=combinations,
         time_cut=time_cut,
     )
