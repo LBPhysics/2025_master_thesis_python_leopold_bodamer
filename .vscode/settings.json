@@ -1,10 +1,13 @@
 {
     // thesis_python workspace settings
+    "python.defaultInterpreterPath": "C:/Users/leopo/anaconda3/envs/m_env/python.exe",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/packages/qspectro2d/src",
         "${workspaceFolder}/packages/plotstyle/src",
         "${workspaceFolder}/scripts"
     ],
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.indexing": true,
     "python.analysis.diagnosticMode": "workspace",
     "python.analysis.autoImportCompletions": true,
     // Hide build/temporary files
@@ -16,5 +19,12 @@
         "**/.coverage": true,
         "**/build": true,
         "**/dist": true
-    }
+    },
+    "python-envs.pythonProjects": [
+        {
+            "path": ".",
+            "envManager": "ms-python.python:conda",
+            "packageManager": "ms-python.python:conda"
+        }
+    ]
 }

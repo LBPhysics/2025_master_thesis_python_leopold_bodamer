@@ -186,6 +186,7 @@ def load_simulation(
 def create_base_sim_oqs(
     config_path: Path | None = None,
 ) -> tuple[SimulationModuleOQS, float]:
+    """Convenience function for direct loading and doing a solver chekc."""
     sim = load_simulation(config_path)
 
     print("Base simulation created from config.")

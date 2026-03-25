@@ -173,11 +173,6 @@ export NUMEXPR_NUM_THREADS=1
 """
 
 
-def _parse_sbatch_job_id(message: str) -> str | None:
-    match = re.search(r"Submitted batch job\s+(\d+)", message)
-    return match.group(1) if match else None
-
-
 def submit_sbatch(script_path: Path, *, dependency: str | None = None) -> str:
     sbatch = shutil.which("sbatch")
     if sbatch is None:

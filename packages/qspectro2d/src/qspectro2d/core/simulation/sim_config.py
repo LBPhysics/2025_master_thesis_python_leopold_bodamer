@@ -9,13 +9,9 @@ from dataclasses import dataclass, field
 
 @dataclass
 class SimulationConfig:
-    """Primary configuration object for simulations.
-
-    Focused immutable configuration object; no legacy compatibility paths.
-    """
+    """Primary configuration object for simulations."""
 
     ode_solver: str = "lindblad"
-    # Solver and pulse/detection options
     solver_options: dict[str, Any] = field(default_factory=lambda: {})
     rwa_sl: bool = True
 
@@ -24,24 +20,20 @@ class SimulationConfig:
     t_wait: float = 0.0
     dt: float = 0.1
     pulse_fwhm_fs: float = 10.0
+    envelope_type: str = "gaussian"
 
-    # Runtime/adaptive attributes
     initial_state: str = "ground"
 
-    # potentially do 2d inhomogeneous broadened
     sim_type: str = "1d"
     n_inhomogen: int = 1
 
     n_phases: int = 4
 
-    # Sampling / batching metadata
-    inhom_averaged: bool = False  # True if data represent an average over inhom configs
-
+    inhom_averaged: bool = False
     max_workers: int = 1
     signal_types: List[str] = field(default_factory=lambda: ["rephasing"])
 
     def __post_init__(self) -> None:
-        # Enforce RWA for paper_eqs
         if self.ode_solver == "paper_eqs" and not self.rwa_sl:
             warnings.warn(
                 "rwa_sl forced True for paper_eqs solver.",
@@ -62,6 +54,7 @@ class SimulationConfig:
             f"Max Det. Time      : {self.t_det} fs\n\n",
             f"Time Step (dt)     : {self.dt} fs\n",
             f"Pulse FWHM         : {self.pulse_fwhm_fs} fs\n",
+            f"Envelope Type      : {self.envelope_type}\n",
             "-------------------------------\n",
             f"Solver Type        : {self.ode_solver}\n",
             f"Use rwa_sl         : {self.rwa_sl}\n\n",
@@ -85,6 +78,7 @@ class SimulationConfig:
             "t_wait": self.t_wait,
             "t_coh": self.t_coh,
             "pulse_fwhm_fs": self.pulse_fwhm_fs,
+            "envelope_type": self.envelope_type,
         }
         if self.solver_options:
             result["solver_options"] = self.solver_options

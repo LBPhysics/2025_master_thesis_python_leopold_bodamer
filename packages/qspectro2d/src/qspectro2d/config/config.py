@@ -85,10 +85,11 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
 
     laser_cfg["pulse_fwhm_fs"] = float(laser_cfg["pulse_fwhm_fs"])
 
+    dt = float(sim_cfg["dt"])
     sim_cfg["t_det"] = float(sim_cfg["t_det"])
     sim_cfg["t_coh"] = float(sim_cfg["t_coh"])
     sim_cfg["t_wait"] = float(sim_cfg["t_wait"])
-    sim_cfg["dt"] = float(sim_cfg["dt"])
+    sim_cfg["dt"] = dt
     sim_cfg["solver"] = str(sim_cfg["solver"])
     sim_cfg["sim_type"] = str(sim_cfg["sim_type"])
 
@@ -103,7 +104,8 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
     )
 
     if solver in {"lindblad", "redfield"}:
-        sim_cfg["solver_options"]["max_step"] = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
+        max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
+        sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
 
     return cfg
 

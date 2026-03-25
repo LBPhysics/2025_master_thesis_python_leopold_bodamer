@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 
 import numpy as np
-from qutip import BosonicEnvironment, Qobj, QobjEvo, ket2dm, mesolve
+from qutip import BosonicEnvironment, Qobj, QobjEvo, ket2dm
 
 from ...config.defaults import SUPPORTED_SOLVERS
 from ..atomic_system import AtomicSystem
@@ -54,19 +54,19 @@ def build_initial_state(
     if init_choice != "thermal":
         raise ValueError(f"Unsupported initial_state '{init_choice}'")
 
-    temperature = getattr(bath, "T", None)
-    if temperature is None or temperature <= 0:
+    temperature = bath.T
+    if temperature <= 1e-6:
         return system.to_eigenbasis(system.ground_state_dm())
 
-    tlist = np.linspace(0.0, 10000.0, 100)
-    result = mesolve(
-        H=system.hamiltonian,
-        rho0=system.ground_state_dm(),
-        tlist=tlist,
-        c_ops=lindblad_decay_channels(system),
-        options={"store_states": False, "store_final_state": True},
-    )
-    return system.to_eigenbasis(result.final_state)
+    energies, eigenstates = system.eigenstates
+    energies = np.asarray(energies, dtype=float)
+    energies = energies - np.min(energies)
+
+    weights = np.exp(-energies / float(temperature))
+    weights /= np.sum(weights)
+
+    rho_th = sum(w * ket2dm(state) for w, state in zip(weights, eigenstates))
+    return rho_th
 
 
 def build_observable_ops(system: AtomicSystem) -> list[Qobj]:

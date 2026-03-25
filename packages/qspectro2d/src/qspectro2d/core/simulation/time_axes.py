@@ -26,9 +26,14 @@ def _validate_solver_time_grid(tlist: np.ndarray) -> None:
 
 
 def _solver_start_time(cfg: "SimulationConfig", t_coh: float) -> float:
-    # Keep one consistent definition of the left solver boundary.
-    physical_left = -(cfg.t_wait + t_coh + DEFAULT_ACTIVE_WINDOW_NFWHM * cfg.pulse_fwhm_fs)
     dt = float(cfg.dt)
+    envelope_type = str(getattr(cfg, "envelope_type", "gaussian"))
+
+    if envelope_type == "delta":
+        physical_left = -(cfg.t_wait + t_coh) - dt
+    else:
+        physical_left = -(cfg.t_wait + t_coh + DEFAULT_ACTIVE_WINDOW_NFWHM * cfg.pulse_fwhm_fs)
+
     return float(dt * np.floor(physical_left / dt))
 
 
