@@ -49,9 +49,9 @@ By default, bath parameters in YAML are interpreted as **dimensionless multiples
 $$\bar\omega_0 = \mathrm{mean}(\texttt{atomic.frequencies_cm})$$
 
 That is:
-- `bath.temperature` means $T/\bar\omega_0$
-- `bath.cutoff` means $\omega_c/\bar\omega_0$
-- `bath.coupling` means $\text{coupling}/\bar\omega_0$
+- `bath.bath_temperature` means $T/\bar\omega_0$
+- `bath.bath_cutoff` means $\omega_c/\bar\omega_0$
+- `bath.sb_coupling` means $\text{coupling}/\bar\omega_0$
 
 Internally, the code converts `atomic.frequencies_cm` to fs⁻¹ for the dynamics; the same
 $\bar\omega_0$ (in fs⁻¹) is used to scale these bath parameters.
@@ -70,12 +70,12 @@ power-law exponent via `bath.s` (dimensionless). If omitted, the default is:
 
 For the `*+lorentzian` types, the Lorentzian peak is configured via **normalized (dimensionless)** YAML inputs:
 - `bath.peak_width`: $\gamma / \bar\omega_0$
-- `bath.peak_strength`: $\text{strength} / \text{coupling}$
+- `bath.peak_strength`: $\text{strength} / \text{sb\_coupling}$
 - `bath.peak_center` (optional): $\omega_\mathrm{center}/\bar\omega_0$ (default `0.0`)
-- `bath.wmax_factor` (optional): sets `wMax = wmax_factor * (bath.cutoff * \bar\omega_0)` (default `10.0`)
+- `bath.wmax_factor` (optional): sets `wMax = wmax_factor * (bath.bath_cutoff * \bar\omega_0)` (default `10.0`)
 
 Internally, the loader converts these as:
-$$\gamma = \texttt{peak_width}\,\bar\omega_0, \quad \text{strength} = \texttt{peak_strength}\,\text{coupling}.$$
+$$\gamma = \texttt{peak_width}\,\bar\omega_0, \quad \text{strength} = \texttt{peak_strength}\,\text{sb\_coupling}.$$
 
 **Known limitation (important):** the `*+lorentzian` bath types are still numerically delicate.
 In particular, trying to create a strong peak close to $\omega\approx 0$ (to boost pure dephasing) tends to be numerically fragile in the current QuTiP Bloch–Redfield workflow (rates become very sensitive to low-frequency behavior and the internal spectral integrations / interpolation can become unstable or slow).

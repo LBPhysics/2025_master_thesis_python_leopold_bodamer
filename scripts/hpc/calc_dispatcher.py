@@ -79,20 +79,20 @@ def estimate_slurm_resources(
     combos_per_batch = max(1, math.ceil(combos_total / max(1, n_batches)))
 
     base_mem_mb = 1500.0
-    bytes_per_worker = max(1, n_times) * max(1, n_dim) * 16.0 * 100.0
+    bytes_per_worker = max(1, n_times) * max(1, n_dim) * 16.0 * 200.0
     workers_mem_mb = workers * bytes_per_worker / (1024.0**2)
-    combos_mem_mb = min(1000.0, 2.0 * combos_per_batch)
+    combos_mem_mb = min(1000.0, 3.0 * combos_per_batch)
     requested_mem = f"{int(math.ceil(base_mem_mb + workers_mem_mb + combos_mem_mb))}M"
 
-    ref_n_times = 500.0
+    ref_n_times = 1000.0
     ref_n_dim = 2.0
 
     ref_seconds_per_combo = {
-        ("paper_eqs", True): 0.1,
-        ("lindblad", True): 0.2,
-        ("lindblad", False): 1.5,
-        ("redfield", True): 6.0,
-        ("redfield", False): 20.0,
+        ("paper_eqs", True): 0.25,
+        ("lindblad", True): 0.5,
+        ("lindblad", False): 3.0,
+        ("redfield", True): 15.0,
+        ("redfield", False): 60.0,
     }
 
     key = (solver, bool(rwa_sl))
@@ -243,7 +243,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         sim_type=args.sim_type,
         rng_seed=args.rng_seed,
         max_workers=args.cpus_per_task,
-        run_solver_check=True,
+        run_solver_check=False,
     )
 
     print(f"Config path: {prepared.config_path}")

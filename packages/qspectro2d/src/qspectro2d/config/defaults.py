@@ -83,9 +83,9 @@ DEFAULTS = {
     },
     "bath": {
         "bath_type": "ohmic",
-        "temperature": 1e-2,
-        "cutoff": 1e2,
-        "coupling": 1e-4,
+        "bath_temperature": 1e-2,
+        "bath_cutoff": 1e2,
+        "sb_coupling": 1e-4,
         "s": 1.0,
         "wmax_factor": 10.0,
         "peak_strength": 0.0,

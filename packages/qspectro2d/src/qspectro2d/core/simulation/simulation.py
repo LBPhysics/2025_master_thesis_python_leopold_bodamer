@@ -54,15 +54,15 @@ def build_initial_state(
     if init_choice != "thermal":
         raise ValueError(f"Unsupported initial_state '{init_choice}'")
 
-    temperature = bath.T
-    if temperature <= 1e-6:
+    bath_temp = bath.T
+    if bath_temp <= 1e-6:
         return system.to_eigenbasis(system.ground_state_dm())
 
     energies, eigenstates = system.eigenstates
     energies = np.asarray(energies, dtype=float)
     energies = energies - np.min(energies)
 
-    weights = np.exp(-energies / float(temperature))
+    weights = np.exp(-energies / float(bath_temp))
     weights /= np.sum(weights)
 
     rho_th = sum(w * ket2dm(state) for w, state in zip(weights, eigenstates))

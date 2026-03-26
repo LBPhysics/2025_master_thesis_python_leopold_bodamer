@@ -107,6 +107,10 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
         sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
 
+    # Non-RWA runs are always initialized from thermal equilibrium.
+    if not bool(laser_cfg["rwa_sl"]):
+        sim_cfg["initial_state"] = "thermal"
+
     return cfg
 
 
@@ -128,9 +132,9 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
     frequencies_cm = atomic_cfg["frequencies_cm"]
     n_atoms = int(atomic_cfg["n_atoms"])
     dip_moments = atomic_cfg["dip_moments"]
-    bath_temp = float(bath_cfg["temperature"])
-    bath_cutoff = float(bath_cfg["cutoff"])
-    bath_coupling = float(bath_cfg["coupling"])
+    bath_temp = float(bath_cfg["bath_temperature"])
+    bath_cutoff = float(bath_cfg["bath_cutoff"])
+    bath_coupling = float(bath_cfg["sb_coupling"])
     bath_s = float(bath_cfg["s"])
     n_phases = int(sim_cfg["n_phases"])
     max_excitation = int(atomic_cfg["max_excitation"])
@@ -195,11 +199,11 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
         raise ValueError(f"dip_moments length ({len(dip_moments)}) != n_atoms ({n_atoms})")
 
     if bath_temp < 0:
-        raise ValueError("bath.temperature must be >= 0")
+        raise ValueError("bath.bath_temperature must be >= 0")
     if bath_cutoff <= 0:
-        raise ValueError("bath.cutoff must be > 0")
+        raise ValueError("bath.bath_cutoff must be > 0")
     if bath_coupling <= 0:
-        raise ValueError("bath.coupling must be > 0")
+        raise ValueError("bath.sb_coupling must be > 0")
     if wmax_factor <= 0:
         raise ValueError("bath.wmax_factor must be > 0")
 

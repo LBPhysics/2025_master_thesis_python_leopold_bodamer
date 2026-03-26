@@ -180,9 +180,9 @@ power-law exponent. If omitted, the default is `s = 1.0`.
 
 For the `*+lorentzian` types, add a Lorentzian peak to the base spectral density using normalized inputs:
 - `bath.peak_width`: $\gamma / \bar\omega_0$
-- `bath.peak_strength`: $\text{strength} / \text{coupling}$
+- `bath.peak_strength`: $\text{strength} / \text{sb\_coupling}$
 - `bath.peak_center` (optional): $\omega_\mathrm{center}/\bar\omega_0$ (default `0.0`)
-- `bath.wmax_factor` (optional): `wMax = wmax_factor * cutoff` in internal units (default `10.0`)
+- `bath.wmax_factor` (optional): `wMax = wmax_factor * bath_cutoff` in internal units (default `10.0`)
 
 **Known limitation:** the `*+lorentzian` bath types are still numerically delicate.
 Peaks very close to $\omega\approx 0$ (often used to boost pure dephasing) can make Bloch–Redfield rates highly sensitive to low-frequency details and may lead to slow/unstable numerics.

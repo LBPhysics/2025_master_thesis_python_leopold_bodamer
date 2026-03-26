@@ -87,30 +87,30 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
     w0_fs = float(convert_cm_to_fs(mean_freq_cm))
 
     bath_type = str(bath_cfg["bath_type"])
-    temperature = float(bath_cfg["temperature"]) * w0_fs
-    cutoff = float(bath_cfg["cutoff"]) * w0_fs
-    coupling = float(bath_cfg["coupling"])
+    bath_temp = float(bath_cfg["bath_temperature"]) * w0_fs
+    bath_cutoff = float(bath_cfg["bath_cutoff"]) * w0_fs
+    sb_coupling = float(bath_cfg["sb_coupling"])
     bath_s = float(bath_cfg["s"])
     wmax_factor = float(bath_cfg["wmax_factor"])
-    peak_strength = float(bath_cfg["peak_strength"]) * coupling
+    peak_strength = float(bath_cfg["peak_strength"]) * sb_coupling
     peak_width = float(bath_cfg["peak_width"]) * w0_fs
     peak_center = float(bath_cfg["peak_center"]) * w0_fs
-    w_max = float(wmax_factor * cutoff)
+    w_max = float(wmax_factor * bath_cutoff)
 
     if bath_type == "ohmic":
         return OhmicEnvironment(
-            T=temperature,
-            alpha=coupling,
-            wc=cutoff,
+            T=bath_temp,
+            alpha=sb_coupling,
+            wc=bath_cutoff,
             s=bath_s,
             tag=bath_type,
         )
 
     if bath_type == "drudelorentz":
         return DrudeLorentzEnvironment(
-            T=temperature,
-            gamma=cutoff,
-            lam=coupling * cutoff / 2,
+            T=bath_temp,
+            gamma=bath_cutoff,
+            lam=sb_coupling * bath_cutoff / 2,
             tag=bath_type,
         )
 
@@ -120,17 +120,17 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
     }:
         if bath_type == "ohmic+lorentzian":
             bath_base = OhmicEnvironment(
-                T=temperature,
-                alpha=coupling,
-                wc=cutoff,
+                T=bath_temp,
+                alpha=sb_coupling,
+                wc=bath_cutoff,
                 s=bath_s,
                 tag=bath_type.split("+", 1)[0],
             )
         else:
             bath_base = DrudeLorentzEnvironment(
-                T=temperature,
-                gamma=cutoff,
-                lam=coupling * cutoff / 2,
+                T=bath_temp,
+                gamma=bath_cutoff,
+                lam=sb_coupling * bath_cutoff / 2,
                 tag="drudelorentz",
             )
 
@@ -152,17 +152,17 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
 
         bath_env = BosonicEnvironment.from_spectral_density(
             j_base_plus_peak,
-            T=temperature,
+            T=bath_temp,
             wMax=w_max,
             tag=bath_type,
         )
         if bath_type == "ohmic+lorentzian":
-            bath_env.wc = cutoff
-            bath_env.alpha = coupling
+            bath_env.wc = bath_cutoff
+            bath_env.alpha = sb_coupling
             bath_env.s = bath_s
         else:
-            bath_env.gamma = cutoff
-            bath_env.lam = coupling * cutoff / 2
+            bath_env.gamma = bath_cutoff
+            bath_env.lam = sb_coupling * bath_cutoff / 2
         return bath_env
 
     raise ValueError(f"Unsupported bath_type: {bath_type}. Supported: {SUPPORTED_BATHS}")
