@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -103,6 +104,22 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         sim_cfg.get("solver_options", {}),
     )
 
+    if solver == "paper_eqs":
+        if not bool(laser_cfg["rwa_sl"]):
+            warnings.warn(
+                "rwa_sl forced True for paper_eqs solver.",
+                category=UserWarning,
+                stacklevel=2,
+            )
+            laser_cfg["rwa_sl"] = True
+        if str(sim_cfg.get("initial_state", "ground")) == "thermal":
+            warnings.warn(
+                "initial_state forced to 'ground' for paper_eqs solver.",
+                category=UserWarning,
+                stacklevel=2,
+            )
+            sim_cfg["initial_state"] = "ground"
+
     if solver in {"lindblad", "redfield"}:
         max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
         sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
@@ -148,6 +165,7 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
     delta_inhomogen_cm = float(atomic_cfg["delta_inhomogen_cm"])
     solver_options = sim_cfg["solver_options"]
     sim_type = str(sim_cfg["sim_type"])
+    initial_state = str(sim_cfg["initial_state"])
     max_workers = int(sim_cfg["max_workers"])
     t_det = float(sim_cfg["t_det"])
     t_coh = float(sim_cfg["t_coh"])
@@ -168,6 +186,14 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
 
     if ode_solver not in SUPPORTED_SOLVERS:
         raise ValueError(f"Invalid solver '{ode_solver}'. Supported: {sorted(SUPPORTED_SOLVERS)}")
+
+    if initial_state not in {"ground", "thermal"}:
+        raise ValueError("config.initial_state must be 'ground' or 'thermal'")
+    if ode_solver == "paper_eqs" or ode_solver == "lindblad" and initial_state == "thermal":
+        raise ValueError(
+            "config.initial_state='thermal' is not allowed for solver 'paper_eqs' "
+            "because paper_eqs enforces rwa_sl=True"
+        )
 
     if dt <= 0:
         raise ValueError("dt must be > 0")
