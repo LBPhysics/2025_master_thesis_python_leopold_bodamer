@@ -12,7 +12,6 @@ import numpy as np
 
 __all__ = [
     "HBAR",
-    "BOLTZMANN",
     "convert_cm_to_fs",
     "convert_fs_to_cm",
 ]
@@ -21,7 +20,6 @@ __all__ = [
 # FUNDAMENTAL CONSTANTS (natural units inside project)
 
 HBAR: float = 1.0  # Reduced Planck constant
-BOLTZMANN: float = 1.0  # Boltzmann constant
 
 _C_CM_PER_FS: float = 2.998  # speed of light factor in (1e-5 * cm/fs)
 _TWOPI: float = 2 * np.pi

@@ -5,7 +5,6 @@ from __future__ import annotations
 # Explicit imports; simple and clear.
 from .constants import (
     HBAR,
-    BOLTZMANN,
     convert_cm_to_fs,
     convert_fs_to_cm,
 )
@@ -28,7 +27,6 @@ from .phase_cycling import phase_cycle_component
 __all__ = [
     # constants
     "HBAR",
-    "BOLTZMANN",
     "convert_cm_to_fs",
     "convert_fs_to_cm",
     # file naming

@@ -17,6 +17,7 @@ from .defaults import (
     SUPPORTED_ENVELOPES,
     SUPPORTED_SIM_TYPES,
     SUPPORTED_SOLVERS,
+    N_PULSES,
     get_defaults,
 )
 
@@ -76,23 +77,18 @@ def get_max_workers() -> int:
 
 
 def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """Merge user config onto defaults and resolve derived values once."""
     cfg = get_defaults()
     if user_cfg:
         _merge_dict(cfg, user_cfg)
 
-    laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
+    laser_cfg = cfg["laser"]
 
-    laser_cfg["pulse_fwhm_fs"] = float(laser_cfg["pulse_fwhm_fs"])
+    for key in ("t_det", "t_coh", "t_wait", "dt"):
+        sim_cfg[key] = float(sim_cfg[key])
 
-    dt = float(sim_cfg["dt"])
-    sim_cfg["t_det"] = float(sim_cfg["t_det"])
-    sim_cfg["t_coh"] = float(sim_cfg["t_coh"])
-    sim_cfg["t_wait"] = float(sim_cfg["t_wait"])
-    sim_cfg["dt"] = dt
-    sim_cfg["solver"] = str(sim_cfg["solver"])
-    sim_cfg["sim_type"] = str(sim_cfg["sim_type"])
+    for key in ("solver", "sim_type"):
+        sim_cfg[key] = str(sim_cfg[key])
 
     sim_cfg["max_workers"] = (
         get_max_workers() if sim_cfg.get("max_workers") is None else int(sim_cfg["max_workers"])
@@ -104,29 +100,12 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         sim_cfg.get("solver_options", {}),
     )
 
-    if solver == "paper_eqs":
-        if not bool(laser_cfg["rwa_sl"]):
-            warnings.warn(
-                "rwa_sl forced True for paper_eqs solver.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            laser_cfg["rwa_sl"] = True
-        if str(sim_cfg.get("initial_state", "ground")) == "thermal":
-            warnings.warn(
-                "initial_state forced to 'ground' for paper_eqs solver.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            sim_cfg["initial_state"] = "ground"
+    _normalize_solver_state_constraints(cfg)
 
     if solver in {"lindblad", "redfield"}:
         max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
+        dt = float(sim_cfg["dt"])
         sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
-
-    # Non-RWA runs are always initialized from thermal equilibrium.
-    if not bool(laser_cfg["rwa_sl"]):
-        sim_cfg["initial_state"] = "thermal"
 
     return cfg
 
@@ -189,10 +168,13 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
 
     if initial_state not in {"ground", "thermal"}:
         raise ValueError("config.initial_state must be 'ground' or 'thermal'")
-    if ode_solver == "paper_eqs" or ode_solver == "lindblad" and initial_state == "thermal":
+    if ode_solver == "paper_eqs" and not rwa_sl:
+        raise ValueError("solver 'paper_eqs' requires laser.rwa_sl=True")
+
+    if initial_state == "thermal" and not (ode_solver == "redfield" and not rwa_sl):
         raise ValueError(
-            "config.initial_state='thermal' is not allowed for solver 'paper_eqs' "
-            "because paper_eqs enforces rwa_sl=True"
+            "config.initial_state='thermal' is only allowed for "
+            "solver='redfield' with rwa_sl=False"
         )
 
     if dt <= 0:
@@ -250,9 +232,9 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
         raise ValueError(
             f"n_chains ({n_chains}) does not divide n_atoms ({n_atoms}) for cylindrical geometry"
         )
-
-    if len(pulse_amplitudes) != 3:
-        raise ValueError("laser.pulse_amplitudes must have exactly 3 elements")
+    
+    if len(pulse_amplitudes) != N_PULSES:
+        raise ValueError(f"laser.pulse_amplitudes must have exactly {N_PULSES} elements")
     if any(amplitude <= 0 for amplitude in pulse_amplitudes):
         raise ValueError("All laser.pulse_amplitudes entries must be > 0")
 
@@ -323,6 +305,35 @@ def resolve_config(
     return cfg
 
 
+def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
+    sim_cfg = cfg["config"]
+    laser_cfg = cfg["laser"]
+
+    solver = str(sim_cfg["solver"])
+    rwa_sl = bool(laser_cfg["rwa_sl"])
+    initial_state = str(sim_cfg.get("initial_state", "ground"))
+
+    # hard constraint: paper_eqs only with rwa_sl=True
+    if solver == "paper_eqs" and not rwa_sl:
+        warnings.warn(
+            "rwa_sl forced True for paper_eqs solver.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        laser_cfg["rwa_sl"] = True
+        rwa_sl = True
+
+    # thermal only allowed for redfield with rwa_sl=False
+    thermal_allowed = (solver == "redfield" and not rwa_sl)
+    if initial_state == "thermal" and not thermal_allowed:
+        warnings.warn(
+            "initial_state='thermal' is only supported for solver='redfield' "
+            "with rwa_sl=False; forcing initial_state='ground'.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        sim_cfg["initial_state"] = "ground"
+        
 __all__ = [
     "get_max_workers",
     "load_config",

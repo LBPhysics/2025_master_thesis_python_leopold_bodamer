@@ -37,6 +37,10 @@ N_PHASES = 4
 DPHI = 2 * np.pi / N_PHASES
 PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES)
 
+N_PULSES = 3
+PULSE_AMPLITUDES = [
+    0.02
+] * N_PULSES  # ensures that the population of the excited state is less then 1% -> contributions of higher nonlinearities remain negligible
 SIGNAL_TYPES = ["rephasing", "nonrephasing"]
 
 COMPONENT_MAP: dict[str, tuple[int, int]] = {
@@ -76,7 +80,7 @@ DEFAULTS = {
     },
     "laser": {
         "pulse_fwhm_fs": DEFAULT_PULSE_FWHM_FS,
-        "pulse_amplitudes": [0.01, 0.01, 0.01],
+        "pulse_amplitudes": PULSE_AMPLITUDES,
         "envelope_type": "gaussian",
         "carrier_freq_cm": 16000.0,
         "rwa_sl": True,
