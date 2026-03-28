@@ -88,8 +88,8 @@ def estimate_slurm_resources(
     ref_n_dim = 2.0
 
     ref_seconds_per_combo = {
-        ("paper_eqs", True): 0.25,
-        ("lindblad", True): 0.5,
+        ("paper_eqs", True): 0.2,
+        ("lindblad", True): 0.4,
         ("lindblad", False): 3.0,
         ("redfield", True): 15.0,
         ("redfield", False): 60.0,
@@ -100,7 +100,7 @@ def estimate_slurm_resources(
     effective_parallelism = max(1, min(workers, phase_cycling_jobs))
     phase_rounds = math.ceil(phase_cycling_jobs / effective_parallelism)
 
-    time_scale = (max(1, n_times) / ref_n_times) ** 1.30
+    time_scale = (max(1, n_times) / ref_n_times) ** 1.10
     atomic_dim_scale = (max(1, n_dim) / ref_n_dim) ** 2.0
 
     seconds_per_combo = ref_seconds_per_combo[key] * time_scale * atomic_dim_scale * phase_rounds

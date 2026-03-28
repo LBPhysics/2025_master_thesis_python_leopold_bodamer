@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import warnings
+from fractions import Fraction
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import numpy as np
 import yaml
@@ -13,13 +14,21 @@ import yaml
 from .defaults import (
     ALLOWED_SOLVER_OPTIONS,
     COMPONENT_MAP,
+    N_PULSES,
     SUPPORTED_BATHS,
     SUPPORTED_ENVELOPES,
     SUPPORTED_SIM_TYPES,
     SUPPORTED_SOLVERS,
-    N_PULSES,
     get_defaults,
 )
+
+Section = dict[str, Any]
+Coercer = Callable[..., Any]
+
+
+# -----------------------------------------------------------------------------
+# YAML loading / merging
+# -----------------------------------------------------------------------------
 
 
 def _read_yaml(path: Path) -> Mapping[str, Any]:
@@ -41,28 +50,160 @@ def _merge_dict(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, 
     return base
 
 
-def _normalize_solver_options(solver: str, solver_options: Mapping[str, Any]) -> dict[str, Any]:
-    merged = dict(solver_options)
-    allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(solver, []))
+# -----------------------------------------------------------------------------
+# Type coercion helpers
+# -----------------------------------------------------------------------------
 
-    normalized: dict[str, Any] = {}
-    for key, value in merged.items():
-        if key not in allowed_keys:
-            continue
-        if isinstance(value, str):
-            text = value.strip()
+
+def _coerce_float(value: Any, *, field_name: str) -> float:
+    """Parse numeric config values, including safe fraction strings like '77/23024'."""
+    if isinstance(value, bool):
+        raise TypeError(
+            f"Expected numeric value for {field_name}, got {type(value).__name__}: {value!r}"
+        )
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return float(text)
+        except ValueError:
             try:
-                numeric_value = float(text)
-            except ValueError:
-                normalized[key] = value
-            else:
-                if numeric_value.is_integer() and "e" not in text.lower() and "." not in text:
-                    normalized[key] = int(numeric_value)
-                else:
-                    normalized[key] = numeric_value
-        else:
-            normalized[key] = value
-    return normalized
+                return float(Fraction(text))
+            except (ValueError, ZeroDivisionError) as exc:
+                raise ValueError(
+                    f"Could not parse numeric value for {field_name}: {value!r}"
+                ) from exc
+    raise TypeError(
+        f"Expected numeric value for {field_name}, got {type(value).__name__}: {value!r}"
+    )
+
+
+def _coerce_int(value: Any, *, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise TypeError(
+            f"Expected integer value for {field_name}, got {type(value).__name__}: {value!r}"
+        )
+    if isinstance(value, int):
+        return value
+
+    numeric_value = _coerce_float(value, field_name=field_name)
+    if not numeric_value.is_integer():
+        raise ValueError(f"Expected integer value for {field_name}, got non-integer: {value!r}")
+    return int(numeric_value)
+
+
+def _coerce_bool(value: Any, *, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value in (0, 1):
+            return bool(value)
+        raise ValueError(f"Expected boolean-like value for {field_name}, got: {value!r}")
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"true", "1", "yes", "on"}:
+            return True
+        if text in {"false", "0", "no", "off"}:
+            return False
+        raise ValueError(f"Expected boolean-like string for {field_name}, got: {value!r}")
+    raise TypeError(
+        f"Expected boolean value for {field_name}, got {type(value).__name__}: {value!r}"
+    )
+
+
+def _coerce_float_list(value: Any, *, field_name: str) -> list[float]:
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"Expected a list for {field_name}, got {type(value).__name__}: {value!r}")
+    return [
+        _coerce_float(item, field_name=f"{field_name}[{index}]") for index, item in enumerate(value)
+    ]
+
+
+def _coerce_str_list(value: Any, *, field_name: str) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"Expected a list for {field_name}, got {type(value).__name__}: {value!r}")
+    return [str(item) for item in value]
+
+
+def _coerce_str(value: Any, *, field_name: str) -> str:
+    del field_name
+    return str(value)
+
+
+SECTION_SCHEMAS: dict[str, dict[str, Coercer]] = {
+    "atomic": {
+        "n_atoms": _coerce_int,
+        "n_chains": _coerce_int,
+        "max_excitation": _coerce_int,
+        "n_inhomogen": _coerce_int,
+        "coupling_cm": _coerce_float,
+        "delta_inhomogen_cm": _coerce_float,
+        "deph_rate_fs": _coerce_float,
+        "down_rate_fs": _coerce_float,
+        "up_rate_fs": _coerce_float,
+        "frequencies_cm": _coerce_float_list,
+        "dip_moments": _coerce_float_list,
+    },
+    "laser": {
+        "pulse_fwhm_fs": _coerce_float,
+        "carrier_freq_cm": _coerce_float,
+        "pulse_amplitudes": _coerce_float_list,
+        "envelope_type": _coerce_str,
+        "rwa_sl": _coerce_bool,
+    },
+    "bath": {
+        "bath_temperature": _coerce_float,
+        "sb_coupling": _coerce_float,
+        "bath_cutoff": _coerce_float,
+        "s": _coerce_float,
+        "wmax_factor": _coerce_float,
+        "peak_strength": _coerce_float,
+        "peak_width": _coerce_float,
+        "peak_center": _coerce_float,
+    },
+    "config": {
+        "solver": _coerce_str,
+        "sim_type": _coerce_str,
+        "t_det": _coerce_float,
+        "t_coh": _coerce_float,
+        "t_wait": _coerce_float,
+        "dt": _coerce_float,
+        "n_phases": _coerce_int,
+        "signal_types": _coerce_str_list,
+        "initial_state": _coerce_str,
+    },
+}
+
+
+def _apply_schema(section: Section, schema: Mapping[str, Coercer], prefix: str) -> None:
+    for key, coercer in schema.items():
+        if key in section:
+            section[key] = coercer(section[key], field_name=f"{prefix}.{key}")
+
+
+def _normalize_solver_options(solver: str, solver_options: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(solver_options, Mapping):
+        raise TypeError("config.solver_options must be a mapping/dict")
+
+    allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(solver, []))
+    filtered = {k: v for k, v in solver_options.items() if k in allowed_keys}
+
+    if "nsteps" in filtered:
+        filtered["nsteps"] = _coerce_int(
+            filtered["nsteps"], field_name="config.solver_options.nsteps"
+        )
+    for key in {"atol", "rtol", "sec_cutoff", "max_step"} & filtered.keys():
+        filtered[key] = _coerce_float(filtered[key], field_name=f"config.solver_options.{key}")
+    if "method" in filtered:
+        filtered["method"] = str(filtered["method"])
+
+    return filtered
+
+
+# -----------------------------------------------------------------------------
+# Post-merge normalization
+# -----------------------------------------------------------------------------
 
 
 def get_max_workers() -> int:
@@ -76,42 +217,76 @@ def get_max_workers() -> int:
     return slurm_cpus if slurm_cpus > 0 else int(local_cpus)
 
 
+def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
+    sim_cfg = cfg["config"]
+    laser_cfg = cfg["laser"]
+
+    solver = str(sim_cfg["solver"])
+    rwa_sl = bool(laser_cfg["rwa_sl"])
+    initial_state = str(sim_cfg.get("initial_state", "ground"))
+
+    if solver == "paper_eqs" and not rwa_sl:
+        warnings.warn(
+            "solver='paper_eqs' requires laser.rwa_sl=True; forcing rwa_sl=True.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        laser_cfg["rwa_sl"] = True
+
+    if initial_state == "thermal" and solver != "redfield":
+        warnings.warn(
+            "config.initial_state='thermal' is only supported for solver='redfield'; "
+            "forcing initial_state='ground'.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        sim_cfg["initial_state"] = "ground"
+
+
+def _inject_default_max_step(cfg: dict[str, Any]) -> None:
+    """Handle max_step internally for time-dependent solvers."""
+    sim_cfg = cfg["config"]
+    laser_cfg = cfg["laser"]
+    solver = str(sim_cfg["solver"])
+
+    if solver not in {"lindblad", "redfield"}:
+        return
+
+    max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
+    dt = float(sim_cfg["dt"])
+    sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
+
+
+# -----------------------------------------------------------------------------
+# Public config API
+# -----------------------------------------------------------------------------
+
+
 def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
     cfg = get_defaults()
     if user_cfg:
         _merge_dict(cfg, user_cfg)
 
+    for section_name, schema in SECTION_SCHEMAS.items():
+        _apply_schema(cfg[section_name], schema, section_name)
+
     sim_cfg = cfg["config"]
-    laser_cfg = cfg["laser"]
-
-    for key in ("t_det", "t_coh", "t_wait", "dt"):
-        sim_cfg[key] = float(sim_cfg[key])
-
-    for key in ("solver", "sim_type"):
-        sim_cfg[key] = str(sim_cfg[key])
-
     sim_cfg["max_workers"] = (
-        get_max_workers() if sim_cfg.get("max_workers") is None else int(sim_cfg["max_workers"])
+        get_max_workers()
+        if sim_cfg.get("max_workers") is None
+        else _coerce_int(sim_cfg["max_workers"], field_name="config.max_workers")
     )
-
-    solver = sim_cfg["solver"]
     sim_cfg["solver_options"] = _normalize_solver_options(
-        solver,
+        str(sim_cfg["solver"]),
         sim_cfg.get("solver_options", {}),
     )
 
     _normalize_solver_state_constraints(cfg)
-
-    if solver in {"lindblad", "redfield"}:
-        max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
-        dt = float(sim_cfg["dt"])
-        sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
-
+    _inject_default_max_step(cfg)
     return cfg
 
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
-    """Load YAML once and return one merged config dict."""
     if path is None:
         return merge_config()
     return merge_config(_read_yaml(Path(path)))
@@ -123,44 +298,43 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
     bath_cfg = cfg["bath"]
     sim_cfg = cfg["config"]
 
-    ode_solver = str(sim_cfg["solver"])
+    ode_solver = sim_cfg["solver"]
     bath_type = str(bath_cfg["bath_type"])
     frequencies_cm = atomic_cfg["frequencies_cm"]
-    n_atoms = int(atomic_cfg["n_atoms"])
+    n_atoms = atomic_cfg["n_atoms"]
     dip_moments = atomic_cfg["dip_moments"]
-    bath_temp = float(bath_cfg["bath_temperature"])
-    bath_cutoff = float(bath_cfg["bath_cutoff"])
-    bath_coupling = float(bath_cfg["sb_coupling"])
-    bath_s = float(bath_cfg["s"])
-    n_phases = int(sim_cfg["n_phases"])
-    max_excitation = int(atomic_cfg["max_excitation"])
-    n_chains = int(atomic_cfg["n_chains"])
+    bath_temp = bath_cfg["bath_temperature"]
+    bath_cutoff = bath_cfg["bath_cutoff"]
+    bath_coupling = bath_cfg["sb_coupling"]
+    bath_s = bath_cfg["s"]
+    n_phases = sim_cfg["n_phases"]
+    max_excitation = atomic_cfg["max_excitation"]
+    n_chains = atomic_cfg["n_chains"]
     pulse_amplitudes = laser_cfg["pulse_amplitudes"]
-    rwa_sl = bool(laser_cfg["rwa_sl"])
-    carrier_freq_cm = float(laser_cfg["carrier_freq_cm"])
-    pulse_fwhm_fs = float(laser_cfg["pulse_fwhm_fs"])
-    envelope_type = str(laser_cfg["envelope_type"])
-    coupling_cm = float(atomic_cfg["coupling_cm"])
-    delta_inhomogen_cm = float(atomic_cfg["delta_inhomogen_cm"])
+    rwa_sl = laser_cfg["rwa_sl"]
+    carrier_freq_cm = laser_cfg["carrier_freq_cm"]
+    pulse_fwhm_fs = laser_cfg["pulse_fwhm_fs"]
+    envelope_type = laser_cfg["envelope_type"]
+    coupling_cm = atomic_cfg["coupling_cm"]
+    delta_inhomogen_cm = atomic_cfg["delta_inhomogen_cm"]
     solver_options = sim_cfg["solver_options"]
-    sim_type = str(sim_cfg["sim_type"])
-    initial_state = str(sim_cfg["initial_state"])
-    max_workers = int(sim_cfg["max_workers"])
-    t_det = float(sim_cfg["t_det"])
-    t_coh = float(sim_cfg["t_coh"])
-    dt = float(sim_cfg["dt"])
-    t_wait = float(sim_cfg["t_wait"])
-    n_inhomogen = int(atomic_cfg["n_inhomogen"])
-    signal_types = list(sim_cfg["signal_types"])
-    wmax_factor = float(bath_cfg["wmax_factor"])
-    peak_strength = float(bath_cfg["peak_strength"])
-    peak_width = float(bath_cfg["peak_width"])
-    peak_center = float(bath_cfg["peak_center"])
+    sim_type = sim_cfg["sim_type"]
+    initial_state = sim_cfg["initial_state"]
+    max_workers = sim_cfg["max_workers"]
+    t_det = sim_cfg["t_det"]
+    t_coh = sim_cfg["t_coh"]
+    dt = sim_cfg["dt"]
+    t_wait = sim_cfg["t_wait"]
+    n_inhomogen = atomic_cfg["n_inhomogen"]
+    signal_types = sim_cfg["signal_types"]
+    wmax_factor = bath_cfg["wmax_factor"]
+    peak_strength = bath_cfg["peak_strength"]
+    peak_width = bath_cfg["peak_width"]
+    peak_center = bath_cfg["peak_center"]
 
     if bath_type not in SUPPORTED_BATHS:
         raise ValueError(f"bath_type '{bath_type}' not in {SUPPORTED_BATHS}")
-
-    if bath_type in {"ohmic", "ohmic+lorentzian"} and float(bath_s) <= 0:
+    if bath_type in {"ohmic", "ohmic+lorentzian"} and bath_s <= 0:
         raise ValueError("bath.s must be > 0 for Ohmic-family baths")
 
     if ode_solver not in SUPPORTED_SOLVERS:
@@ -169,7 +343,7 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
     if initial_state not in {"ground", "thermal"}:
         raise ValueError("config.initial_state must be 'ground' or 'thermal'")
     if initial_state == "thermal" and ode_solver != "redfield":
-        raise ValueError("config.initial_state='thermal' is only allowed for " "solver='redfield'")
+        raise ValueError("config.initial_state='thermal' is only allowed for solver='redfield'")
 
     if dt <= 0:
         raise ValueError("dt must be > 0")
@@ -297,36 +471,6 @@ def resolve_config(
         cfg = merge_config(config_or_path)
     validate_config(cfg, emit_runtime_warnings=emit_runtime_warnings)
     return cfg
-
-
-def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
-    sim_cfg = cfg["config"]
-    laser_cfg = cfg["laser"]
-
-    solver = str(sim_cfg["solver"])
-    rwa_sl = bool(laser_cfg["rwa_sl"])
-    initial_state = str(sim_cfg.get("initial_state", "ground"))
-
-    # paper_eqs is defined in the rotating frame
-    if solver == "paper_eqs" and not rwa_sl:
-        warnings.warn(
-            "solver='paper_eqs' requires laser.rwa_sl=True; forcing rwa_sl=True.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        laser_cfg["rwa_sl"] = True
-        rwa_sl = True
-
-    # thermal initial state only makes sense for the physically supported
-    # redfield configuration in this codebase
-    if initial_state == "thermal" and solver != "redfield":
-        warnings.warn(
-            "config.initial_state='thermal' is only supported for "
-            "solver='redfield'; forcing initial_state='ground'.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        sim_cfg["initial_state"] = "ground"
 
 
 __all__ = [

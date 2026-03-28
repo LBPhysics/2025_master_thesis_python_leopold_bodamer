@@ -1,4 +1,4 @@
-"""Constants for configuration."""
+"""Constants and defaults for configuration."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ SUPPORTED_BATHS = [
     "drudelorentz+lorentzian",
 ]
 
-SUPPORTED_ENVELOPES = ["gaussian", "cos2", "delta"]
+SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
 
 SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
 
@@ -53,7 +53,7 @@ COMPONENT_MAP: dict[str, tuple[int, int]] = {
 NEGATIVE_EIGVAL_THRESHOLD = -1e-3
 TRACE_TOLERANCE = 1e-6
 
-# --- Time and grid defaults (kept as flat vars for backward compat) ---
+# --- Time and grid defaults ---
 DT = 0.1
 T_DET = 1.0
 T_COH = T_DET
@@ -74,13 +74,14 @@ DEFAULTS = {
         "max_excitation": 1,
         "n_inhomogen": 1,
         "delta_inhomogen_cm": 0.0,
+        # Currently mainly kept for paper-reproduction workflows.
         "deph_rate_fs": 1 / 100,
         "down_rate_fs": 1 / 300,
         "up_rate_fs": 0.0,
     },
     "laser": {
         "pulse_fwhm_fs": DEFAULT_PULSE_FWHM_FS,
-        "pulse_amplitudes": PULSE_AMPLITUDES,
+        "pulse_amplitudes": list(PULSE_AMPLITUDES),
         "envelope_type": "gaussian",
         "carrier_freq_cm": 16000.0,
         "rwa_sl": True,
@@ -99,8 +100,10 @@ DEFAULTS = {
     "config": {
         "solver": "redfield",
         "solver_options": {
-            "sec_cutoff": 0.000001,
-            "method": "bdf",
+            "sec_cutoff": 1.0e-6,
+            "method": (
+                "lsoda"
+            ),  # automatically switches between stiff and non-stiff methods, see https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html#scipy.integrate.solve_ivp
         },
         "sim_type": "1d",
         "t_det": T_DET,
@@ -132,20 +135,22 @@ __all__ = [
     "ALLOWED_SOLVER_OPTIONS",
     "COMPONENT_MAP",
     "DEFAULTS",
+    "DEFAULT_PULSE_FWHM_FS",
     "DPHI",
+    "DT",
     "get_defaults",
     "INITIAL_STATE",
     "NEGATIVE_EIGVAL_THRESHOLD",
     "N_PHASES",
+    "N_PULSES",
     "PHASE_CYCLING_PHASES",
+    "PULSE_AMPLITUDES",
     "SIGNAL_TYPES",
     "SUPPORTED_BATHS",
     "SUPPORTED_ENVELOPES",
     "SUPPORTED_SIM_TYPES",
     "SUPPORTED_SOLVERS",
     "TRACE_TOLERANCE",
-    "DEFAULT_PULSE_FWHM_FS",
     "T_WAIT",
-    "DT",
     "phase_cycling_phases",
 ]

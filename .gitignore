@@ -10,6 +10,8 @@
 # My ignored files
 /packages/plotstyle/figures/
 /figures/
+/notebooks/
+/jobs/
 .idea/
 *.yaml
 
@@ -191,7 +193,6 @@ archive/
 /config/local.py
 /config/local_*.py
 
-/jobs/
 
 # all error filed from suptercomputer proteus
 **/.err
