@@ -91,11 +91,6 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
     bath_cutoff = float(bath_cfg["bath_cutoff"]) * w0_fs
     sb_coupling = float(bath_cfg["sb_coupling"])
     bath_s = float(bath_cfg["s"])
-    wmax_factor = float(bath_cfg["wmax_factor"])
-    peak_strength = float(bath_cfg["peak_strength"]) * sb_coupling
-    peak_width = float(bath_cfg["peak_width"]) * w0_fs
-    peak_center = float(bath_cfg["peak_center"]) * w0_fs
-    w_max = float(wmax_factor * bath_cutoff)
 
     if bath_type == "ohmic":
         return OhmicEnvironment(
@@ -133,6 +128,12 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
                 lam=sb_coupling * bath_cutoff / 2,
                 tag="drudelorentz",
             )
+
+        wmax_factor = float(bath_cfg["wmax_factor"])
+        peak_strength = float(bath_cfg["peak_strength"]) * sb_coupling
+        peak_width = float(bath_cfg["peak_width"]) * w0_fs
+        peak_center = float(bath_cfg["peak_center"]) * w0_fs
+        w_max = float(wmax_factor * bath_cutoff)
 
         def j_lorentz_peak(
             w,

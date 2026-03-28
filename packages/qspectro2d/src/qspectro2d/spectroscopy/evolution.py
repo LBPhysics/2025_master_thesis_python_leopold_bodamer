@@ -20,7 +20,7 @@ from copy import deepcopy
 import os
 
 import numpy as np
-from qutip import brmesolve, mesolve
+from qutip import Qobj, brmesolve, mesolve
 
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_t_det, compute_times_local
@@ -87,6 +87,8 @@ def compute_evolution(
     e_ops=None,
     *,
     solver_times: np.ndarray | None = None,
+    initial_state: Qobj | None = None,
+    field_free: bool = False,
     **override_options: dict,
 ) -> tuple[np.ndarray, list]:
     """Return the simulation time grid together with expectations or states."""
@@ -95,7 +97,7 @@ def compute_evolution(
     else:
         t_list = _validate_external_time_grid(solver_times)
 
-    state0 = sim_oqs.initial_state
+    state0 = sim_oqs.initial_state if initial_state is None else initial_state
     hamiltonian = sim_oqs.evo_obj
 
     solver = sim_oqs.simulation_config.ode_solver
@@ -108,6 +110,14 @@ def compute_evolution(
         options.setdefault("store_final_state", True)
     else:
         options.setdefault("store_states", True)
+
+    if field_free:
+        if solver == "paper_eqs":
+            from ..core.simulation.paper_solver import paper_liouvillian_l0
+
+            hamiltonian = paper_liouvillian_l0(sim_oqs)
+        else:
+            hamiltonian = sim_oqs.H0_diagonalized
 
     if solver == "redfield":
         try:
@@ -137,7 +147,7 @@ def compute_evolution(
         raise ValueError(f"Unsupported solver '{solver}'.")
 
     data = result.expect[0] if e_ops is not None else result.states
-    if e_ops is None and sim_oqs.simulation_config.rwa_sl and len(t_list):
+    if e_ops is None and not field_free and sim_oqs.simulation_config.rwa_sl and len(t_list):
         data = from_rotating_frame_list(
             data,
             np.array(t_list, float),

@@ -124,8 +124,18 @@ class AtomicSystem:
     @cached_property
     def eigenbasis_transform(self) -> Qobj:
         _, basis_states = self.eigenstates
+        cols = []
+
+        for state in basis_states:
+            vec = state.full().flatten().astype(complex)
+            nz = np.flatnonzero(np.abs(vec) > 1e-12)
+            if len(nz):
+                phase = np.exp(-1j * np.angle(vec[nz[0]]))
+                vec = phase * vec
+            cols.append(vec[:, None])
+
         return Qobj(
-            np.column_stack([state.full() for state in basis_states]),
+            np.column_stack(cols),
             dims=self.hamiltonian.dims,
         )
 

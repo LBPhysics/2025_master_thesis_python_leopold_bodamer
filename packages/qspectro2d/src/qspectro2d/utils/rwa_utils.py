@@ -143,16 +143,17 @@ def get_expect_vals_with_RWA(
 ) -> List[np.ndarray]:
     """
     Parameters:
-        states: Results of the pulse evolution (data.states from qutip.Result)
-        times: Time points at which the expectation values are calculated
-        n_atoms: Number of atoms in the system
-        e_ops: operators in the eigenbasis of H0
-        omega_laser: Frequency of the laser
-        rwa_sl: Whether to apply the RWA phase factors
-        dipole_op: also in eigenbasis!
+        states:
+            Density matrices in the solver basis. If rwa_sl=True, these are assumed
+            to be stored in the rotating frame and are transformed back to the lab frame
+            representation before expectations are taken.
 
-    Returns:
-        List of arrays containing expectation values for each operator
+        e_ops:
+            Observables in the SAME basis/representation as the transformed states.
+            In the current solver architecture, this means eigenbasis-represented operators.
+
+        dipole_op:
+            Dipole operator in the same basis/representation as e_ops.
     """
     if rwa_sl:
         # By default we assume stored states are in the rotating frame and we want lab-frame

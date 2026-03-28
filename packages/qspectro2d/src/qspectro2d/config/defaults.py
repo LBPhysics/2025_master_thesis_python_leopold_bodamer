@@ -39,7 +39,7 @@ PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES)
 
 N_PULSES = 3
 PULSE_AMPLITUDES = [
-    0.02
+    0.01
 ] * N_PULSES  # ensures that the population of the excited state is less then 1% -> contributions of higher nonlinearities remain negligible
 SIGNAL_TYPES = ["rephasing", "nonrephasing"]
 
@@ -99,7 +99,7 @@ DEFAULTS = {
     "config": {
         "solver": "redfield",
         "solver_options": {
-            "sec_cutoff": 0.0,
+            "sec_cutoff": 0.000001,
             "method": "bdf",
         },
         "sim_type": "1d",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import copy
 from qutip import BosonicEnvironment, Qobj
 
 from .atomic_system import AtomicSystem, pair_to_index
@@ -23,75 +24,87 @@ def _dephasing_projector(system: AtomicSystem, index: int) -> Qobj:
 def redfield_decay_channels(
     system: AtomicSystem, bath: BosonicEnvironment
 ) -> list[tuple[Qobj, BosonicEnvironment]]:
-    """Return Bloch-Redfield coupling operators for the current system."""
+    """Return paper-aligned Bloch-Redfield coupling operators.
+
+    For the current max_excitation<=2 truncation:
+        A_i = |i><i| + sum_{j != i} |ij><ij|
+    and
+        H_SB = sum_i F_i A_i
+
+    Each site channel gets its own bath instance to reflect the paper's
+    assumption of uncorrelated local baths.
+    """
     channels: list[tuple[Qobj, BosonicEnvironment]] = []
 
+    BR_NORM = 2.0
+    pref = np.sqrt(BR_NORM)
+
     def add_channel(operator: Qobj) -> None:
-        channels.append((system.to_eigenbasis(operator), bath))
+        bath_i = copy.deepcopy(bath)
+        channels.append((pref * system.to_eigenbasis(operator), bath_i))
+
+    site_ops = {
+        i_atom: _dephasing_projector(system, i_atom) for i_atom in range(1, system.n_atoms + 1)
+    }
+
+    if system.max_excitation >= 2:
+        for i_atom in range(1, system.n_atoms):
+            for j_atom in range(i_atom + 1, system.n_atoms + 1):
+                idx = pair_to_index(i_atom, j_atom, system.n_atoms)
+                pair_proj = _dephasing_projector(system, idx)
+                site_ops[i_atom] += pair_proj
+                site_ops[j_atom] += pair_proj
 
     for i_atom in range(1, system.n_atoms + 1):
-        add_channel(_dephasing_projector(system, i_atom))
-        if system.n_atoms != 2:
-            lowering = system.basis[0] * system.basis[i_atom].dag()
-            add_channel(lowering + lowering.dag())
+        add_channel(site_ops[i_atom])
 
-    for i_atom in range(1, system.n_atoms):
-        for j_atom in range(i_atom + 1, system.n_atoms + 1):
-            idx = pair_to_index(i_atom, j_atom, system.n_atoms)
-            add_channel(_dephasing_projector(system, idx))
-            add_channel(
-                _dephasing_projector(system, idx)
-            )  # intentional duplicate to replicate H_SB =  sum_i=A,B  F_i |ixi| + (F_A + F_B) |ABxAB|
+    # Keep monomer thermalization
+    if system.n_atoms == 1:
+        lowering = system.basis[0] * system.basis[1].dag()
+        add_channel(lowering + lowering.dag())
 
-    """
-    if system.n_atoms == 2:
-        return channels
-
-    for i_atom in range(1, system.n_atoms):
-        for j_atom in range(i_atom + 1, system.n_atoms + 1):
-            idx = pair_to_index(i_atom, j_atom, system.n_atoms)
-            op_ij_i = system.basis[i_atom] * system.basis[idx].dag()
-            op_ij_j = system.basis[j_atom] * system.basis[idx].dag()
-            add_channel(op_ij_i + op_ij_i.dag())
-            add_channel(op_ij_j + op_ij_j.dag())
-    """
     return channels
 
 
 def lindblad_decay_channels(system: AtomicSystem) -> list[Qobj]:
-    """Return Lindblad collapse operators for the current system."""
+    """Return Lindblad collapse operators aligned with the paper/BR structure.
+
+    For the current max_excitation<=2 truncation, use one combined operator
+    per site
+        A_i = |i><i| + sum_{j != i} |ij><ij|
+    and transform it to the eigenbasis.
+
+    For dimers, we do not add explicit ground-state up/down channels so the
+    structure stays parallel to the paper/BR dimer model.
+    """
     channels: list[Qobj] = []
 
     def add_channel(operator: Qobj, rate: float) -> None:
+        if rate <= 0:
+            return
         channels.append(system.to_eigenbasis(operator) * np.sqrt(rate))
 
+    # Build one combined bath operator per site
+    site_ops = {i_atom: system.deph_op_i(i_atom) for i_atom in range(1, system.n_atoms + 1)}
+
+    if system.max_excitation >= 2:
+        for i_atom in range(1, system.n_atoms):
+            for j_atom in range(i_atom + 1, system.n_atoms + 1):
+                idx = pair_to_index(i_atom, j_atom, system.n_atoms)
+                pair_proj = system.deph_op_i(idx)
+                site_ops[i_atom] += pair_proj
+                site_ops[j_atom] += pair_proj
+
     for i_atom in range(1, system.n_atoms + 1):
-        add_channel(system.deph_op_i(i_atom), DEPH_RATE_FS)
-        if system.n_atoms != 2:
-            lower = system.basis[0] * system.basis[i_atom].dag()
-            add_channel(lower, DOWN_RATE_FS)
-            if UP_RATE_FS > 0:
-                add_channel(system.basis[i_atom] * system.basis[0].dag(), UP_RATE_FS)
+        add_channel(site_ops[i_atom], DEPH_RATE_FS)
 
-    for i_atom in range(1, system.n_atoms):
-        for j_atom in range(i_atom + 1, system.n_atoms + 1):
-            idx = pair_to_index(i_atom, j_atom, system.n_atoms)
-            deph_op_ij = system.deph_op_i(idx)
-            add_channel(deph_op_ij, DEPH_RATE_FS)
-            add_channel(
-                deph_op_ij, DEPH_RATE_FS
-            )  # intentional duplicate to replicate H_SB =  sum_i=A,B  F_i |ixi| + (F_A + F_B) |ABxAB|
+    # Keep monomer thermalization
+    if system.n_atoms == 1:
+        lower = system.basis[0] * system.basis[1].dag()
+        add_channel(lower, DOWN_RATE_FS)
+        if UP_RATE_FS > 0:
+            add_channel(system.basis[1] * system.basis[0].dag(), UP_RATE_FS)
 
-    """
-    if system.n_atoms == 2:
-        return channels
-
-    for i_atom in range(1, system.n_atoms):
-        for j_atom in range(i_atom + 1, system.n_atoms + 1):
-            idx = pair_to_index(i_atom, j_atom, system.n_atoms)
-            add_channel(system.basis[i_atom] * system.basis[idx].dag(), DOWN_RATE_FS)
-            add_channel(system.basis[j_atom] * system.basis[idx].dag(), DOWN_RATE_FS)
-    """
     return channels
 
 
@@ -107,15 +120,18 @@ class BathCoupling:
         detuning = self.system.frequencies_fs[0] - self.system.frequencies_fs[1]
         return 0.5 * np.arctan2(2 * self.system.coupling_fs, detuning)
 
-    def paper_gamma_ab(self, a: int, b: int) -> float:
-        return np.sin(2 * self.theta) ** 2 * self.bath.power_spectrum(self.system.omega_ij(a, b))
+    def paper_gamma_ab_fs(self, a: int, b: int) -> float:
+        """Paper uses Ω_ab for transfer b -> a with ω_ab = E_a - E_b.
+        QuTiP power_spectrum uses the opposite sign convention for transition rates,
+        so we must evaluate at ω_ba = -ω_ab."""
+        return np.sin(2 * self.theta) ** 2 * self.bath.power_spectrum(self.system.omega_ij(b, a))
 
-    def paper_Gamma_ab(self, a: int, b: int) -> float:
+    def paper_Gamma_ab_fs(self, a: int, b: int) -> float:
         S_0 = self.bath.power_spectrum(0)
         sin2 = np.sin(2 * self.theta) ** 2
         cos2 = np.cos(2 * self.theta) ** 2
-        gamma_21 = self.paper_gamma_ab(2, 1)
-        gamma_12 = self.paper_gamma_ab(1, 2)
+        gamma_21 = self.paper_gamma_ab_fs(2, 1)
+        gamma_12 = self.paper_gamma_ab_fs(1, 2)
         gamma_sum = gamma_21 + gamma_12
         Gamma_ab = 2 * cos2 * S_0
         Gamma_a0 = (1 - 0.5 * sin2) * S_0
@@ -143,7 +159,7 @@ class BathCoupling:
                 return Gamma_abar_a + 0.5 * gamma_21
             if b == 2:
                 return Gamma_abar_a + 0.5 * gamma_12
-        raise ValueError(f"paper_Gamma_ab: invalid dimer index pair (a={a}, b={b})")
+        raise ValueError(f"paper_Gamma_ab_fs: invalid dimer index pair (a={a}, b={b})")
 
     def summary(self) -> str:
         return "\n".join(

@@ -22,7 +22,7 @@ DEPH_RATE_FS = ATOMIC_DEFAULTS["deph_rate_fs"]
 DOWN_RATE_FS = ATOMIC_DEFAULTS["down_rate_fs"]
 UP_RATE_FS = ATOMIC_DEFAULTS["up_rate_fs"]
 
-__all__ = ["matrix_ODE_paper"]
+__all__ = ["matrix_ODE_paper", "paper_liouvillian_l0"]
 
 
 def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
@@ -83,16 +83,16 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
     dip_op = sim_oqs.system.to_eigenbasis(sim_oqs.system.dipole_op)
     coupling = sim_oqs.bath_coupling
 
-    gamma_12 = coupling.paper_gamma_ab(1, 2)
-    gamma_21 = coupling.paper_gamma_ab(2, 1)
-    Gamma_10 = coupling.paper_Gamma_ab(1, 0)
-    Gamma_20 = coupling.paper_Gamma_ab(2, 0)
-    Gamma_30 = coupling.paper_Gamma_ab(3, 0)
-    Gamma_12 = coupling.paper_Gamma_ab(1, 2)
-    Gamma_31 = coupling.paper_Gamma_ab(3, 1)
-    Gamma_32 = coupling.paper_Gamma_ab(3, 2)
-    Gamma_11 = coupling.paper_Gamma_ab(1, 1)
-    Gamma_22 = coupling.paper_Gamma_ab(2, 2)
+    gamma_12 = coupling.paper_gamma_ab_fs(1, 2)
+    gamma_21 = coupling.paper_gamma_ab_fs(2, 1)
+    Gamma_10 = coupling.paper_Gamma_ab_fs(1, 0)
+    Gamma_20 = coupling.paper_Gamma_ab_fs(2, 0)
+    Gamma_30 = coupling.paper_Gamma_ab_fs(3, 0)
+    Gamma_12 = coupling.paper_Gamma_ab_fs(1, 2)
+    Gamma_31 = coupling.paper_Gamma_ab_fs(3, 1)
+    Gamma_32 = coupling.paper_Gamma_ab_fs(3, 2)
+    Gamma_11 = coupling.paper_Gamma_ab_fs(1, 1)
+    Gamma_22 = coupling.paper_Gamma_ab_fs(2, 2)
 
     w10 = sim_oqs.system.omega_ij(1, 0)
     w20 = sim_oqs.system.omega_ij(2, 0)
@@ -235,3 +235,9 @@ def matrix_ODE_paper(t: float, sim_oqs: SimulationModuleOQS) -> Qobj:
     field_plus = e_pulses(t, sim_oqs.laser)
     liouvillian = ctx["L0"] + field_plus * ctx["L_plus"] + np.conj(field_plus) * ctx["L_minus"]
     return Qobj(liouvillian, dims=ctx["dims"])
+
+
+def paper_liouvillian_l0(sim_oqs: SimulationModuleOQS) -> Qobj:
+    """Return the field-free paper-equation Liouvillian (L0 only)."""
+    ctx = _paper_liouvillian_context(sim_oqs)
+    return Qobj(ctx["L0"], dims=ctx["dims"])

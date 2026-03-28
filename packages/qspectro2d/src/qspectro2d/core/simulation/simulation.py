@@ -48,15 +48,12 @@ def build_initial_state(
     system: AtomicSystem,
     bath: BosonicEnvironment,
 ) -> Qobj:
-    init_choice = getattr(config, "initial_state", "ground")
-    if init_choice == "ground":
+    init_choice = config.initial_state
+    bath_temp = bath.T
+    if init_choice == "ground" or bath_temp <= 1e-6:
         return system.to_eigenbasis(system.ground_state_dm())
     if init_choice != "thermal":
         raise ValueError(f"Unsupported initial_state '{init_choice}'")
-
-    bath_temp = bath.T
-    if bath_temp <= 1e-6:
-        return system.to_eigenbasis(system.ground_state_dm())
 
     energies, eigenstates = system.eigenstates
     energies = np.asarray(energies, dtype=float)
@@ -66,29 +63,42 @@ def build_initial_state(
     weights /= np.sum(weights)
 
     rho_th = sum(w * ket2dm(state) for w, state in zip(weights, eigenstates))
-    return rho_th
+    return system.to_eigenbasis(rho_th).tidyup()
 
 
 def build_observable_ops(system: AtomicSystem) -> list[Qobj]:
-    eigenstates = system.eigenstates[1]
-    operators = [ket2dm(state) for state in eigenstates]
+    """Observable operators in the solver/eigenbasis representation.
+
+    The propagated density matrix is represented in the eigenbasis, so the
+    population projectors must be the canonical |i><i| matrices in that basis,
+    not ket2dm(eigenvector_in_site_basis).
+    """
     dim = system.dimension
+    basis_states = system.basis
+
+    operators = [basis_states[i] * basis_states[i].dag() for i in range(dim)]
+
     if dim > 1:
-        operators.append(sum(eigenstates[0] * eigenstates[index].dag() for index in range(1, dim)))
-    if dim > system.n_atoms + 1:
+        # ground <-> one-excitation coherence block
         operators.append(
-            sum(
-                eigenstates[0] * eigenstates[index].dag()
-                for index in range(system.n_atoms + 1, dim)
-            )
+            sum(basis_states[0] * basis_states[i].dag() for i in range(1, system.n_atoms + 1))
         )
+
+    if dim > system.n_atoms + 1:
+        # ground <-> two-excitation coherence block
+        operators.append(
+            sum(basis_states[0] * basis_states[i].dag() for i in range(system.n_atoms + 1, dim))
+        )
+
+        # one-excitation <-> two-excitation coherence block
         operators.append(
             sum(
-                eigenstates[e] * eigenstates[f].dag()
+                basis_states[e] * basis_states[f].dag()
                 for e in range(1, system.n_atoms + 1)
                 for f in range(system.n_atoms + 1, dim)
             )
         )
+
     return operators
 
 

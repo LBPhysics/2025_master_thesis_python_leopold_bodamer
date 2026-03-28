@@ -168,14 +168,8 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
 
     if initial_state not in {"ground", "thermal"}:
         raise ValueError("config.initial_state must be 'ground' or 'thermal'")
-    if ode_solver == "paper_eqs" and not rwa_sl:
-        raise ValueError("solver 'paper_eqs' requires laser.rwa_sl=True")
-
-    if initial_state == "thermal" and not (ode_solver == "redfield" and not rwa_sl):
-        raise ValueError(
-            "config.initial_state='thermal' is only allowed for "
-            "solver='redfield' with rwa_sl=False"
-        )
+    if initial_state == "thermal" and ode_solver != "redfield":
+        raise ValueError("config.initial_state='thermal' is only allowed for " "solver='redfield'")
 
     if dt <= 0:
         raise ValueError("dt must be > 0")
@@ -232,7 +226,7 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
         raise ValueError(
             f"n_chains ({n_chains}) does not divide n_atoms ({n_atoms}) for cylindrical geometry"
         )
-    
+
     if len(pulse_amplitudes) != N_PULSES:
         raise ValueError(f"laser.pulse_amplitudes must have exactly {N_PULSES} elements")
     if any(amplitude <= 0 for amplitude in pulse_amplitudes):
@@ -313,27 +307,28 @@ def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
     rwa_sl = bool(laser_cfg["rwa_sl"])
     initial_state = str(sim_cfg.get("initial_state", "ground"))
 
-    # hard constraint: paper_eqs only with rwa_sl=True
+    # paper_eqs is defined in the rotating frame
     if solver == "paper_eqs" and not rwa_sl:
         warnings.warn(
-            "rwa_sl forced True for paper_eqs solver.",
+            "solver='paper_eqs' requires laser.rwa_sl=True; forcing rwa_sl=True.",
             category=UserWarning,
             stacklevel=2,
         )
         laser_cfg["rwa_sl"] = True
         rwa_sl = True
 
-    # thermal only allowed for redfield with rwa_sl=False
-    thermal_allowed = (solver == "redfield" and not rwa_sl)
-    if initial_state == "thermal" and not thermal_allowed:
+    # thermal initial state only makes sense for the physically supported
+    # redfield configuration in this codebase
+    if initial_state == "thermal" and solver != "redfield":
         warnings.warn(
-            "initial_state='thermal' is only supported for solver='redfield' "
-            "with rwa_sl=False; forcing initial_state='ground'.",
+            "config.initial_state='thermal' is only supported for "
+            "solver='redfield'; forcing initial_state='ground'.",
             category=UserWarning,
             stacklevel=2,
         )
         sim_cfg["initial_state"] = "ground"
-        
+
+
 __all__ = [
     "get_max_workers",
     "load_config",
