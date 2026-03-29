@@ -12,6 +12,7 @@ import numpy as np
 import yaml
 
 from .defaults import (
+    ALLOWED_SOLVER_RUN_KWARGS,
     ALLOWED_SOLVER_OPTIONS,
     COMPONENT_MAP,
     N_PULSES,
@@ -193,10 +194,29 @@ def _normalize_solver_options(solver: str, solver_options: Mapping[str, Any]) ->
         filtered["nsteps"] = _coerce_int(
             filtered["nsteps"], field_name="config.solver_options.nsteps"
         )
-    for key in {"atol", "rtol", "sec_cutoff", "max_step"} & filtered.keys():
+    for key in {"atol", "rtol", "max_step"} & filtered.keys():
         filtered[key] = _coerce_float(filtered[key], field_name=f"config.solver_options.{key}")
     if "method" in filtered:
         filtered["method"] = str(filtered["method"])
+
+    return filtered
+
+
+def _normalize_solver_run_kwargs(
+    solver: str,
+    solver_run_kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(solver_run_kwargs, Mapping):
+        raise TypeError("config.solver_run_kwargs must be a mapping/dict")
+
+    allowed_keys = set(ALLOWED_SOLVER_RUN_KWARGS.get(solver, []))
+    filtered = {k: v for k, v in solver_run_kwargs.items() if k in allowed_keys}
+
+    if "sec_cutoff" in filtered:
+        filtered["sec_cutoff"] = _coerce_float(
+            filtered["sec_cutoff"],
+            field_name="config.solver_run_kwargs.sec_cutoff",
+        )
 
     return filtered
 
@@ -280,6 +300,10 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         str(sim_cfg["solver"]),
         sim_cfg.get("solver_options", {}),
     )
+    sim_cfg["solver_run_kwargs"] = _normalize_solver_run_kwargs(
+        str(sim_cfg["solver"]),
+        sim_cfg.get("solver_run_kwargs", {}),
+    )
 
     _normalize_solver_state_constraints(cfg)
     _inject_default_max_step(cfg)
@@ -318,6 +342,7 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
     coupling_cm = atomic_cfg["coupling_cm"]
     delta_inhomogen_cm = atomic_cfg["delta_inhomogen_cm"]
     solver_options = sim_cfg["solver_options"]
+    solver_run_kwargs = sim_cfg["solver_run_kwargs"]
     sim_type = sim_cfg["sim_type"]
     initial_state = sim_cfg["initial_state"]
     max_workers = sim_cfg["max_workers"]
@@ -428,6 +453,21 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
         raise ValueError(
             f"solver_options includes unsupported keys for {ode_solver}: {sorted(unknown_keys)}"
         )
+
+    if not isinstance(solver_run_kwargs, dict):
+        raise TypeError("solver_run_kwargs must be a dict")
+
+    allowed_run_kwargs = set(ALLOWED_SOLVER_RUN_KWARGS.get(ode_solver, []))
+    unknown_run_kwargs = set(solver_run_kwargs) - allowed_run_kwargs
+    if unknown_run_kwargs:
+        raise ValueError(
+            "solver_run_kwargs includes unsupported keys for "
+            f"{ode_solver}: {sorted(unknown_run_kwargs)}"
+        )
+
+    sec_cutoff = solver_run_kwargs.get("sec_cutoff")
+    if sec_cutoff is not None and sec_cutoff < 0:
+        raise ValueError("solver_run_kwargs.sec_cutoff must be >= 0")
 
     if sim_type not in SUPPORTED_SIM_TYPES:
         raise ValueError(f"sim_type '{sim_type}' not in {SUPPORTED_SIM_TYPES}")

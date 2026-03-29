@@ -23,29 +23,17 @@ def single_pulse_envelope(t_array: np.ndarray, pulse: LaserPulse) -> np.ndarray:
         return result
 
     active_times = t_array[active]
-
     if envelope_type == "cos2":
         arg = np.pi * (active_times - t_peak) / (2 * fwhm)
         result[active] = np.cos(arg) ** 2
-
     elif envelope_type == "gaussian":
         gaussian = np.exp(-((active_times - t_peak) ** 2) / (2 * pulse._sigma**2))
         result[active] = np.maximum(gaussian - pulse._boundary_val, 0.0)
-
-    elif envelope_type == "delta":
-        if len(t_array) > 1:
-            dt = t_array[1] - t_array[0]
-        else:
-            dt = 1.0
-        idx = int(np.argmin(np.abs(t_array - t_peak)))
-        result[idx] = 1.0 / dt
-
     else:
-        raise ValueError(
-            f"Unknown envelope_type: {envelope_type}. Use 'cos2', 'gaussian', or 'delta'."
-        )
+        raise ValueError(f"Unknown envelope_type: {envelope_type}. Use 'cos2' or 'gaussian'.")
 
     return result
+
 
 def pulse_envelopes(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
@@ -73,12 +61,12 @@ def e_pulses(
     amplitude ``A_k``, and envelope ``s_k(t)`` centred at ``t_k``, the lab-frame
     positive-frequency field is
 
-        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t + t_k)) + i phi_k].
+        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t - t_k)) - i phi_k].
 
     In the rotating-frame convention used throughout the RWA modules, the
     corresponding slowly varying coefficient is
 
-        e_k(t) = A_k s_k(t) exp[i (phi_k - omega_L t_k)],
+        e_k(t) = A_k s_k(t) exp[-i (phi_k - omega_L t_k)],
 
     so that
 

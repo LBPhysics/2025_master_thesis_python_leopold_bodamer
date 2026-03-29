@@ -1,17 +1,18 @@
-"""Simulation configuration data structures."""
+"""Runtime simulation configuration."""
 
 from __future__ import annotations
 
-from typing import Any, List
 from dataclasses import dataclass, field
+from typing import Any
 
 
-@dataclass
+@dataclass(slots=True)
 class SimulationConfig:
-    """Primary configuration object for simulations."""
+    """Concrete runtime configuration used by the simulation layer only."""
 
     ode_solver: str = "lindblad"
-    solver_options: dict[str, Any] = field(default_factory=lambda: {})
+    solver_options: dict[str, Any] = field(default_factory=dict)
+    solver_run_kwargs: dict[str, Any] = field(default_factory=dict)
     rwa_sl: bool = True
 
     t_det: float = 100.0
@@ -19,65 +20,35 @@ class SimulationConfig:
     t_wait: float = 0.0
     dt: float = 0.1
     pulse_fwhm_fs: float = 10.0
+    carrier_freq_cm: float = 16000.0
     envelope_type: str = "gaussian"
 
     initial_state: str = "ground"
-
     sim_type: str = "1d"
     n_inhomogen: int = 1
-
     n_phases: int = 4
-
     inhom_averaged: bool = False
     max_workers: int = 1
-    signal_types: List[str] = field(default_factory=lambda: ["rephasing"])
+    signal_types: tuple[str, ...] = ("rephasing",)
 
-    def summary(self) -> str:
-        lines = [
-            "SimulationConfig Summary:\n",
-            "-------------------------------\n",
-            f"{self.sim_type} ELECTRONIC SPECTROSCOPY SIMULATION\n",
-            f"Signal Type        : {self.signal_types}\n",
-            "Time Parameters:\n",
-            f"Coherence Time     : {self.t_coh} fs\n",
-            f"Wait Time          : {self.t_wait} fs\n",
-            f"Max Det. Time      : {self.t_det} fs\n\n",
-            f"Time Step (dt)     : {self.dt} fs\n",
-            f"Pulse FWHM         : {self.pulse_fwhm_fs} fs\n",
-            f"Envelope Type      : {self.envelope_type}\n",
-            "-------------------------------\n",
-            f"Solver Type        : {self.ode_solver}\n",
-            f"Use rwa_sl         : {self.rwa_sl}\n\n",
-            "-------------------------------\n",
-            f"Phase Cycles       : {self.n_phases}\n",
-            f"Inhom Samples      : {self.n_inhomogen}\n",
-            f"Inhom Averaged     : {self.inhom_averaged}\n",
-            f"Max Workers        : {self.max_workers}\n",
-            "-------------------------------\n",
-        ]
-        return "".join(lines)
-
-    def to_dict(self) -> dict:
-        result = {
+    def to_dict(self) -> dict[str, Any]:
+        return {
             "ode_solver": self.ode_solver,
+            "solver_options": dict(self.solver_options),
+            "solver_run_kwargs": dict(self.solver_run_kwargs),
             "rwa_sl": self.rwa_sl,
-            "sim_type": self.sim_type,
-            "max_workers": self.max_workers,
             "t_det": self.t_det,
-            "dt": self.dt,
-            "t_wait": self.t_wait,
             "t_coh": self.t_coh,
+            "t_wait": self.t_wait,
+            "dt": self.dt,
             "pulse_fwhm_fs": self.pulse_fwhm_fs,
+            "carrier_freq_cm": self.carrier_freq_cm,
             "envelope_type": self.envelope_type,
+            "initial_state": self.initial_state,
+            "sim_type": self.sim_type,
+            "n_inhomogen": self.n_inhomogen,
+            "n_phases": self.n_phases,
+            "inhom_averaged": self.inhom_averaged,
+            "max_workers": self.max_workers,
+            "signal_types": list(self.signal_types),
         }
-        if self.solver_options:
-            result["solver_options"] = self.solver_options
-        result["n_inhomogen"] = self.n_inhomogen
-        if self.n_inhomogen != 1:
-            result["inhom_averaged"] = self.inhom_averaged
-        if self.n_phases != 4:
-            result["n_phases"] = self.n_phases
-        return result
-
-    def __str__(self) -> str:
-        return self.summary()

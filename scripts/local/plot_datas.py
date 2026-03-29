@@ -48,17 +48,13 @@ def _format_seconds(seconds: float) -> str:
 
 
 def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
-    try:
-        figures_dir = Path(job_metadata["figures_dir"]).expanduser()
-    except KeyError as exc:
-        raise KeyError("job_metadata missing required key: figures_dir") from exc
+    figures_dir = Path(job_metadata["figures_dir"]).expanduser()
     figures_dir.mkdir(parents=True, exist_ok=True)
     return figures_dir
 
 
 def _figure_stem(signal: str, domain: str, component: str) -> str:
-    safe_signal = str(signal).replace(" ", "_").replace("/", "-")
-    return "_".join([safe_signal, domain, component]).lower()
+    return "_".join([str(signal).replace(" ", "_").replace("/", "-"), domain, component]).lower()
 
 
 def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
@@ -77,7 +73,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Plot processed spectroscopy data in time and frequency domains."
     )
-    parser.add_argument("--abs_path", type=str, required=True, help="Path to the processed .npz file")
+    parser.add_argument(
+        "--abs_path", type=str, required=True, help="Path to the processed .npz file"
+    )
     parser.add_argument(
         "--time_only",
         action="store_true",
@@ -97,18 +95,21 @@ def main() -> None:
 
     signals = data["signals"]
     t_det = np.asarray(data["t_det"], dtype=float)
-    t_coh = np.asarray(data.get("t_coh", []), dtype=float)
+    t_coh = np.asarray(data["t_coh"], dtype=float)
     if t_coh.ndim == 0 or t_coh.size == 0:
         t_coh = None
 
+    simulation_config = data["simulation_config"]
+    rwa_sl = simulation_config.rwa_sl
+    carrier_freq_cm = simulation_config.carrier_freq_cm
+
     print(
-        f"Available signals: {list(signals.keys())}, "
-        f"shapes={[s.shape for s in signals.values()]}"
+        f"Available signals: {list(signals.keys())}, shapes={[s.shape for s in signals.values()]}"
     )
     print(
-        f"Loaded t_det shape: {t_det.shape}; "
-        f"t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
+        f"Loaded t_det shape: {t_det.shape}; t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
     )
+    print(f"Carrier frequency: {carrier_freq_cm:.2f} cm^-1")
     print(f"Load time: {_format_seconds(time.perf_counter() - step_start)}")
 
     components = ["real", "imag", "abs"]
@@ -119,17 +120,18 @@ def main() -> None:
         print(f"Plotting time-domain signal: {signal_type}")
         for component in components:
             fig = plot_el_field(
-                axis_det=t_det,
-                data=sig_data,
-                axis_coh=t_coh,
-                component=component,
-                domain="time",
+                axis_det=t_det, data=sig_data, axis_coh=t_coh, component=component, domain="time"
             )
-            stem = _figure_stem(signal_type, "time", component)
-            filename = _unique_fig_path(figures_root, stem)
-            saved = save_fig(fig, filename=filename)
+            saved = save_fig(
+                fig,
+                filename=_unique_fig_path(
+                    figures_root, _figure_stem(signal_type, "time", component)
+                ),
+            )
             print(f"Saved: {saved}")
-        print(f"Time-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}")
+        print(
+            f"Time-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}"
+        )
 
     if args.time_only:
         print("Skipping frequency-domain plots (--time_only set)")
@@ -153,19 +155,23 @@ def main() -> None:
     for idx, signal_type in enumerate(out_types):
         signal_start = time.perf_counter()
         print(f"Plotting frequency-domain signal: {signal_type}")
-        sig_data_freq = datas_nu[idx]
         for component in components:
             fig = plot_el_field(
                 axis_det=nu_dets,
-                data=sig_data_freq,
+                data=datas_nu[idx],
                 axis_coh=nu_cohs,
                 component=component,
                 domain="freq",
+                carrier_freq_cm=carrier_freq_cm,
+                rwa_sl=rwa_sl,
                 section=SECTION,
             )
-            stem = _figure_stem(signal_type, "freq", component)
-            filename = _unique_fig_path(figures_root, stem)
-            saved = save_fig(fig, filename=filename)
+            saved = save_fig(
+                fig,
+                filename=_unique_fig_path(
+                    figures_root, _figure_stem(signal_type, "freq", component)
+                ),
+            )
             print(f"Saved: {saved}")
         print(
             f"Frequency-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}"

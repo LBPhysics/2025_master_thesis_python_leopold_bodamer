@@ -47,14 +47,7 @@ class LaserPulse:
             edge_span = self._t_end - self.pulse_peak_time
             self._boundary_val = float(np.exp(-(edge_span**2) / (2 * self._sigma**2)))
             return
-        if self.envelope_type == "delta":
-            self._t_start = self.pulse_peak_time
-            self._t_end = self.pulse_peak_time
-            self._sigma = None
-            self._boundary_val = None
-            return
-        self._t_start = self.pulse_peak_time - self.pulse_fwhm_fs
-        self._t_end = self.pulse_peak_time + self.pulse_fwhm_fs
+        self._t_start, self._t_end = self.active_time_range
         self._sigma = None
         self._boundary_val = None
 
@@ -72,19 +65,16 @@ class LaserPulse:
     def active_time_range(self) -> tuple[float, float]:
         if self.envelope_type == "gaussian":
             duration = DEFAULT_ACTIVE_WINDOW_NFWHM * self.pulse_fwhm_fs
-        elif self.envelope_type == "delta":
-            return (self.pulse_peak_time, self.pulse_peak_time)
         else:
             duration = self.pulse_fwhm_fs
         return (self.pulse_peak_time - duration, self.pulse_peak_time + duration)
 
     def summary_line(self) -> str:
-        fwhm_str = "N/A" if self.envelope_type == "delta" else f"{self.pulse_fwhm_fs:4.1f} fs"
         return (
             f"Pulse {self.pulse_index:>2}: "
             f"t = {self.pulse_peak_time:6.2f} fs | "
             f"E0 = {self.pulse_amplitude:.3e} | "
-            f"FWHM = {fwhm_str} | "
+            f"FWHM = {self.pulse_fwhm_fs:4.1f} fs | "
             f"w = {self.pulse_freq_cm:8.2f} cm^-1 | "
             f"phi = {self.pulse_phase:6.3f} rad | "
             f"type = {self.envelope_type:<7}"

@@ -147,61 +147,26 @@ def compute_evolution(
         raise ValueError(f"Unsupported solver '{solver}'.")
 
     data = result.expect[0] if e_ops is not None else result.states
-    if e_ops is None and not field_free and sim_oqs.simulation_config.rwa_sl and len(t_list):
-        data = from_rotating_frame_list(
-            data,
-            np.array(t_list, float),
-            sim_oqs.system.n_atoms,
-            sim_oqs.laser.carrier_freq_fs,
-        )
-
     return np.array(t_list, float), data
 
 
 def compute_polarisation_over_window(
-    sim_oqs: SimulationModuleOQS,
-    window: np.ndarray | list | None = None,
-    *,
-    solver_times: np.ndarray | None = None,
+    sim_oqs: SimulationModuleOQS, window=None, *, solver_times=None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
+    """Return the canonical signal for the configured solver convention.
     Evolve once with current laser settings and return (t_det, P(t_det)),
     where P is computed on the requested detection-window times.
+    rwa_sl=False -> lab-frame signal
+    rwa_sl=True  -> rotating-frame signal
     """
     if window is None:
         window = compute_t_det(sim_oqs.simulation_config)
     window = np.asarray(window, dtype=float)
 
     dipole_op = sim_oqs.dipole_op_eigenbasis
+    mu_plus = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
 
-    def polarisation_density(state):
-        rho = state.extract(0) if hasattr(state, "extract") else state
-        if hasattr(rho, "isket") and rho.isket:
-            rho = rho.proj()
-        return rho
-
-    if sim_oqs.simulation_config.rwa_sl:
-
-        def polarisation(t, state):
-            return time_dependent_polarisation_rwa(
-                dipole_op,
-                polarisation_density(state),
-                t,
-                sim_oqs.system.n_atoms,
-                sim_oqs.laser.carrier_freq_fs,
-            )
-
-    else:
-
-        def polarisation(_t, state):
-            return complex_polarisation(dipole_op, polarisation_density(state))
-
-    times, polarisation_t = compute_evolution(
-        sim_oqs,
-        e_ops=[polarisation],
-        solver_times=solver_times,
-    )
-
+    times, polarisation_t = compute_evolution(sim_oqs, e_ops=[mu_plus], solver_times=solver_times)
     return window, slice_polarisation_to_window(times, polarisation_t, window)
 
 

@@ -26,18 +26,22 @@ def _simulation_config_from_resolved(cfg: Mapping[str, Any]) -> SimulationConfig
     return SimulationConfig(
         ode_solver=str(sim_cfg["solver"]),
         solver_options=dict(sim_cfg["solver_options"]),
+        solver_run_kwargs=dict(sim_cfg["solver_run_kwargs"]),
         rwa_sl=bool(laser_cfg["rwa_sl"]),
-        dt=float(sim_cfg["dt"]),
+        t_det=float(sim_cfg["t_det"]),
         t_coh=float(sim_cfg["t_coh"]),
         t_wait=float(sim_cfg["t_wait"]),
-        t_det=float(sim_cfg["t_det"]),
+        dt=float(sim_cfg["dt"]),
         pulse_fwhm_fs=float(laser_cfg["pulse_fwhm_fs"]),
-        n_phases=int(sim_cfg["n_phases"]),
-        n_inhomogen=int(atomic_cfg["n_inhomogen"]),
-        signal_types=list(sim_cfg["signal_types"]),
-        sim_type=str(sim_cfg["sim_type"]),
-        max_workers=int(sim_cfg["max_workers"]),
+        carrier_freq_cm=float(laser_cfg["carrier_freq_cm"]),
+        envelope_type=str(laser_cfg["envelope_type"]),
         initial_state=str(sim_cfg["initial_state"]),
+        sim_type=str(sim_cfg["sim_type"]),
+        n_inhomogen=int(atomic_cfg["n_inhomogen"]),
+        n_phases=int(sim_cfg["n_phases"]),
+        inhom_averaged=bool(sim_cfg.get("inhom_averaged", False)),
+        max_workers=int(sim_cfg["max_workers"]),
+        signal_types=tuple(sim_cfg["signal_types"]),
     )
 
 
@@ -66,7 +70,6 @@ def load_simulation_laser(cfg: Mapping[str, Any]) -> LaserPulseSequence:
 
 def load_simulation_atomic_system(cfg: Mapping[str, Any]) -> AtomicSystem:
     atomic_cfg = cfg["atomic"]
-
     return AtomicSystem(
         n_atoms=int(atomic_cfg["n_atoms"]),
         n_chains=int(atomic_cfg["n_chains"]),
@@ -94,11 +97,7 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
 
     if bath_type == "ohmic":
         return OhmicEnvironment(
-            T=bath_temp,
-            alpha=sb_coupling,
-            wc=bath_cutoff,
-            s=bath_s,
-            tag=bath_type,
+            T=bath_temp, alpha=sb_coupling, wc=bath_cutoff, s=bath_s, tag=bath_type
         )
 
     if bath_type == "drudelorentz":
@@ -109,17 +108,14 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
             tag=bath_type,
         )
 
-    if bath_type in {
-        "ohmic+lorentzian",
-        "drudelorentz+lorentzian",
-    }:
+    if bath_type in {"ohmic+lorentzian", "drudelorentz+lorentzian"}:
         if bath_type == "ohmic+lorentzian":
             bath_base = OhmicEnvironment(
                 T=bath_temp,
                 alpha=sb_coupling,
                 wc=bath_cutoff,
                 s=bath_s,
-                tag=bath_type.split("+", 1)[0],
+                tag="ohmic",
             )
         else:
             bath_base = DrudeLorentzEnvironment(
@@ -135,12 +131,7 @@ def load_simulation_bath(cfg: Mapping[str, Any]) -> BosonicEnvironment:
         peak_center = float(bath_cfg["peak_center"]) * w0_fs
         w_max = float(wmax_factor * bath_cutoff)
 
-        def j_lorentz_peak(
-            w,
-            center=peak_center,
-            gamma=peak_width,
-            strength=peak_strength,
-        ):
+        def j_lorentz_peak(w, center=peak_center, gamma=peak_width, strength=peak_strength):
             w_arr = np.asarray(w, dtype=float)
             result = np.zeros_like(w_arr)
             positive = w_arr > 0

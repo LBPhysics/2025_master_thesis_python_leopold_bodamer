@@ -28,9 +28,13 @@ ALLOWED_SOLVER_OPTIONS = {
         "rtol",
         "nsteps",
         "method",
-        "sec_cutoff",
         "max_step",
     ],
+}
+ALLOWED_SOLVER_RUN_KWARGS = {
+    "paper_eqs": [],
+    "lindblad": [],
+    "redfield": ["sec_cutoff"],
 }
 
 N_PHASES = 4
@@ -61,9 +65,6 @@ T_WAIT = DT
 DEFAULT_PULSE_FWHM_FS = 5.0
 
 # --- Generic defaults ---
-INITIAL_STATE = "ground"
-
-
 DEFAULTS = {
     "atomic": {
         "n_atoms": 1,
@@ -100,10 +101,12 @@ DEFAULTS = {
     "config": {
         "solver": "redfield",
         "solver_options": {
-            "sec_cutoff": 1.0e-6,
             "method": (
                 "lsoda"
             ),  # automatically switches between stiff and non-stiff methods, see https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html#scipy.integrate.solve_ivp
+        },
+        "solver_run_kwargs": {
+            "sec_cutoff": 1.0e-6,
         },
         "sim_type": "1d",
         "t_det": T_DET,
@@ -112,8 +115,8 @@ DEFAULTS = {
         "dt": DT,
         "n_phases": N_PHASES,
         "signal_types": list(SIGNAL_TYPES),
-        "initial_state": INITIAL_STATE,
-        "max_workers": 1,
+        "initial_state": "ground",
+        "max_workers": None,  # always check cpu cores
     },
 }
 
@@ -139,7 +142,6 @@ __all__ = [
     "DPHI",
     "DT",
     "get_defaults",
-    "INITIAL_STATE",
     "NEGATIVE_EIGVAL_THRESHOLD",
     "N_PHASES",
     "N_PULSES",

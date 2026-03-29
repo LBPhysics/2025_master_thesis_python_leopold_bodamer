@@ -325,9 +325,12 @@ def plot_el_field(
     section: tuple[float, float] | None = None,
     ax: plt.Axes | None = None,
     cutoff_percent: float = 0.0,
+    *,
+    carrier_freq_cm: float | None = None,
+    rwa_sl: bool = False,
     **kwargs: dict,
 ) -> plt.Figure:
-    """Plot emitted field in 1D or 2D."""
+    """Plot emitted field. Frequency-domain plots are always shown in the lab frame."""
     if component not in {"real", "imag", "abs", "phase"}:
         raise ValueError("component must be one of: 'real', 'imag', 'abs', 'phase'")
     if domain not in {"time", "freq"}:
@@ -339,6 +342,15 @@ def plot_el_field(
 
     if axis_coh is None and data.ndim == 2 and data.shape[1] == 1:
         data = data.squeeze(axis=1)
+
+    if domain == "freq" and rwa_sl:
+        if carrier_freq_cm is None:
+            raise ValueError("carrier_freq_cm must be provided for rwa_sl=True frequency plots")
+        axis_coh, axis_det = convert_plot_axes(
+            axis_coh,
+            axis_det,
+            carrier_freq_cm=carrier_freq_cm,
+        )
 
     if section is not None:
         if data.ndim == 1:
@@ -439,11 +451,9 @@ def _plot_el_field_2d(
             raise ValueError("Axis must contain at least one point for 2D plotting")
         if axis.size == 1:
             center = float(axis[0])
-            # Avoid identical imshow limits for heavily cropped sections.
             pad = max(abs(center) * 1e-6, 1e-9)
             return center - pad, center + pad
 
-        # Convert center coordinates to edge coordinates for a stable image extent.
         left = float(axis[0] - 0.5 * (axis[1] - axis[0]))
         right = float(axis[-1] + 0.5 * (axis[-1] - axis[-2]))
         if left == right:
@@ -546,7 +556,7 @@ def _component_data(data: np.ndarray, component: str) -> tuple[np.ndarray, str]:
 
 
 def _domain_labels(domain: str, ndim: int):
-    """Return labels for a given domain and dimensionality."""
+    """Return labels for lab-frame plotting."""
     if domain not in {"time", "freq"}:
         raise ValueError("Invalid domain. Use 'time' or 'freq'.")
 
@@ -696,3 +706,16 @@ def add_text_box(
         artist.set_in_layout(False)
     except Exception:
         pass
+
+
+def convert_plot_axes(
+    nu_coh: np.ndarray | None,
+    nu_det: np.ndarray,
+    *,
+    carrier_freq_cm: float,
+) -> tuple[np.ndarray | None, np.ndarray]:
+    """Convert rotating-frame detuning axes to lab-frame optical axes."""
+    shift = float(carrier_freq_cm) * 1e-4
+    nu_coh_plot = None if nu_coh is None else nu_coh + shift
+    nu_det_plot = nu_det + shift
+    return nu_coh_plot, nu_det_plot
