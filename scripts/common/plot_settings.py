@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-SECTION: tuple[float, float] | None = (1.5, 1.7)
-PLOT_PAD_FACTOR: float = 20.0
-
-__all__ = ["SECTION", "PLOT_PAD_FACTOR"]
+SECTION: tuple[tuple[float, float], tuple[float, float]] | None = (
+    (1.5, 1.7),  # coherence axis
+    (1.5, 1.7),  # detection axis
+)
+PAD_FACTOR: float = 30.0
+CUTOFF_PERCENT: float = 0.0
+CONTOUR_LINES: bool = False
+TRANSPARENTCY: bool = False
+__all__ = ["SECTION", "PAD_FACTOR", "CUTOFF_PERCENT", "CONTOUR_LINES", "TRANSPARENTCY"]

@@ -20,9 +20,9 @@ import numpy as np
 from plotstyle import FIG_FORMAT, save_fig
 from qspectro2d import load_simulation_data
 from qspectro2d.spectroscopy.post_processing import compute_spectra
-from qspectro2d.visualization.plotting import plot_el_field
-
-from common.plot_settings import PLOT_PAD_FACTOR, SECTION
+from qspectro2d.visualization.plotting import convert_plot_axes, plot_el_field
+from common.plot_settings import PAD_FACTOR, SECTION
+from common.plot_settings import CUTOFF_PERCENT, CONTOUR_LINES, PAD_FACTOR, SECTION, TRANSPARENTCY
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
@@ -67,6 +67,23 @@ def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
         candidate = base.with_name(f"{stem}_{counter:02d}")
         counter += 1
     return candidate
+
+
+def _section_to_stored_freq_frame(
+    section: tuple[tuple[float, float], tuple[float, float]] | None,
+    *,
+    rwa_sl: bool,
+    carrier_freq_cm: float,
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """Convert a lab-frame plotting ROI to the stored FFT frame used by compute_spectra."""
+    if section is None or not rwa_sl:
+        return section
+
+    shift = float(carrier_freq_cm) * 1e-4
+    return (
+        (section[0][0] - shift, section[0][1] - shift),
+        (section[1][0] - shift, section[1][1] - shift),
+    )
 
 
 def main() -> None:
@@ -141,15 +158,31 @@ def main() -> None:
 
     print("Plotting frequency domain...")
     step_start = time.perf_counter()
+
+    stored_section = _section_to_stored_freq_frame(
+        SECTION,
+        rwa_sl=rwa_sl,
+        carrier_freq_cm=carrier_freq_cm,
+    )
+
     nu_cohs, nu_dets, datas_nu, out_types = compute_spectra(
         list(signals.values()),
         list(signals.keys()),
         t_det,
         t_coh,
-        pad=PLOT_PAD_FACTOR,
-        nu_win_coh=SECTION[1] if SECTION is not None else 2.0,
-        nu_win_det=SECTION[1] if SECTION is not None else 2.0,
+        pad=PAD_FACTOR,
+        section=stored_section,
     )
+
+    if rwa_sl:
+        nu_cohs_plot, nu_dets_plot = convert_plot_axes(
+            nu_cohs,
+            nu_dets,
+            carrier_freq_cm=carrier_freq_cm,
+        )
+    else:
+        nu_cohs_plot, nu_dets_plot = nu_cohs, nu_dets
+
     print(f"Frequency-domain transform time: {_format_seconds(time.perf_counter() - step_start)}")
 
     for idx, signal_type in enumerate(out_types):
@@ -157,20 +190,20 @@ def main() -> None:
         print(f"Plotting frequency-domain signal: {signal_type}")
         for component in components:
             fig = plot_el_field(
-                axis_det=nu_dets,
+                axis_det=nu_dets_plot,
                 data=datas_nu[idx],
-                axis_coh=nu_cohs,
+                axis_coh=nu_cohs_plot,
                 component=component,
                 domain="freq",
-                carrier_freq_cm=carrier_freq_cm,
-                rwa_sl=rwa_sl,
-                section=SECTION,
+                cutoff_percent=CUTOFF_PERCENT,
+                contour_lines=CONTOUR_LINES,
             )
             saved = save_fig(
                 fig,
                 filename=_unique_fig_path(
                     figures_root, _figure_stem(signal_type, "freq", component)
                 ),
+                transparent=TRANSPARENTCY,
             )
             print(f"Saved: {saved}")
         print(

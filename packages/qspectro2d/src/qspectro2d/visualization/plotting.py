@@ -322,48 +322,41 @@ def plot_el_field(
     axis_coh: np.ndarray | None = None,
     component: Literal["real", "imag", "abs", "phase"] = "real",
     domain: Literal["time", "freq"] = "time",
-    section: tuple[float, float] | None = None,
     ax: plt.Axes | None = None,
     cutoff_percent: float = 0.0,
-    *,
-    carrier_freq_cm: float | None = None,
-    rwa_sl: bool = False,
+    contour_lines: bool = False,
     **kwargs: dict,
 ) -> plt.Figure:
-    """Plot emitted field. Frequency-domain plots are always shown in the lab frame."""
+    """Plot emitted field."""
     if component not in {"real", "imag", "abs", "phase"}:
         raise ValueError("component must be one of: 'real', 'imag', 'abs', 'phase'")
     if domain not in {"time", "freq"}:
         raise ValueError("domain must be 'time' or 'freq'")
 
-    if isinstance(data, sp.spmatrix):
-        data = data.toarray()
-    data = np.asarray(data)
+    axis_det = np.asarray(axis_det, dtype=float)
+    axis_coh = None if axis_coh is None else np.asarray(axis_coh, dtype=float)
+
+    if domain == "freq" and isinstance(data, sp.spmatrix):
+        axis_coh, axis_det, data = _materialize_sparse_roi_for_plot(
+            axis_det,
+            data,
+            axis_coh,
+        )
+        if np.size(data) == 0:
+            raise ValueError(
+                "Empty frequency ROI after sparse cropping. "
+                "Check whether SECTION is specified in lab-frame units and "
+                "was converted correctly before calling compute_spectra."
+            )
+    else:
+        if isinstance(data, sp.spmatrix):
+            data = data.toarray()
+        data = np.asarray(data)
 
     if axis_coh is None and data.ndim == 2 and data.shape[1] == 1:
         data = data.squeeze(axis=1)
 
-    if domain == "freq" and rwa_sl:
-        if carrier_freq_cm is None:
-            raise ValueError("carrier_freq_cm must be provided for rwa_sl=True frequency plots")
-        axis_coh, axis_det = convert_plot_axes(
-            axis_coh,
-            axis_det,
-            carrier_freq_cm=carrier_freq_cm,
-        )
-
-    if section is not None:
-        if data.ndim == 1:
-            axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=0)
-        elif data.ndim == 2:
-            if axis_coh is None:
-                raise ValueError("axis_coh must be provided for 2D data")
-            axis_coh, data = crop_nd_data_along_axis(axis_coh, data, section, axis=0)
-            axis_det, data = crop_nd_data_along_axis(axis_det, data, section, axis=1)
-        else:
-            raise ValueError("data must be 1D or 2D")
-
-    plot_data, base_title = _component_data(data, component)
+    plot_data, base_title = _component_data(np.asarray(data), component)
 
     if cutoff_percent > 0 and plot_data.size > 0:
         threshold = cutoff_percent / 100.0 * np.max(np.abs(plot_data))
@@ -391,6 +384,7 @@ def plot_el_field(
             component=component,
             domain=domain,
             base_title=base_title,
+            contour_lines=contour_lines,
         )
     else:
         raise ValueError("data must be 1D or 2D")
@@ -442,6 +436,7 @@ def _plot_el_field_2d(
     component: str,
     domain: str,
     base_title: str,
+    contour_lines: bool = False,
 ) -> None:
     colormap, norm = _style_for_component(component, 2, data=plot_data, domain=domain)
 
@@ -474,6 +469,15 @@ def _plot_el_field_2d(
         interpolation="bilinear",
     )
 
+    if contour_lines:
+        add_custom_contour_lines(
+            x=axis_coh,
+            y=axis_det,
+            data=plot_data.T,
+            component=component,
+            ax=ax,
+        )
+
     x_label, y_label, cbar_label, title_suffix = _domain_labels(domain, 2)
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
@@ -484,33 +488,29 @@ def _plot_el_field_2d(
 def crop_nd_data_along_axis(
     coord_array: np.ndarray,
     nd_data: np.ndarray,
-    section: tuple[float, float] | list,
+    section: tuple[float, float],
     axis: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Crop N-dimensional data along one axis."""
-    coord_array = np.asarray(coord_array)
+    """Crop N-dimensional dense data along one axis."""
+    coord_array = np.asarray(coord_array, dtype=float)
     nd_data = np.asarray(nd_data)
 
     if coord_array.ndim != 1:
         raise ValueError("Coordinate array must be 1-dimensional")
-    if nd_data.shape[axis] != len(coord_array):
+    if nd_data.shape[axis] != coord_array.size:
         raise ValueError(
             f"Data shape along axis {axis} ({nd_data.shape[axis]}) "
-            f"does not match coordinate array length ({len(coord_array)})"
+            f"does not match coordinate array length ({coord_array.size})"
         )
 
-    if isinstance(section, list):
-        coord_min, coord_max = section[axis]
-    else:
-        coord_min, coord_max = section
+    coord_min, coord_max = float(section[0]), float(section[1])
+    if coord_min > coord_max:
+        coord_min, coord_max = coord_max, coord_min
 
-    coord_min = max(coord_min, float(np.min(coord_array)))
-    coord_max = min(coord_max, float(np.max(coord_array)))
+    mask = (coord_array >= coord_min) & (coord_array <= coord_max)
+    indices = np.flatnonzero(mask)
 
-    indices = np.where((coord_array >= coord_min) & (coord_array <= coord_max))[0]
-    cropped_coords = coord_array[indices]
-    cropped_data = np.take(nd_data, indices, axis=axis)
-    return cropped_coords, cropped_data
+    return coord_array[indices], np.take(nd_data, indices, axis=axis)
 
 
 def _style_for_component(
@@ -594,12 +594,41 @@ def add_custom_contour_lines(
     level_count: int = 10,
     ax: plt.Axes | None = None,
 ) -> None:
-    """Add contour lines to a 2D plot."""
+    """Add contour lines to a 2D plot.
+
+    Parameters
+    ----------
+    x
+        Horizontal axis values. Must match the second dimension of ``data``.
+    y
+        Vertical axis values. Must match the first dimension of ``data``.
+    data
+        2D array in plotting orientation, i.e. shape ``(len(y), len(x))``.
+    component
+        One of ``real``, ``imag``, ``abs``, ``phase``.
+    """
     if ax is None:
         ax = plt.gca()
 
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    data = np.ma.asarray(data)
+
+    if data.ndim != 2:
+        raise ValueError("Contour data must be 2D")
+    if data.shape != (y.size, x.size):
+        raise ValueError(
+            f"Contour data shape {data.shape} does not match "
+            f"(len(y), len(x)) = {(y.size, x.size)}"
+        )
+
+    filled = np.asarray(data.filled(np.nan), dtype=float)
+    finite = np.isfinite(filled)
+    if not np.any(finite):
+        return
+
     if component in {"real", "imag", "phase"}:
-        vmax = float(np.max(np.abs(data)))
+        vmax = float(np.nanmax(np.abs(filled)))
         if vmax <= 0:
             return
 
@@ -611,32 +640,46 @@ def add_custom_contour_lines(
         positive_levels = percents * vmax
         negative_levels = -percents[::-1] * vmax
 
-        ax.contour(
-            x,
-            y,
-            data,
-            levels=positive_levels,
-            colors=COLORS[0],
-            linewidths=0.7,
-            alpha=0.8,
-        )
-        ax.contour(
-            x,
-            y,
-            data,
-            levels=negative_levels,
-            colors=COLORS[1],
-            linewidths=0.7,
-            alpha=0.8,
-            linestyles=LINE_STYLES[1],
-        )
+        has_pos = np.nanmax(filled) > 0
+        has_neg = np.nanmin(filled) < 0
+
+        if has_pos:
+            ax.contour(
+                x,
+                y,
+                filled,
+                levels=positive_levels,
+                colors=COLORS[0],
+                linewidths=1.0,
+                alpha=0.9,
+            )
+        if has_neg:
+            ax.contour(
+                x,
+                y,
+                filled,
+                levels=negative_levels,
+                colors=COLORS[1],
+                linewidths=1.0,
+                alpha=0.9,
+                linestyles=LINE_STYLES[1],
+            )
+        return
+
+    data_min = float(np.nanmin(filled))
+    data_max = float(np.nanmax(filled))
+    if np.isclose(data_min, data_max):
+        return
+
+    levels = np.linspace(data_min, data_max, level_count + 2)[1:-1]
+    if levels.size == 0:
         return
 
     contour_plot = ax.contour(
         x,
         y,
-        data,
-        levels=level_count,
+        filled,
+        levels=levels,
         colors=COLORS[1],
         linewidths=0.7,
         alpha=0.8,
@@ -719,3 +762,43 @@ def convert_plot_axes(
     nu_coh_plot = None if nu_coh is None else nu_coh + shift
     nu_det_plot = nu_det + shift
     return nu_coh_plot, nu_det_plot
+
+
+def _materialize_sparse_roi_for_plot(
+    axis_det: np.ndarray,
+    data: sp.spmatrix,
+    axis_coh: np.ndarray | None = None,
+) -> tuple[np.ndarray | None, np.ndarray, np.ndarray]:
+    """Convert a sparse full-grid ROI into a small dense block for plotting only."""
+    coo = data.tocoo()
+
+    if axis_coh is None:
+        if data.shape[1] != 1:
+            raise ValueError("1D sparse spectra must have shape (n_det, 1)")
+        if coo.nnz == 0:
+            return None, np.asarray(axis_det[:0], dtype=float), np.zeros(0, dtype=data.dtype)
+
+        order = np.argsort(coo.row)
+        rows = coo.row[order]
+        vals = np.asarray(coo.data)[order]
+        return None, np.asarray(axis_det, dtype=float)[rows], vals
+
+    if coo.nnz == 0:
+        empty_coh = np.asarray(axis_coh[:0], dtype=float)
+        empty_det = np.asarray(axis_det[:0], dtype=float)
+        return empty_coh, empty_det, np.zeros((0, 0), dtype=data.dtype)
+
+    rows = np.unique(coo.row)
+    cols = np.unique(coo.col)
+
+    row_pos = np.searchsorted(rows, coo.row)
+    col_pos = np.searchsorted(cols, coo.col)
+
+    dense_roi = np.zeros((rows.size, cols.size), dtype=data.dtype)
+    dense_roi[row_pos, col_pos] = coo.data
+
+    return (
+        np.asarray(axis_coh, dtype=float)[rows],
+        np.asarray(axis_det, dtype=float)[cols],
+        dense_roi,
+    )

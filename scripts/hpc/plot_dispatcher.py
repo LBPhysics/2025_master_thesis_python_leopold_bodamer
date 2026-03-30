@@ -13,7 +13,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from common.plot_settings import PLOT_PAD_FACTOR
+from common.plot_settings import PAD_FACTOR
 from common.workflow import final_processed_filename
 from hpc.calc_dispatcher import submit_sbatch
 
@@ -87,12 +87,14 @@ def _estimate_plot_resources(metadata: dict[str, object]) -> tuple[str, str]:
         per_signal_overhead = 30.0
         time_seconds = max(
             300.0,
-            base_seconds + (per_point_seconds * points * n_signals) + (per_signal_overhead * n_signals),
+            base_seconds
+            + (per_point_seconds * points * n_signals)
+            + (per_signal_overhead * n_signals),
         )
         bytes_per_complex = 16.0
         work_factor = 2.0
         mem_mb = 2000.0 + (
-            points * n_signals * bytes_per_complex * work_factor * (max(1.0, PLOT_PAD_FACTOR) ** 2)
+            points * n_signals * bytes_per_complex * work_factor * (max(1.0, PAD_FACTOR) ** 2)
         ) / (1024**2)
     else:
         time_seconds = max(600.0, min(1200.0, 0.8 * n_t_det * n_signals))
@@ -227,15 +229,21 @@ def main() -> None:
         proc_mem, proc_time = _estimate_processing_resources(metadata)
         default_mem_mb = _parse_mem_to_mb(selected_mem)
         default_time_s = _parse_time_to_seconds(selected_time)
-        selected_mem_mb = max(default_mem_mb, _parse_mem_to_mb(plot_mem), _parse_mem_to_mb(proc_mem))
+        selected_mem_mb = max(
+            default_mem_mb, _parse_mem_to_mb(plot_mem), _parse_mem_to_mb(proc_mem)
+        )
         total_time_s = (_parse_time_to_seconds(plot_time) + _parse_time_to_seconds(proc_time)) * 2.0
         selected_mem = f"{selected_mem_mb}M"
-        selected_time = _format_seconds(total_time_s) if total_time_s > default_time_s else selected_time
+        selected_time = (
+            _format_seconds(total_time_s) if total_time_s > default_time_s else selected_time
+        )
         print(f"Estimated processing resources: mem={proc_mem}, time={proc_time}")
         print(f"Estimated plotting resources:   mem={plot_mem}, time={plot_time}")
         print(f"Using resources: mem={selected_mem}, time={selected_time}")
     except Exception as exc:
-        print(f"Resource estimate failed ({exc}); using defaults: mem={selected_mem}, time={selected_time}")
+        print(
+            f"Resource estimate failed ({exc}); using defaults: mem={selected_mem}, time={selected_time}"
+        )
 
     script_content = _render_slurm_script(
         job_dir=job_dir,
