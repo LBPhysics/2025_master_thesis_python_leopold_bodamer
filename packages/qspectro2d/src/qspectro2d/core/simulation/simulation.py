@@ -31,18 +31,6 @@ from ..laser_system import LaserPulseSequence, e_pulses, epsilon_pulses
 from .sim_config import SimulationConfig
 
 
-def split_solver_options(config: SimulationConfig) -> tuple[dict, dict]:
-    solver = str(config.ode_solver)
-    src = dict(config.solver_options)
-    run_kwargs: dict = {}
-    if solver == "redfield" and "sec_cutoff" in src:
-        run_kwargs["sec_cutoff"] = src.pop("sec_cutoff")
-
-    if solver in SUPPORTED_SOLVERS:
-        return run_kwargs, src
-    raise ValueError(f"Unsupported solver '{solver}'.")
-
-
 def build_initial_state(
     config: SimulationConfig,
     system: AtomicSystem,
@@ -139,9 +127,6 @@ class SimulationModuleOQS:
         for key in self._CACHE_KEYS:
             self.__dict__.pop(key, None)
 
-    def _solver_split(self) -> tuple[dict, dict]:
-        return split_solver_options(self.simulation_config)
-
     @cached_property
     def evo_obj(self) -> Qobj | QobjEvo:
         if self.simulation_config.ode_solver == "paper_eqs":
@@ -156,7 +141,10 @@ class SimulationModuleOQS:
         if solver == "lindblad":
             return lindblad_decay_channels(self.system)
         if solver == "redfield":
-            return redfield_decay_channels(self.system, self.bath)
+            return redfield_decay_channels(
+                self.system,
+                self.bath,
+            )
         if solver == "paper_eqs":
             return []
         raise ValueError(f"Unsupported solver '{solver}'.")
@@ -211,8 +199,6 @@ class SimulationModuleOQS:
         return build_observable_labels(self.system)
 
     def update_delays(self, t_coh: float, t_wait: float | None = None) -> None:
-        if t_coh is None:
-            raise TypeError("t_coh must be provided to update_delays and cannot be None")
         wait_time = float(self.simulation_config.t_wait if t_wait is None else t_wait)
         t_coh_value = float(t_coh)
         self.simulation_config.t_wait = wait_time
@@ -225,5 +211,4 @@ __all__ = [
     "build_initial_state",
     "build_observable_labels",
     "build_observable_ops",
-    "split_solver_options",
 ]

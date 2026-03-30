@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-import copy
-from qutip import BosonicEnvironment, Qobj
+from qutip import BosonicEnvironment, Qobj, QobjEvo
 
 from .atomic_system import AtomicSystem, pair_to_index
 from ..config.defaults import DEFAULTS
@@ -22,8 +21,9 @@ def _dephasing_projector(system: AtomicSystem, index: int) -> Qobj:
 
 
 def redfield_decay_channels(
-    system: AtomicSystem, bath: BosonicEnvironment
-) -> list[tuple[Qobj, BosonicEnvironment]]:
+    system: AtomicSystem,
+    bath: BosonicEnvironment,
+) -> list[tuple[Qobj | QobjEvo, BosonicEnvironment]]:
     """Return paper-aligned Bloch-Redfield coupling operators.
 
     For the current max_excitation<=2 truncation:
@@ -34,14 +34,14 @@ def redfield_decay_channels(
     Each site channel gets its own bath instance to reflect the paper's
     assumption of uncorrelated local baths.
     """
-    channels: list[tuple[Qobj, BosonicEnvironment]] = []
+    channels: list[tuple[Qobj | QobjEvo, BosonicEnvironment]] = []
 
     BR_NORM = 2.0
     pref = np.sqrt(BR_NORM)
 
     def add_channel(operator: Qobj) -> None:
-        bath_i = copy.deepcopy(bath)
-        channels.append((pref * system.to_eigenbasis(operator), bath_i))
+        op = pref * system.to_eigenbasis(operator)
+        channels.append((op, bath))
 
     site_ops = {
         i_atom: _dephasing_projector(system, i_atom) for i_atom in range(1, system.n_atoms + 1)

@@ -32,11 +32,11 @@ _warnings.filterwarnings(
     module=r"qutip\.solver\.brmesolve",
 )
 
-# QuTiP emits a benign RuntimeWarning when the thermal prefactor vanishes; silence it globally.
+# QuTiP emits a benign RuntimeWarning when overflow occurs in exp in qutip.utilities; silence it globally.
 _warnings.filterwarnings(
     "ignore",
     category=RuntimeWarning,
-    message=r"divide by zero encountered in divide",
+    message=r"overflow encountered in exp",
     module=r"qutip\.utilities",
 )
 
@@ -44,7 +44,13 @@ _warnings.filterwarnings(
 # EXPLICIT IMPORTS ONLY (no lazy imports)
 
 # Core exports
-from .core import AtomicSystem, LaserPulse, LaserPulseSequence, SimulationConfig, SimulationModuleOQS
+from .core import (
+    AtomicSystem,
+    LaserPulse,
+    LaserPulseSequence,
+    SimulationConfig,
+    SimulationModuleOQS,
+)
 
 from .utils.data_io import (
     save_run_artifact,

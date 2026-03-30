@@ -15,30 +15,19 @@ SimulationModuleOQS.
 """
 
 from __future__ import annotations
-
-from copy import deepcopy
-import os
-
-import numpy as np
 from qutip import Qobj, brmesolve, mesolve
+from copy import deepcopy
+import numpy as np
 
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_t_det, compute_times_local
 from ..diagnostics.solver_inputs import log_redfield_solver_debug
-from ..utils.rwa_utils import from_rotating_frame_list
-from .polarisation import complex_polarisation, time_dependent_polarisation_rwa
 
 __all__ = [
     "compute_evolution",
     "compute_polarisation_over_window",
     "simulation_with_pulses",
 ]
-
-
-def _redfield_debug_enabled() -> bool:
-    """Return whether verbose Redfield diagnostics are enabled explicitly."""
-    value = os.getenv("QSPECTRO2D_REDFIELD_DEBUG", "")
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _validate_external_time_grid(tlist: np.ndarray) -> np.ndarray:
@@ -91,7 +80,15 @@ def compute_evolution(
     field_free: bool = False,
     **override_options: dict,
 ) -> tuple[np.ndarray, list]:
-    """Return the simulation time grid together with expectations or states."""
+    """Return the simulation time grid together with expectations or states.
+
+    Notes
+    -----
+    - If ``e_ops is None``, the returned data are solver states.
+    - If ``e_ops`` is provided and has length 1, the returned data are a single
+      expectation-value array.
+    - If ``e_ops`` has length > 1, the returned data are a list of arrays.
+    """
     if solver_times is None:
         t_list = compute_times_local(sim_oqs.simulation_config)
     else:
@@ -101,7 +98,8 @@ def compute_evolution(
     hamiltonian = sim_oqs.evo_obj
 
     solver = sim_oqs.simulation_config.ode_solver
-    run_kwargs, options = sim_oqs._solver_split()
+    run_kwargs = sim_oqs.simulation_config.solver_run_kwargs.copy()
+    options = sim_oqs.simulation_config.solver_options.copy()
     options.update(override_options or {})
     options.setdefault("progress_bar", False)
 
@@ -131,8 +129,7 @@ def compute_evolution(
                 **run_kwargs,
             )
         except Exception:
-            if _redfield_debug_enabled():
-                log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
+            log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
             raise
     elif solver in {"lindblad", "paper_eqs"}:
         result = mesolve(
@@ -142,12 +139,17 @@ def compute_evolution(
             c_ops=sim_oqs.decay_channels,
             e_ops=e_ops,
             options=options,
+            **run_kwargs,
         )
     else:
         raise ValueError(f"Unsupported solver '{solver}'.")
 
-    data = result.expect[0] if e_ops is not None else result.states
-    return np.array(t_list, float), data
+    if e_ops is None:
+        data = result.states
+    else:
+        data = np.asarray(result.expect[0], dtype=np.complex128)
+
+    return np.asarray(t_list, dtype=float), data
 
 
 def compute_polarisation_over_window(

@@ -43,7 +43,7 @@ PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES)
 
 N_PULSES = 3
 PULSE_AMPLITUDES = [
-    0.01
+    0.005
 ] * N_PULSES  # ensures that the population of the excited state is less then 1% -> contributions of higher nonlinearities remain negligible
 SIGNAL_TYPES = ["rephasing", "nonrephasing"]
 
@@ -51,7 +51,6 @@ COMPONENT_MAP: dict[str, tuple[int, int]] = {
     "average": (0, 0),
     "rephasing": (-1, 1),
     "nonrephasing": (1, -1),
-    "doublequantum": (1, 1),
 }
 
 NEGATIVE_EIGVAL_THRESHOLD = -1e-3
@@ -106,7 +105,7 @@ DEFAULTS = {
             ),  # automatically switches between stiff and non-stiff methods, see https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html#scipy.integrate.solve_ivp
         },
         "solver_run_kwargs": {
-            "sec_cutoff": 1.0e-6,
+            "sec_cutoff": 1.0e-3,
         },
         "sim_type": "1d",
         "t_det": T_DET,
@@ -116,7 +115,7 @@ DEFAULTS = {
         "n_phases": N_PHASES,
         "signal_types": list(SIGNAL_TYPES),
         "initial_state": "ground",
-        "max_workers": None,  # always check cpu cores
+        "max_workers": 16,  # always check cpu cores
     },
 }
 

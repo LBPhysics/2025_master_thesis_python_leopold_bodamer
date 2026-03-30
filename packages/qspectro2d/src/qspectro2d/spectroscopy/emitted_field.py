@@ -2,7 +2,7 @@
 
 The emitted field is assembled using the photon-echo convention compatible
 with the ``P^+(t)`` readout used in ``polarisation.py``. After phase selection,
-this module returns field components proportional to ``+i P_sig(t)``.
+this module returns field components proportional to ``-i P_sig(t)``.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from ..config.defaults import COMPONENT_MAP, phase_cycling_phases
+from ..config.factory import load_simulation_config
 from ..core.simulation.time_axes import compute_t_det
 from .evolution import compute_polarisation_over_window, simulation_with_pulses
 
@@ -87,21 +88,21 @@ def compute_emitted_field_components(
         ``run_status`` is ``"ok"`` if all phase-cycling jobs completed,
         otherwise ``"phase_cycling_incomplete"``.
     """
-    from qspectro2d.config.factory import load_simulation_config
 
     config = load_simulation_config(config_source, emit_runtime_warnings=False)
+
+    detection_window_arr = np.asarray(
+        compute_t_det(config) if detection_window is None else detection_window,
+        dtype=float,
+    )
+    if detection_window_arr.ndim != 1:
+        raise ValueError(f"detection_window must be 1D, got shape={detection_window_arr.shape}")
+
+    component_count = int(detection_window_arr.size)
+    sim_type = str(getattr(config, "sim_type", "1d"))
     t_coh_value = float(t_coh)
 
-    if detection_window is None:
-        t_det = compute_t_det(config, t_coh_override=t_coh_value)
-    else:
-        t_det = np.asarray(detection_window, dtype=float)
-
-    if t_det.ndim != 1:
-        raise ValueError("detection_window must be one-dimensional")
-
-    sim_type = str(getattr(config, "sim_type", "1d"))
-    if len(t_det) == 0 and sim_type != "0d":
+    if component_count == 0 and sim_type != "0d":
         raise RuntimeError(
             "Invariant violation: empty detection axis for non-0d run "
             f"(sim_type={sim_type}, t_coh={t_coh_value:.6g}, "
@@ -110,29 +111,73 @@ def compute_emitted_field_components(
 
     signal_types = list(config.signal_types)
     phase_values = [float(phi) for phi in phase_cycling_phases(config.n_phases)]
-
-    component_count = len(t_det)
+    freq_vector_list = [float(x) for x in freq_vector]
 
     time_mask = None
     if time_cut is not None and np.isfinite(time_cut):
-        time_mask = (t_det <= time_cut).astype(np.float64)
+        time_mask = (detection_window_arr <= float(time_cut)).astype(np.float64)
 
-    accumulated = {
-        signal_type: np.zeros(component_count, dtype=np.complex128)
-        for signal_type in signal_types
-    }
     zero_component = np.zeros(component_count, dtype=np.complex128)
+    accumulated = {
+        signal_type: np.zeros(component_count, dtype=np.complex128) for signal_type in signal_types
+    }
 
     total_polarisations: dict[tuple[float, float], np.ndarray] = {}
     single_pulse_1: dict[float, np.ndarray] = {}
     single_pulse_2: dict[float, np.ndarray] = {}
     single_pulse_3: np.ndarray | None = None
 
-    failed_jobs: list[str] = []
+    issues: list[str] = []
 
-    total_tasks = len(phase_values) ** 2 + 2 * len(phase_values) + 1
-    detection_window_list = t_det.tolist()
+    def _result_key(worker_kind: str, phi1: float, phi2: float) -> str:
+        return f"{worker_kind}(phi1={phi1:.6g}, phi2={phi2:.6g})"
+
+    def _normalise_worker_result(
+        worker_kind: str,
+        phi1: float,
+        phi2: float,
+        result: tuple[np.ndarray, np.ndarray],
+    ) -> np.ndarray:
+        _, polarisation = result
+        polarisation = np.asarray(polarisation, dtype=np.complex128)
+
+        if polarisation.shape != (component_count,):
+            raise ValueError(
+                f"{_result_key(worker_kind, phi1, phi2)} returned shape "
+                f"{polarisation.shape}, expected {(component_count,)}"
+            )
+
+        if not np.all(np.isfinite(polarisation)):
+            first_bad = int(np.argmax(~np.isfinite(polarisation)))
+            bad_t = (
+                float(detection_window_arr[first_bad])
+                if first_bad < component_count
+                else float("nan")
+            )
+            raise ValueError(
+                f"{_result_key(worker_kind, phi1, phi2)} returned non-finite values "
+                f"starting at index={first_bad}, t_det={bad_t:.6g} fs"
+            )
+
+        return polarisation
+
+    job_specs: list[tuple[str, float, float, list[int] | None]] = []
+
+    for phi1 in phase_values:
+        for phi2 in phase_values:
+            job_specs.append(("total", phi1, phi2, None))
+
+    for phi1 in phase_values:
+        job_specs.append(("single_1", phi1, 0.0, [0]))
+
+    for phi2 in phase_values:
+        job_specs.append(("single_2", 0.0, phi2, [1]))
+
+    job_specs.append(("single_3", 0.0, 0.0, [2]))
+
+    total_tasks = len(job_specs)
     max_workers = max(1, min(int(config.max_workers), total_tasks))
+    detection_window_list = detection_window_arr.tolist()
 
     owns_executor = executor is None
     if owns_executor:
@@ -140,69 +185,33 @@ def compute_emitted_field_components(
 
     assert executor is not None
     try:
-        futures = {}
+        futures: dict[Any, tuple[str, float, float]] = {}
 
-        for phi1 in phase_values:
-            for phi2 in phase_values:
-                fut = executor.submit(
-                    _worker_polarisation,
-                    config_source,
-                    t_coh_value,
-                    list(freq_vector),
-                    phi1,
-                    phi2,
-                    detection_window_list,
-                    None,
-                )
-                futures[fut] = ("total", phi1, phi2)
-
-        for phi1 in phase_values:
+        for worker_kind, phi1, phi2, active_pulses in job_specs:
             fut = executor.submit(
                 _worker_polarisation,
                 config_source,
                 t_coh_value,
-                list(freq_vector),
+                freq_vector_list,
                 phi1,
-                0.0,
-                detection_window_list,
-                [0],
-            )
-            futures[fut] = ("single_1", phi1, 0.0)
-
-        for phi2 in phase_values:
-            fut = executor.submit(
-                _worker_polarisation,
-                config_source,
-                t_coh_value,
-                list(freq_vector),
-                0.0,
                 phi2,
                 detection_window_list,
-                [1],
+                active_pulses,
             )
-            futures[fut] = ("single_2", 0.0, phi2)
-
-        fut = executor.submit(
-            _worker_polarisation,
-            config_source,
-            t_coh_value,
-            list(freq_vector),
-            0.0,
-            0.0,
-            detection_window_list,
-            [2],
-        )
-        futures[fut] = ("single_3", 0.0, 0.0)
+            futures[fut] = (worker_kind, phi1, phi2)
 
         for future in as_completed(futures):
             worker_kind, phi1_requested, phi2_requested = futures[future]
+
             try:
-                _, polarisation = future.result()
-            except Exception as exc:
-                failed_jobs.append(
-                    f"{worker_kind}(phi1={phi1_requested:.6g}, phi2={phi2_requested:.6g}) "
-                    f"failed with {type(exc).__name__}: {exc}"
+                polarisation = _normalise_worker_result(
+                    worker_kind,
+                    phi1_requested,
+                    phi2_requested,
+                    future.result(),
                 )
+            except Exception as exc:
+                issues.append(f"{_result_key(worker_kind, phi1_requested, phi2_requested)}: {exc}")
                 continue
 
             if worker_kind == "total":
@@ -224,36 +233,18 @@ def compute_emitted_field_components(
     missing_single_2 = len(phase_values) - len(single_pulse_2)
     missing_single_3 = 0 if single_pulse_3 is not None else 1
 
-    run_status = "ok"
+    incomplete = bool(
+        issues or missing_total or missing_single_1 or missing_single_2 or missing_single_3
+    )
+
     status_parts: list[str] = []
 
-    if failed_jobs:
-        run_status = "phase_cycling_incomplete"
-        details = "\n".join(failed_jobs[:10])
-        more = "" if len(failed_jobs) <= 10 else f"\n... and {len(failed_jobs) - 10} more"
-        print(
-            "WARNING: Phase-cycling worker jobs failed; saving artifact as incomplete.\n"
-            f"Failed jobs: {len(failed_jobs)} / {total_tasks}\n"
-            f"{details}{more}",
-            flush=True,
-        )
-        status_parts.append(
-            f"failed_jobs={len(failed_jobs)}/{total_tasks}; "
-            + "; ".join(failed_jobs[:10])
-            + (f"; ... and {len(failed_jobs) - 10} more" if len(failed_jobs) > 10 else "")
-        )
+    if issues:
+        details = "\n".join(issues[:10])
+        more = "" if len(issues) <= 10 else f"\n... and {len(issues) - 10} more"
+        status_parts.append(f"worker_issues={len(issues)}/{total_tasks}\n{details}{more}")
 
     if missing_total or missing_single_1 or missing_single_2 or missing_single_3:
-        run_status = "phase_cycling_incomplete"
-        print(
-            "WARNING: Incomplete phase-cycling data after worker execution; "
-            "saving artifact as incomplete. "
-            f"missing total={missing_total}, "
-            f"single_1={missing_single_1}, "
-            f"single_2={missing_single_2}, "
-            f"single_3={missing_single_3}",
-            flush=True,
-        )
         status_parts.append(
             f"missing total={missing_total}, "
             f"single_1={missing_single_1}, "
@@ -261,12 +252,27 @@ def compute_emitted_field_components(
             f"single_3={missing_single_3}"
         )
 
+    status_message = " | ".join(status_parts) if status_parts else None
+
+    if incomplete:
+        print(
+            "WARNING: Phase-cycling data incomplete or invalid; "
+            "continuing with zero-filled missing components.\n"
+            f"{status_message}",
+            flush=True,
+        )
+        run_status = "phase_cycling_incomplete"
+    else:
+        run_status = "ok"
+
+    p_sub_3 = single_pulse_3 if single_pulse_3 is not None else zero_component
+
     for phi1 in phase_values:
+        p_sub_1 = single_pulse_1.get(phi1, zero_component)
+
         for phi2 in phase_values:
             p_total = total_polarisations.get((phi1, phi2), zero_component)
-            p_sub_1 = single_pulse_1.get(phi1, zero_component)
             p_sub_2 = single_pulse_2.get(phi2, zero_component)
-            p_sub_3 = single_pulse_3 if single_pulse_3 is not None else zero_component
 
             polarisation_component = p_total - p_sub_1 - p_sub_2 - p_sub_3
 
@@ -281,9 +287,24 @@ def compute_emitted_field_components(
     emitted_fields: list[np.ndarray] = []
     for signal_type in signal_types:
         field_component = -1j * accumulated[signal_type] * normalisation
+
         if time_mask is not None:
             field_component = field_component * time_mask
+
+        if field_component.shape != (component_count,):
+            raise RuntimeError(
+                f"Final emitted field for '{signal_type}' has shape "
+                f"{field_component.shape}, expected {(component_count,)}"
+            )
+
+        if not np.all(np.isfinite(field_component)):
+            first_bad = int(np.argmax(~np.isfinite(field_component)))
+            bad_t = float(detection_window_arr[first_bad])
+            raise RuntimeError(
+                f"Final emitted field for '{signal_type}' contains non-finite values "
+                f"starting at index={first_bad}, t_det={bad_t:.6g} fs"
+            )
+
         emitted_fields.append(field_component)
 
-    status_message = " | ".join(status_parts) if status_parts else None
     return emitted_fields, run_status, status_message

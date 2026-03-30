@@ -116,7 +116,8 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     _log_system_diagnostics(sim_copy)
     _validate_simulation_input(sim_copy)
 
-    run_kwargs, options = sim_copy._solver_split()
+    run_kwargs = sim_oqs.simulation_config.solver_run_kwargs.copy()
+    options = sim_oqs.simulation_config.solver_options.copy()
     options.setdefault("progress_bar", False)
     options.setdefault("store_states", True)
     options.setdefault("store_final_state", True)
@@ -125,7 +126,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
     hamiltonian = sim_copy.evo_obj
     rho0 = sim_copy.initial_state
 
-    print("\n \n=== STATE-BY-STATE ANALYSIS (single-shot solver run) ===")
+    print("\n \n=== STATE-BY-STATE ANALYSIS ===")
     if solver == "redfield":
         result = brmesolve(
             H=hamiltonian,
@@ -144,6 +145,7 @@ def check_the_solver(sim_oqs: SimulationModuleOQS) -> float:
             c_ops=sim_copy.decay_channels,
             e_ops=None,
             options=options,
+            **run_kwargs,
         )
     else:
         raise ValueError(f"Unsupported solver '{solver}'.")

@@ -132,7 +132,7 @@ For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates 
    python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
    ```
 
-4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `PLOT_PAD_FACTOR` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
+4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `PAD_FACTOR` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
 
    **Example:**
 

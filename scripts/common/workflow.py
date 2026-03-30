@@ -189,6 +189,8 @@ def prepare_workflow(
 
     combinations = build_combinations(t_coh_values, n_inhom)
     time_cut = float(check_the_solver(sim)) if run_solver_check else float("inf")
+    if time_cut <= 0:
+        raise RuntimeError(f"Solver check returned non-positive time_cut={time_cut:.6g}")
 
     return PreparedWorkflow(
         config_path=resolved_config_path,

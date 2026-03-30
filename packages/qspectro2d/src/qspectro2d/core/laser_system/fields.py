@@ -54,43 +54,33 @@ def e_pulses(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
     """
-
     Convention
     ----------
     For a pulse centred at peak time ``t_k``, with explicit phase ``phi_k``,
-    amplitude ``A_k``, and envelope ``s_k(t)`` centred at ``t_k``, the lab-frame
-    positive-frequency field is
+    amplitude ``A_k``, and envelope ``s_k(t)`` centred at ``t_k``,
 
-        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t - t_k)) - i phi_k].
+    lab-frame positive-frequency field:
+        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t - t_k)) - i phi_k]
 
-    In the rotating-frame convention used throughout the RWA modules, the
-    corresponding slowly varying coefficient is
+    RWA field used for propagation:
+        e_k(t) = A_k s_k(t) exp(-i phi_k)
 
-        e_k(t) = A_k s_k(t) exp[-i (phi_k - omega_L t_k)],
-
-    so that
-
-        epsilon^(+)(t) = exp(-i omega_L t) e(t).
-
-    This matches the pulse-time storage in ``laser.py`` where earlier pulses carry
-    negative ``pulse_peak_time`` values and the final pulse is centred at ``0``.
+    So the delay enters only through the shifted envelope center, not through an
+    additional carrier-delay phase in the rotating-frame field.
     """
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
     if is_scalar:
         t_array = t_array[None]
 
-    omega = pulse_seq.carrier_freq_fs
     field_total = np.zeros_like(t_array, dtype=complex)
-    for pulse, phase, t_peak, amplitude in zip(
+    for pulse, phase, amplitude in zip(
         pulse_seq.pulses,
         pulse_seq.pulse_phases,
-        pulse_seq.pulse_peak_times,
         pulse_seq.pulse_amplitudes,
     ):
-        phi_eff = phase - omega * t_peak
         envelope = single_pulse_envelope(t_array, pulse)
-        field_total += amplitude * np.exp(-1j * phi_eff) * envelope
+        field_total += amplitude * np.exp(-1j * phase) * envelope
     return field_total[0] if is_scalar else field_total
 
 
@@ -103,5 +93,16 @@ def epsilon_pulses(
     if is_scalar:
         t_array = t_array[None]
 
-    field = np.exp(-1j * (pulse_seq.carrier_freq_fs * t_array)) * e_pulses(t_array, pulse_seq)
-    return field[0] if is_scalar else field
+    omega = pulse_seq.carrier_freq_fs
+    field_total = np.zeros_like(t_array, dtype=complex)
+
+    for pulse, phase, t_peak, amplitude in zip(
+        pulse_seq.pulses,
+        pulse_seq.pulse_phases,
+        pulse_seq.pulse_peak_times,
+        pulse_seq.pulse_amplitudes,
+    ):
+        envelope = single_pulse_envelope(t_array, pulse)
+        field_total += amplitude * envelope * np.exp(-1j * (omega * (t_array - t_peak) + phase))
+
+    return field_total[0] if is_scalar else field_total

@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 import yaml
 
+from ..utils.constants import convert_cm_to_fs
 from .defaults import (
     ALLOWED_SOLVER_RUN_KWARGS,
     ALLOWED_SOLVER_OPTIONS,
@@ -188,7 +189,7 @@ def _normalize_solver_options(solver: str, solver_options: Mapping[str, Any]) ->
         raise TypeError("config.solver_options must be a mapping/dict")
 
     allowed_keys = set(ALLOWED_SOLVER_OPTIONS.get(solver, []))
-    filtered = {k: v for k, v in solver_options.items() if k in allowed_keys}
+    filtered = {k: v for k, v in solver_options.items() if k in allowed_keys and v is not None}
 
     if "nsteps" in filtered:
         filtered["nsteps"] = _coerce_int(
@@ -210,7 +211,7 @@ def _normalize_solver_run_kwargs(
         raise TypeError("config.solver_run_kwargs must be a mapping/dict")
 
     allowed_keys = set(ALLOWED_SOLVER_RUN_KWARGS.get(solver, []))
-    filtered = {k: v for k, v in solver_run_kwargs.items() if k in allowed_keys}
+    filtered = {k: v for k, v in solver_run_kwargs.items() if k in allowed_keys and v is not None}
 
     if "sec_cutoff" in filtered:
         filtered["sec_cutoff"] = _coerce_float(
@@ -263,8 +264,61 @@ def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
         sim_cfg["initial_state"] = "ground"
 
 
+def _enforce_nonrwa_output_dt(cfg: dict[str, Any]) -> None:
+    """Actively reduce config.dt for raw no-RWA output if it would alias.
+
+    Here config.dt is treated as the saved/output spacing.
+    If rwa_sl is False, the raw saved signal is in the lab frame and therefore
+    contains the optical carrier. To avoid aliasing of a direct FFT of that raw
+    lab-frame signal, enforce a sufficiently fine output spacing.
+
+    Policy:
+    - strict Nyquist limit: dt_out <= T_opt / 2
+    - implemented safe default: dt_out <= T_opt / 4
+
+    The T_opt / 4 rule is stricter than Nyquist and gives four output samples
+    per optical cycle instead of only two.
+    """
+    sim_cfg = cfg["config"]
+    laser_cfg = cfg["laser"]
+    solver = str(sim_cfg["solver"])
+
+    if solver not in {"lindblad", "redfield"}:
+        return
+    if bool(laser_cfg["rwa_sl"]):
+        return
+
+    omega_L_fs = float(convert_cm_to_fs(laser_cfg["carrier_freq_cm"]))  # rad/fs
+    optical_period_fs = 2.0 * np.pi / omega_L_fs
+    nyquist_dt_fs = optical_period_fs / 2.0
+    recommended_dt_fs = optical_period_fs / 4.0
+
+    dt_out = float(sim_cfg["dt"])
+    if dt_out > nyquist_dt_fs:
+        old_dt = dt_out
+        sim_cfg["dt"] = recommended_dt_fs
+
+        warnings.warn(
+            "laser.rwa_sl=False: config.dt was automatically reduced from "
+            f"{old_dt:.6g} fs to {recommended_dt_fs:.6g} fs because the original "
+            "output spacing would alias the raw lab-frame optical carrier "
+            f"(T_opt={optical_period_fs:.6g} fs, Nyquist limit={nyquist_dt_fs:.6g} fs).",
+            category=UserWarning,
+            stacklevel=2,
+        )
+
+
 def _inject_default_max_step(cfg: dict[str, Any]) -> None:
-    """Handle max_step internally for time-dependent solvers."""
+    """Handle max_step internally for time-dependent solvers.
+
+    Notes
+    -----
+    - RWA: choose an internal step that resolves the pulse envelope.
+    - no-RWA: assume config.dt has already been reduced elsewhere to a
+      carrier-safe output spacing, then choose max_step as a simple fraction
+      of that saved/output spacing.
+    - In QuTiP, max_step is only an upper bound for the adaptive solver.
+    """
     sim_cfg = cfg["config"]
     laser_cfg = cfg["laser"]
     solver = str(sim_cfg["solver"])
@@ -272,16 +326,26 @@ def _inject_default_max_step(cfg: dict[str, Any]) -> None:
     if solver not in {"lindblad", "redfield"}:
         return
 
-    max_step = float(laser_cfg["pulse_fwhm_fs"]) / 10.0
-    dt = float(sim_cfg["dt"])
-    sim_cfg["solver_options"]["max_step"] = max(max_step, dt)
+    dt_out = float(sim_cfg["dt"])
+    pulse_fwhm_fs = float(laser_cfg["pulse_fwhm_fs"])
+    rwa_sl = bool(laser_cfg["rwa_sl"])
+
+    if rwa_sl:
+        # Envelope-resolving rule for RWA
+        n_env = 10.0
+        target_step = pulse_fwhm_fs / n_env
+        n_substeps = max(1, int(np.ceil(dt_out / target_step)))
+        sim_cfg["solver_options"]["max_step"] = dt_out / n_substeps
+    else:
+        # Assume dt_out was already made carrier-safe by _enforce_nonrwa_output_dt.
+        # Choose a modest amount of internal substepping relative to saved spacing.
+        no_rwa_substeps = 4  # use 2 for 0.5*dt_out, 4 for 0.25*dt_out
+        sim_cfg["solver_options"]["max_step"] = dt_out  # TODO / no_rwa_substeps
 
 
 # -----------------------------------------------------------------------------
 # Public config API
 # -----------------------------------------------------------------------------
-
-
 def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
     cfg = get_defaults()
     if user_cfg:
@@ -306,6 +370,7 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
     )
 
     _normalize_solver_state_constraints(cfg)
+    _enforce_nonrwa_output_dt(cfg)
     _inject_default_max_step(cfg)
     return cfg
 
@@ -369,7 +434,12 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
         raise ValueError("config.initial_state must be 'ground' or 'thermal'")
     if initial_state == "thermal" and ode_solver != "redfield":
         raise ValueError("config.initial_state='thermal' is only allowed for solver='redfield'")
-
+    if ode_solver == "redfield" and rwa_sl and n_atoms == 1:
+        raise ValueError(
+            "config combination not supported: solver='redfield' with "
+            "laser.rwa_sl=True does not work for atomic.n_atoms==1 "
+            "(monomer). Use laser.rwa_sl=False or solver='paper_eqs'."
+        )
     if dt <= 0:
         raise ValueError("dt must be > 0")
     if t_coh < 0:
@@ -464,10 +534,6 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
             "solver_run_kwargs includes unsupported keys for "
             f"{ode_solver}: {sorted(unknown_run_kwargs)}"
         )
-
-    sec_cutoff = solver_run_kwargs.get("sec_cutoff")
-    if sec_cutoff is not None and sec_cutoff < 0:
-        raise ValueError("solver_run_kwargs.sec_cutoff must be >= 0")
 
     if sim_type not in SUPPORTED_SIM_TYPES:
         raise ValueError(f"sim_type '{sim_type}' not in {SUPPORTED_SIM_TYPES}")

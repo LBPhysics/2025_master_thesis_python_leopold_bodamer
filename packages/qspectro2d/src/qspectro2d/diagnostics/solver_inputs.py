@@ -31,9 +31,10 @@ def log_redfield_solver_debug(
     options: Mapping[str, Any],
 ) -> None:
     """Print the exact Redfield/LSODA inputs and a few finite-value checks."""
+    solver = sim_oqs.simulation_config.ode_solver
     dt_values = np.diff(tlist)
     print("\n=== PRE-BRMESOLVE DEBUG ===")
-    print("solver:", sim_oqs.simulation_config.ode_solver)
+    print("solver:", solver)
     print("run_kwargs:", dict(run_kwargs))
     print("max_workers:", sim_oqs.simulation_config.max_workers)
     print("options:", dict(options))
@@ -43,7 +44,9 @@ def log_redfield_solver_debug(
     print("tlist finite:", bool(np.all(np.isfinite(tlist))))
     print("dt min/max:", float(np.min(dt_values)), float(np.max(dt_values)))
 
-    for key in ["atol", "rtol", "nsteps", "max_step", "min_step", "method"]:
+    from ..config.defaults import ALLOWED_SOLVER_OPTIONS
+
+    for key in ALLOWED_SOLVER_OPTIONS.get(solver, []):
         value = options.get(key)
         print(f"{key} =", value, type(value))
 
