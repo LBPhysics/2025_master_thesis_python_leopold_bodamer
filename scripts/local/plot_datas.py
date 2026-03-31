@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import re
-import sys
+from functools import partial
 from pathlib import Path
+from typing import Any
+import numpy as np
+import argparse
+import time
+import sys
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-import argparse
-import time
-from functools import partial
-from typing import Any
-
-import numpy as np
 
 from plotstyle import FIG_FORMAT, save_fig
 from qspectro2d import load_simulation_data
@@ -31,6 +29,11 @@ for _parent in SCRIPTS_DIR.parents:
 else:
     raise RuntimeError("Could not locate project root (missing .git directory)")
 
+SIGNAL_CODE = {
+    "rephasing": "R",
+    "nonrephasing": "NR",
+    "absorptive": "A",
+}
 print = partial(print, flush=True)
 
 
@@ -52,28 +55,20 @@ def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
     return figures_dir
 
 
-def _extract_job_plot_tag(job_metadata: dict[str, Any]) -> str:
-    value = str(job_metadata.get("job_unique_id") or "").strip()
-    if value:
-        return value
-
-    job_dir = str(job_metadata.get("job_dir") or "").strip()
-    if job_dir:
-        name = Path(job_dir).name
-        match = re.search(r"(\d{8}_\d{6}(?:_\d{2})?)$", name)
-        if match:
-            return match.group(1)
-        if "_" in name:
-            return name.rsplit("_", 1)[-1]
-        return name
-
-    return "run"
+def _extract_config_stem(job_metadata: dict[str, Any]) -> str:
+    value = str(job_metadata.get("config_stem") or "").strip()
+    if not value:
+        raise KeyError("Missing required job_metadata['config_stem']")
+    return value
 
 
-def _figure_stem(signal: str, domain: str, component: str, *, plot_tag: str) -> str:
-    return "_".join(
-        [str(signal).replace(" ", "_").replace("/", "-"), domain, component, plot_tag]
-    ).lower()
+def _figure_stem(domain: str, signal: str, component: str, *, config_stem: str) -> str:
+    try:
+        signal_code = SIGNAL_CODE[str(signal)]
+    except KeyError as exc:
+        raise KeyError(f"Unsupported signal type for filename mapping: {signal!r}") from exc
+
+    return f"{domain}_{signal_code}_{component}_{config_stem}"
 
 
 def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
@@ -150,8 +145,8 @@ def main() -> None:
 
     components = ["real", "imag", "abs"]
     figures_root = _resolve_figures_dir(data["job_metadata"])
-    plot_tag = _extract_job_plot_tag(data["job_metadata"])
-    print(f"Plot tag: {plot_tag}")
+    config_stem = _extract_config_stem(data["job_metadata"])
+    print(f"Config stem: {config_stem}")
 
     for signal_type, sig_data in signals.items():
         signal_start = time.perf_counter()
@@ -163,7 +158,8 @@ def main() -> None:
             saved = save_fig(
                 fig,
                 filename=_unique_fig_path(
-                    figures_root, _figure_stem(signal_type, "time", component, plot_tag=plot_tag)
+                    figures_root,
+                    _figure_stem("time", signal_type, component, config_stem=config_stem),
                 ),
             )
             print(f"Saved: {saved}")
@@ -222,7 +218,8 @@ def main() -> None:
             saved = save_fig(
                 fig,
                 filename=_unique_fig_path(
-                    figures_root, _figure_stem(signal_type, "freq", component, plot_tag=plot_tag)
+                    figures_root,
+                    _figure_stem("freq", signal_type, component, config_stem=config_stem),
                 ),
                 transparent=TRANSPARENTCY,
             )

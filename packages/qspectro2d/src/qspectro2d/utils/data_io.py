@@ -84,8 +84,6 @@ def load_partial_reduction_artifact(path: Path | str) -> dict[str, Any]:
     }
 
 
-
-
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -300,6 +298,9 @@ def load_run_artifact(path: Path | str) -> dict[str, Any]:
             "figures_dir",
             "data_base_path",
             "data_base_name",
+            "job_unique_id",
+            "config_path",
+            "config_stem",
         )
         if key in info
     }

@@ -22,7 +22,6 @@ from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import (
     allocate_job_dir,
     ensure_job_layout,
-    job_label_token,
     save_info_file,
     save_partial_reduction_artifact,
 )
@@ -31,6 +30,7 @@ from common.workflow import (
     PROJECT_ROOT,
     RUNS_ROOT,
     build_job_metadata,
+    config_stem_token,
     prepare_workflow,
     write_json,
 )
@@ -69,13 +69,9 @@ def main() -> None:
     print("✅ Simulation object constructed from validated merged config.")
     print(f"✅ Solver validated. time_cut = {prepared.time_cut:.6g}")
 
-    label_token = job_label_token(
-        prepared.sim.simulation_config,
-        prepared.sim.system,
-        sim_type=prepared.sim_type,
-    )
+    label_token = config_stem_token(prepared.config_path)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_dir = allocate_job_dir(RUNS_ROOT, f"local_{label_token}_{timestamp}")
+    job_dir = allocate_job_dir(RUNS_ROOT, f"{label_token}_{timestamp}")
     job_paths = ensure_job_layout(job_dir, base_name="raw")
     data_base_path = job_paths.data_base_path
 

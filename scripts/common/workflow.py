@@ -85,6 +85,7 @@ __all__ = [
     "SIM_CONFIGS_DIR",
     "build_combinations",
     "build_job_metadata",
+    "config_stem_token",
     "extract_job_unique_id",
     "format_slurm_job_name",
     "final_processed_filename",
@@ -119,6 +120,11 @@ def _sanitize_token(value: object) -> str:
     token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value).strip())
     token = re.sub(r"_+", "_", token).strip("._-")
     return token or "run"
+
+
+def config_stem_token(config_path: Path | str) -> str:
+    """Return a filesystem-safe token derived from the config filename stem."""
+    return _sanitize_token(Path(config_path).stem)
 
 
 def extract_job_unique_id(job_dir: Path | str) -> str:
@@ -250,6 +256,7 @@ def build_job_metadata(
     time_cut: float | None = None,
 ) -> dict[str, Any]:
     resolved_job_dir = Path(job_dir).resolve()
+    resolved_config_path = Path(config_path).resolve()
     return {
         "sim_type": prepared.sim_type,
         "signal_types": list(prepared.sim.simulation_config.signal_types),
@@ -263,7 +270,8 @@ def build_job_metadata(
         "figures_dir": str(Path(figures_dir).resolve()),
         "data_base_name": str(data_base_name),
         "data_base_path": str(Path(data_base_path).resolve()),
-        "config_path": str(Path(config_path).resolve()),
+        "config_path": str(resolved_config_path),
+        "config_stem": config_stem_token(resolved_config_path),
         "merged_config": prepared.merged_cfg,
     }
 

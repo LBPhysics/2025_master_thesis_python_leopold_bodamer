@@ -18,7 +18,6 @@ import yaml
 from qspectro2d.utils.data_io import (
     allocate_job_dir,
     ensure_job_layout,
-    job_label_token,
     save_info_file,
 )
 
@@ -30,6 +29,7 @@ from common.workflow import (
     PROJECT_ROOT,
     RUNS_ROOT,
     build_job_metadata,
+    config_stem_token,
     extract_job_unique_id,
     format_slurm_job_name,
     prepare_workflow,
@@ -260,13 +260,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"n_batches={args.n_batches}"
     )
 
-    label_token = job_label_token(
-        prepared.sim.simulation_config,
-        prepared.sim.system,
-        sim_type=prepared.sim_type,
-    )
+    label_token = config_stem_token(prepared.config_path)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_dir = allocate_job_dir(RUNS_ROOT, f"hpc_{label_token}_{timestamp}")
+    job_dir = allocate_job_dir(RUNS_ROOT, f"{label_token}_{timestamp}")
     job_paths = ensure_job_layout(job_dir, base_name="raw")
     job_unique_id = extract_job_unique_id(job_dir)
 
