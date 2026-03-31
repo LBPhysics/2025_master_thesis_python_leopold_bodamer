@@ -18,6 +18,7 @@ workflow preparation.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,8 @@ __all__ = [
     "SIM_CONFIGS_DIR",
     "build_combinations",
     "build_job_metadata",
+    "extract_job_unique_id",
+    "format_slurm_job_name",
     "final_processed_filename",
     "pick_config_yaml",
     "prepare_workflow",
@@ -110,6 +113,36 @@ def write_json(path: Path, payload: dict | list) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
+
+
+def _sanitize_token(value: object) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value).strip())
+    token = re.sub(r"_+", "_", token).strip("._-")
+    return token or "run"
+
+
+def extract_job_unique_id(job_dir: Path | str) -> str:
+    """Extract the run-unique suffix from a job directory name.
+
+    Examples
+    --------
+    ``hpc_..._20260331_101530`` -> ``20260331_101530``
+    ``hpc_..._20260331_101530_01`` -> ``20260331_101530_01``
+    """
+
+    name = Path(job_dir).name
+    match = re.search(r"(\d{8}_\d{6}(?:_\d{2})?)$", name)
+    if match:
+        return match.group(1)
+    if "_" in name:
+        return _sanitize_token(name.rsplit("_", 1)[-1])
+    return _sanitize_token(name)
+
+
+def format_slurm_job_name(*parts: object) -> str:
+    """Join job-name tokens into a SLURM-safe label."""
+
+    return "_".join(_sanitize_token(part) for part in parts if str(part).strip())
 
 
 def build_combinations(t_coh_values: np.ndarray, n_inhom: int) -> list[Combination]:
@@ -216,6 +249,7 @@ def build_job_metadata(
     config_path: Path,
     time_cut: float | None = None,
 ) -> dict[str, Any]:
+    resolved_job_dir = Path(job_dir).resolve()
     return {
         "sim_type": prepared.sim_type,
         "signal_types": list(prepared.sim.simulation_config.signal_types),
@@ -224,7 +258,7 @@ def build_job_metadata(
         "n_inhom": int(prepared.sim.simulation_config.n_inhomogen),
         "n_t_coh": int(prepared.t_coh_values.size),
         "time_cut": float(prepared.time_cut if time_cut is None else time_cut),
-        "job_dir": str(Path(job_dir).resolve()),
+        "job_dir": str(resolved_job_dir),
         "data_dir": str(Path(data_dir).resolve()),
         "figures_dir": str(Path(figures_dir).resolve()),
         "data_base_name": str(data_base_name),

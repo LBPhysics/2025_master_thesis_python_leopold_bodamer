@@ -30,6 +30,8 @@ from common.workflow import (
     PROJECT_ROOT,
     RUNS_ROOT,
     build_job_metadata,
+    extract_job_unique_id,
+    format_slurm_job_name,
     prepare_workflow,
     write_json,
 )
@@ -266,6 +268,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     job_dir = allocate_job_dir(RUNS_ROOT, f"hpc_{label_token}_{timestamp}")
     job_paths = ensure_job_layout(job_dir, base_name="raw")
+    job_unique_id = extract_job_unique_id(job_dir)
 
     logs_dir = job_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
@@ -335,7 +338,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         combos_path = job_dir / f"batch_{batch_idx:03d}.json"
         write_json(combos_path, {"combos": combos_subset})
 
-        job_name = f"{prepared.sim_type}b{batch_idx:02d}of{args.n_batches:02d}"
+        job_name = format_slurm_job_name(
+            "calc",
+            prepared.sim_type,
+            f"b{batch_idx:02d}of{args.n_batches:02d}",
+            job_unique_id,
+        )
         script_path = job_dir / f"{job_name}.slurm"
         script_path.write_text(
             _render_slurm_script(

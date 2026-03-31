@@ -9,6 +9,7 @@
 
 # My ignored files
 /packages/plotstyle/figures/
+/scripts/simulation_configs/
 /figures/
 /notebooks/
 /jobs/

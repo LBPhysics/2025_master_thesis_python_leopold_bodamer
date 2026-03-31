@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -12,7 +13,6 @@ if str(SCRIPTS_DIR) not in sys.path:
 import argparse
 import time
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,7 +21,6 @@ from plotstyle import FIG_FORMAT, save_fig
 from qspectro2d import load_simulation_data
 from qspectro2d.spectroscopy.post_processing import compute_spectra
 from qspectro2d.visualization.plotting import convert_plot_axes, plot_el_field
-from common.plot_settings import PAD_FACTOR, SECTION
 from common.plot_settings import CUTOFF_PERCENT, CONTOUR_LINES, PAD_FACTOR, SECTION, TRANSPARENTCY
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -53,8 +52,28 @@ def _resolve_figures_dir(job_metadata: dict[str, Any]) -> Path:
     return figures_dir
 
 
-def _figure_stem(signal: str, domain: str, component: str) -> str:
-    return "_".join([str(signal).replace(" ", "_").replace("/", "-"), domain, component]).lower()
+def _extract_job_plot_tag(job_metadata: dict[str, Any]) -> str:
+    value = str(job_metadata.get("job_unique_id") or "").strip()
+    if value:
+        return value
+
+    job_dir = str(job_metadata.get("job_dir") or "").strip()
+    if job_dir:
+        name = Path(job_dir).name
+        match = re.search(r"(\d{8}_\d{6}(?:_\d{2})?)$", name)
+        if match:
+            return match.group(1)
+        if "_" in name:
+            return name.rsplit("_", 1)[-1]
+        return name
+
+    return "run"
+
+
+def _figure_stem(signal: str, domain: str, component: str, *, plot_tag: str) -> str:
+    return "_".join(
+        [str(signal).replace(" ", "_").replace("/", "-"), domain, component, plot_tag]
+    ).lower()
 
 
 def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
@@ -131,6 +150,8 @@ def main() -> None:
 
     components = ["real", "imag", "abs"]
     figures_root = _resolve_figures_dir(data["job_metadata"])
+    plot_tag = _extract_job_plot_tag(data["job_metadata"])
+    print(f"Plot tag: {plot_tag}")
 
     for signal_type, sig_data in signals.items():
         signal_start = time.perf_counter()
@@ -142,7 +163,7 @@ def main() -> None:
             saved = save_fig(
                 fig,
                 filename=_unique_fig_path(
-                    figures_root, _figure_stem(signal_type, "time", component)
+                    figures_root, _figure_stem(signal_type, "time", component, plot_tag=plot_tag)
                 ),
             )
             print(f"Saved: {saved}")
@@ -201,7 +222,7 @@ def main() -> None:
             saved = save_fig(
                 fig,
                 filename=_unique_fig_path(
-                    figures_root, _figure_stem(signal_type, "freq", component)
+                    figures_root, _figure_stem(signal_type, "freq", component, plot_tag=plot_tag)
                 ),
                 transparent=TRANSPARENTCY,
             )

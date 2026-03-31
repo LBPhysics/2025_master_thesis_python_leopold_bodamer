@@ -45,7 +45,6 @@ N_PULSES = 3
 PULSE_AMPLITUDES = [
     0.005
 ] * N_PULSES  # ensures that the population of the excited state is less then 1% -> contributions of higher nonlinearities remain negligible
-SIGNAL_TYPES = ["rephasing", "nonrephasing"]
 
 COMPONENT_MAP: dict[str, tuple[int, int]] = {
     "average": (0, 0),
@@ -113,7 +112,7 @@ DEFAULTS = {
         "t_wait": T_WAIT,
         "dt": DT,
         "n_phases": N_PHASES,
-        "signal_types": list(SIGNAL_TYPES),
+        "signal_types": ["rephasing", "nonrephasing"],
         "initial_state": "ground",
         "max_workers": 16,  # always check cpu cores
     },
@@ -146,7 +145,6 @@ __all__ = [
     "N_PULSES",
     "PHASE_CYCLING_PHASES",
     "PULSE_AMPLITUDES",
-    "SIGNAL_TYPES",
     "SUPPORTED_BATHS",
     "SUPPORTED_ENVELOPES",
     "SUPPORTED_SIM_TYPES",
