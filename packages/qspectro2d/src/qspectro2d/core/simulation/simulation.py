@@ -111,6 +111,7 @@ class SimulationModuleOQS:
     _CACHE_KEYS = (
         "decay_channels",
         "initial_state",
+        "_paper_liouvillian_ctx",
         "lowering_op_eigenbasis",
         "dipole_op_eigenbasis",
         "number_op_eigenbasis",

@@ -12,7 +12,11 @@ __all__ = ["pulse_envelopes", "e_pulses", "epsilon_pulses", "single_pulse_envelo
 
 
 def single_pulse_envelope(t_array: np.ndarray, pulse: LaserPulse) -> np.ndarray:
-    """Compute a single pulse envelope on the given time grid."""
+    """Compute a single pulse envelope on the given time grid.
+
+    The returned envelope is centered at ``pulse.pulse_peak_time`` and truncated
+    to the active window ``[pulse._t_start, pulse._t_end]``.
+    """
     t_peak = pulse.pulse_peak_time
     fwhm = pulse.pulse_fwhm_fs
     envelope_type = pulse.envelope_type
@@ -38,7 +42,7 @@ def single_pulse_envelope(t_array: np.ndarray, pulse: LaserPulse) -> np.ndarray:
 def pulse_envelopes(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[float, np.ndarray]:
-    """Return the combined envelope of all pulses."""
+    """Return the combined real envelope of all pulses."""
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
     if is_scalar:
@@ -47,26 +51,34 @@ def pulse_envelopes(
     total = np.zeros_like(t_array, dtype=float)
     for pulse in pulse_seq.pulses:
         total += single_pulse_envelope(t_array, pulse)
+
     return float(total[0]) if is_scalar else total
 
 
 def e_pulses(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
-    """
+    r"""
+    Return the slowly varying complex field coefficient ``e(t)``.
+
     Convention
     ----------
-    For a pulse centred at peak time ``t_k``, with explicit phase ``phi_k``,
-    amplitude ``A_k``, and envelope ``s_k(t)`` centred at ``t_k``,
+    Each pulse envelope ``s_k(t)`` is already centered at its own peak time
+    ``t_k`` through ``single_pulse_envelope``. With pulse amplitude ``A_k`` and
+    explicit phase ``phi_k``, we use the paper-style convention
 
-    lab-frame positive-frequency field:
-        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t - t_k)) - i phi_k]
+        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L t + phi_k)] ,
 
-    RWA field used for propagation:
-        e_k(t) = A_k s_k(t) exp(-i phi_k)
+    so that
 
-    So the delay enters only through the shifted envelope center, not through an
-    additional carrier-delay phase in the rotating-frame field.
+        epsilon^(+)(t) = exp(-i omega_L t) e(t)
+
+    with
+
+        e(t) = sum_k A_k s_k(t) exp(-i phi_k) .
+
+    Therefore the pulse timing enters only through the centered envelope
+    ``s_k(t)``, not through an additional carrier-phase factor ``omega_L t_k``.
     """
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
@@ -87,22 +99,11 @@ def e_pulses(
 def epsilon_pulses(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
-    """Return the lab-frame positive-frequency field epsilon^(+)(t)."""
+    r"""Return the lab-frame positive-frequency field ``epsilon^(+)(t)``."""
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
     if is_scalar:
         t_array = t_array[None]
 
-    omega = pulse_seq.carrier_freq_fs
-    field_total = np.zeros_like(t_array, dtype=complex)
-
-    for pulse, phase, t_peak, amplitude in zip(
-        pulse_seq.pulses,
-        pulse_seq.pulse_phases,
-        pulse_seq.pulse_peak_times,
-        pulse_seq.pulse_amplitudes,
-    ):
-        envelope = single_pulse_envelope(t_array, pulse)
-        field_total += amplitude * envelope * np.exp(-1j * (omega * (t_array - t_peak) + phase))
-
-    return field_total[0] if is_scalar else field_total
+    field = np.exp(-1j * pulse_seq.carrier_freq_fs * t_array) * e_pulses(t_array, pulse_seq)
+    return field[0] if is_scalar else field
