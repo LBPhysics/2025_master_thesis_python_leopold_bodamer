@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass, field, fields
+from typing import Any, Mapping
 
 
 @dataclass(slots=True)
@@ -52,3 +52,53 @@ class SimulationConfig:
             "max_workers": self.max_workers,
             "signal_types": list(self.signal_types),
         }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "SimulationConfig":
+        allowed = {f.name for f in fields(cls)}
+        payload: dict[str, Any] = {}
+
+        for key, value in dict(data).items():
+            if key not in allowed:
+                continue
+            if key == "signal_types":
+                if isinstance(value, str):
+                    value = (value,)
+                else:
+                    value = tuple(value)
+            payload[key] = value
+
+        return cls(**payload)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Stable pickle state for future versions.
+
+        Returning a plain dict avoids coupling the pickle format to whether
+        this dataclass uses slots or a normal __dict__.
+        """
+        return self.to_dict()
+
+    def __setstate__(self, state: Any) -> None:
+        """
+        Backward-compatible unpickling.
+
+        Handles:
+        - very old pickles whose state is a plain instance dict
+        - current slotted dataclass pickle state, typically (None, {...})
+        - future dict-based state written by __getstate__
+        """
+        if isinstance(state, tuple):
+            merged: dict[str, Any] = {}
+            for part in state:
+                if isinstance(part, dict):
+                    merged.update(part)
+            state = merged
+
+        if not isinstance(state, dict):
+            raise TypeError(f"Unsupported pickle state for SimulationConfig: {type(state)!r}")
+
+        restored = type(self).from_dict(state)
+
+        for f in fields(type(self)):
+            object.__setattr__(self, f.name, getattr(restored, f.name))

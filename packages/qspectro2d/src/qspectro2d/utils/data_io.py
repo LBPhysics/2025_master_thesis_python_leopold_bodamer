@@ -150,8 +150,9 @@ def save_info_file(
     try:
         payload = {
             "system": system,
-            # Store the SimulationConfig instance directly for full fidelity
-            "sim_config": sim_config,
+            # Store as plain data so future refactors of SimulationConfig
+            # do not break old artifacts.
+            "sim_config": sim_config.to_dict(),
         }
         if bath is not None:
             payload["bath"] = bath
@@ -195,6 +196,14 @@ def load_info_file(abs_info_path: Path) -> dict:
 
         with open(abs_info_path, "rb") as info_file:
             info = pickle.load(info_file)
+
+        # Normalize sim_config so callers always receive a SimulationConfig.
+        sim_cfg = info.get("sim_config")
+        if isinstance(sim_cfg, Mapping):
+            from qspectro2d.core.simulation import SimulationConfig
+
+            info = dict(info)
+            info["sim_config"] = SimulationConfig.from_dict(sim_cfg)
 
         # print(f"Loaded info: {abs_info_path}")
         return info
