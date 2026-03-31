@@ -1,8 +1,4 @@
-"""Execute a batch of (t_coh, inhomogeneity) combinations for spectroscopy runs.
-
-This worker script is intended to be called from generated SLURM jobs. It receives a
-list of combinations and performs field computations, padding outputs to a global grid.
-"""
+"""Execute one HPC batch and write exactly one strict partial-reduction artifact."""
 
 from __future__ import annotations
 
@@ -18,7 +14,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from qspectro2d.spectroscopy import compute_emitted_field_components
-from qspectro2d.utils.data_io import build_run_metadata, pad_or_crop_signals, save_run_artifact
+from qspectro2d.utils.data_io import save_partial_reduction_artifact
 from qspectro2d.core.simulation.time_axes import compute_t_det
 from qspectro2d.config.factory import load_simulation_config
 
@@ -28,21 +24,11 @@ if str(SCRIPTS_DIR) not in os.sys.path:
 
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
-    """Load combination descriptors from JSON.
-
-    The dispatcher writes either a bare list or an object with a ``combos`` key.
-    """
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
-
-    if isinstance(payload, dict) and "combos" in payload:
-        combos = payload["combos"]
-    else:
-        combos = payload
-
+    combos = payload["combos"] if isinstance(payload, dict) and "combos" in payload else payload
     if not isinstance(combos, list):
         raise TypeError(f"Expected list of combinations, got {type(combos)!r}")
-
     return combos
 
 
@@ -55,115 +41,60 @@ def _iter_combos(subset: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run a batch of spectroscopy combinations (t_coh × inhom index)",
+        description="Run one strict spectroscopy batch and save one partial reduction artifact",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--combos_file",
-        type=str,
-        required=True,
-        help="JSON file with the combinations assigned to this batch",
-    )
-    parser.add_argument(
-        "--samples_file",
-        type=str,
-        required=True,
-        help="NumPy .npy file containing the sampled frequency grid (shape: n_inhom × n_atoms)",
-    )
-    parser.add_argument(
-        "--time_cut",
-        type=float,
-        required=True,
-        help="Maximum safe evolution time determined during solver diagnostics",
-    )
-    parser.add_argument(
-        "--sim_type",
-        choices=["0d", "1d", "2d"],
-        required=True,
-        help="Simulation dimensionality (affects job_metadata only)",
-    )
-    parser.add_argument(
-        "--batch_id",
-        type=int,
-        default=0,
-        help="Optional batch identifier for logging",
-    )
-    parser.add_argument(
-        "--n_batches",
-        type=int,
-        default=1,
-        help="Total number of batches (job_metadata only)",
-    )
+    parser.add_argument("--combos_file", type=str, required=True)
+    parser.add_argument("--samples_file", type=str, required=True)
+    parser.add_argument("--time_cut", type=float, required=True)
+    parser.add_argument("--sim_type", choices=["0d", "1d", "2d"], required=True)
+    parser.add_argument("--batch_id", type=int, default=0)
+    parser.add_argument("--n_batches", type=int, default=1)
     args = parser.parse_args()
 
     combos_path = Path(args.combos_file).resolve()
     samples_path = Path(args.samples_file).resolve()
     job_dir = combos_path.parent
     job_metadata_path = job_dir / "job_metadata.json"
-    job_metadata: dict[str, Any] | None = None
-    if job_metadata_path.exists():
-        with job_metadata_path.open("r", encoding="utf-8") as handle:
-            job_metadata = json.load(handle)
+    if not job_metadata_path.exists():
+        raise FileNotFoundError(f"Missing job metadata: {job_metadata_path}")
+    with job_metadata_path.open("r", encoding="utf-8") as handle:
+        job_metadata = json.load(handle)
 
-    if job_metadata is None:
-        raise ValueError("job_metadata.json not found")
-
-    config_path = Path(job_metadata["config_path"])
     merged_cfg = job_metadata["merged_config"]
 
     slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
     if slurm_cpus is not None:
-        try:
-            cpus_per_task = int(slurm_cpus)
-        except ValueError:
-            cpus_per_task = 0
+        cpus_per_task = int(slurm_cpus)
         if cpus_per_task > 0:
             merged_cfg.setdefault("config", {})["max_workers"] = cpus_per_task
             print(f"Using max_workers={cpus_per_task} from SLURM_CPUS_PER_TASK", flush=True)
 
     data_dir = Path(job_metadata["data_dir"]).resolve()
     prefix = str(job_metadata["data_base_name"])
-    data_base_path = Path(job_metadata["data_base_path"]).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 80)
-    print("GENERALIZED BATCH RUNNER")
-    print(f"Config: {config_path}")
+    print("STRICT BATCH RUNNER")
     print(f"Combos file: {combos_path}")
     print(f"Samples file: {samples_path}")
-    print(f"Output: {data_base_path}")
+    print(f"Output directory: {data_dir}")
 
     combinations = _load_combinations(combos_path)
     if not combinations:
-        print("No combinations provided; nothing to do.")
-        return
-
-    print(f"Loaded {len(combinations)} combination(s).")
-    total_global_combinations = int(job_metadata.get("n_t_coh", 0)) * int(
-        job_metadata.get("n_inhom", 0)
-    )
-    if total_global_combinations <= 0:
-        total_global_combinations = len(combinations)
+        raise ValueError("No combinations provided")
 
     samples = np.load(samples_path)
     if samples.ndim != 2:
-        raise ValueError(
-            f"Expected samples array with shape (n_inhom, n_atoms); got {samples.shape}"
-        )
-    n_inhom, _n_atoms = samples.shape
+        raise ValueError(f"Expected samples array with shape (n_inhom, n_atoms); got {samples.shape}")
+    n_inhom, n_atoms = samples.shape
 
     samples_target = data_dir / f"{prefix}_samples.npy"
     if not samples_target.exists():
         shutil.copy2(samples_path, samples_target)
 
-    batch_suffix = f"batch_{args.batch_id:03d}.json" if args.batch_id is not None else "batch.json"
-    combos_target = data_dir / f"{prefix}_{batch_suffix}"
-    if not combos_target.exists():
-        shutil.copy2(combos_path, combos_target)
-
-    signal_types = job_metadata["signal_types"]
-
     cfg = load_simulation_config(merged_cfg)
+    signal_types = list(job_metadata["signal_types"])
     global_t_det = np.asarray(job_metadata.get("t_det", []), dtype=float)
     if global_t_det.size == 0:
         global_t_det = compute_t_det(cfg)
@@ -172,134 +103,117 @@ def main() -> None:
             "Invariant violation: empty global detection axis for non-0d batch run "
             f"(sim_type={args.sim_type}, t_det={float(cfg.t_det):.6g}, dt={float(cfg.dt):.6g})"
         )
-    global_n_t = len(global_t_det)
+
+    n_t_coh = int(job_metadata["n_t_coh"])
+    global_n_t = int(global_t_det.size)
+    if n_t_coh <= 0:
+        raise ValueError(f"Invalid n_t_coh={n_t_coh}")
 
     phase_jobs = int(cfg.n_phases) ** 2 + 2 * int(cfg.n_phases) + 1
     pool_workers = max(1, min(int(cfg.max_workers), phase_jobs))
     print(
-        f"Reusing one shared phase-cycling process pool for this batch: "
-        f"{pool_workers} worker(s) for {phase_jobs} phase jobs",
+        f"Using one shared phase-cycling process pool: {pool_workers} worker(s) for {phase_jobs} phase jobs",
         flush=True,
     )
 
-    t_start = time.time()
-    saved_paths: list[str] = []
-    failed_combos = 0
-    all_zero_combos = 0
-    incomplete_combos = 0
+    signal_sums = {
+        sig: np.zeros((n_t_coh, global_n_t), dtype=np.complex128)
+        for sig in signal_types
+    }
+    counts_per_t_coh = np.zeros(n_t_coh, dtype=np.int64)
+    frequency_sample_sum_cm = np.zeros(n_atoms, dtype=float)
+    frequency_sample_count = 0
 
+    total_global_combinations = int(job_metadata.get("n_t_coh", 0)) * int(job_metadata.get("n_inhom", 0))
+    if total_global_combinations <= 0:
+        total_global_combinations = len(combinations)
+
+    t_start = time.time()
     with ProcessPoolExecutor(max_workers=pool_workers) as executor:
         for combo_idx, combo in enumerate(_iter_combos(combinations), start=1):
-            t_idx = combo.get("t_index", 0)
-            inhom_idx = combo.get("inhom_index")
-            global_idx = combo.get("index")
-            t_coh_val = float(combo.get("t_coh_value"))
-
-            try:
-                global_progress = int(global_idx) + 1
-            except (TypeError, ValueError):
-                global_progress = combo_idx
+            t_idx = int(combo["t_index"])
+            inhom_idx = int(combo["inhom_index"])
+            global_idx = int(combo.get("index", combo_idx - 1))
+            t_coh_val = float(combo["t_coh_value"])
 
             if inhom_idx < 0 or inhom_idx >= n_inhom:
                 raise IndexError(
                     f"inhom_index {inhom_idx} out of range for {n_inhom} inhomogeneous samples"
                 )
+            if t_idx < 0 or t_idx >= n_t_coh:
+                raise IndexError(f"t_index {t_idx} out of range for n_t_coh={n_t_coh}")
 
             freq_vector = samples[inhom_idx, :].astype(float)
 
             print(
                 f"\n--- combo {combo_idx} / {len(combinations)} "
-                f"(global {global_progress} / {total_global_combinations}): "
-                f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---"
+                f"(global {global_idx + 1} / {total_global_combinations}): "
+                f"t_idx={t_idx}, t_coh={t_coh_val:.4f} fs, inhom_idx={inhom_idx} ---",
+                flush=True,
             )
 
-            run_status = "ok"
-            error_message = None
-            try:
-                # print("    ▶ entering compute_emitted_field_components()", flush=True)
-                call_start = time.time()
-                e_components, run_status, error_message = compute_emitted_field_components(
-                    config_source=merged_cfg,
-                    t_coh=t_coh_val,
-                    freq_vector=freq_vector.tolist(),
-                    time_cut=args.time_cut,
-                    detection_window=global_t_det,
-                    executor=executor,
-                )
-                call_elapsed = time.time() - call_start
-                print(
-                    f"    ✔ compute_emitted_field_components() returned in {call_elapsed:.2f} s",
-                    flush=True,
+            call_start = time.time()
+            e_components, run_status, status_message = compute_emitted_field_components(
+                config_source=merged_cfg,
+                t_coh=t_coh_val,
+                freq_vector=freq_vector.tolist(),
+                time_cut=args.time_cut,
+                detection_window=global_t_det,
+                executor=executor,
+            )
+            call_elapsed = time.time() - call_start
+            print(f"    ✔ compute_emitted_field_components() returned in {call_elapsed:.2f} s", flush=True)
+
+            if run_status != "ok":
+                raise RuntimeError(
+                    f"Strict batch execution refused incomplete combo output: "
+                    f"run_status={run_status}, message={status_message!r}, t_index={t_idx}, inhom_index={inhom_idx}"
                 )
 
-                padded_components = pad_or_crop_signals(e_components, global_n_t)
+            if len(e_components) != len(signal_types):
+                raise ValueError(
+                    f"Signal count mismatch: expected {len(signal_types)}, got {len(e_components)}"
+                )
 
-                if run_status != "ok":
-                    incomplete_combos += 1
-                    print(
-                        f"    ⚠️ combo marked as {run_status}; it will be skipped by process_datas.py",
-                        flush=True,
+            for sig, arr in zip(signal_types, e_components):
+                arr = np.asarray(arr)
+                if arr.shape != (global_n_t,):
+                    raise ValueError(
+                        f"Signal {sig!r} returned shape {arr.shape}; expected {(global_n_t,)}"
                     )
+                signal_sums[sig][t_idx] += arr
 
-                if all(np.allclose(arr, 0.0) for arr in padded_components):
-                    all_zero_combos += 1
-                    if run_status == "ok":
-                        run_status = "returned_all_zero"
-                    print("    ⚠️ combo returned all-zero signal arrays", flush=True)
+            counts_per_t_coh[t_idx] += 1
+            frequency_sample_sum_cm += freq_vector
+            frequency_sample_count += 1
 
-            except Exception as exc:
-                if isinstance(exc, RuntimeError) and "Invariant violation: empty detection axis" in str(
-                    exc
-                ):
-                    raise
-                failed_combos += 1
-                run_status = "failed_fallback_zero"
-                error_message = f"{type(exc).__name__}: {exc}"
-                print(
-                    "    ⚠️ combo failed; writing zero-valued fallback signals and continuing. "
-                    f"error={error_message}",
-                    flush=True,
-                )
-                padded_components = [
-                    np.zeros(global_n_t, dtype=np.complex128) for _ in signal_types
-                ]
-
-            metadata_combo = build_run_metadata(
-                signal_types=signal_types,
-                sim_type=("1d" if args.sim_type == "2d" else args.sim_type),
-                sample_index=inhom_idx,
-                t_coh_value=t_coh_val,
-                run_status=run_status,
-                t_index=int(t_idx),
-                global_index=int(global_idx),
-                **({"error": error_message} if error_message is not None else {}),
-            )
-
-            filename = f"{prefix}_run_t{t_idx:03d}_s{inhom_idx:03d}.npz"
-            path = save_run_artifact(
-                signal_arrays=padded_components,
-                metadata=metadata_combo,
-                frequency_sample_cm=freq_vector,
-                data_dir=data_dir,
-                filename=filename,
-            )
-
-            saved_paths.append(str(path))
-            print(f"    ✅ saved {path}")
+    partial_metadata = {
+        "signal_types": signal_types,
+        "sim_type": str(args.sim_type),
+        "batch_id": int(args.batch_id),
+        "n_batches": int(args.n_batches),
+        "n_t_coh": int(n_t_coh),
+        "n_t_det": int(global_n_t),
+    }
+    partial_filename = f"{prefix}_batch_{int(args.batch_id):03d}.partial.npz"
+    partial_path = save_partial_reduction_artifact(
+        signal_sums=signal_sums,
+        counts_per_t_coh=counts_per_t_coh,
+        frequency_sample_sum_cm=frequency_sample_sum_cm,
+        frequency_sample_count=frequency_sample_count,
+        metadata=partial_metadata,
+        data_dir=data_dir,
+        filename=partial_filename,
+    )
 
     elapsed = time.time() - t_start
     print("=" * 80)
     print(
-        f"Completed {len(saved_paths)} combination(s) in {elapsed:.2f} s | "
+        f"Completed {len(combinations)} combination(s) in {elapsed:.2f} s | "
         f"batch_id={args.batch_id}"
     )
-    if failed_combos:
-        print(f"Fallback zero-signal outputs written for {failed_combos} failed combination(s).")
-    if all_zero_combos:
-        print(f"All-zero signal outputs observed for {all_zero_combos} combination(s).")
-    if saved_paths:
-        print("Latest artifact:")
-        print(f"  {saved_paths[-1]}")
+    print(f"Partial artifact: {partial_path}")
+    print(f"counts_per_t_coh={counts_per_t_coh.tolist()}")
     print("=" * 80)
 
 

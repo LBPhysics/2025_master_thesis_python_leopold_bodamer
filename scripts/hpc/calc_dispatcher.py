@@ -313,6 +313,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         config_path=config_copy_path,
         time_cut=time_cut,
     )
+    job_metadata["n_batches"] = int(args.n_batches)
+    job_metadata["job_unique_id"] = job_unique_id
     write_json(job_dir / "job_metadata.json", job_metadata)
 
     info_path = job_paths.data_base_path.parent / f"{job_paths.data_base_path.name}.pkl"

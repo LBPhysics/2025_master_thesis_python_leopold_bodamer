@@ -1,4 +1,4 @@
-"""Process spectroscopy data: stack per sample and average across samples."""
+"""Reduce batch-level partial artifacts into one final processed spectroscopy artifact."""
 
 from __future__ import annotations
 
@@ -10,20 +10,18 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import argparse
+import json
 import time
-from collections import defaultdict
-from dataclasses import dataclass, replace
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from qspectro2d.utils.data_io import (
-    load_run_artifact,
+    load_info_file,
+    load_partial_reduction_artifact,
     save_info_file,
     save_run_artifact,
-    split_prefix,
 )
 
 from common.workflow import PROJECT_ROOT, final_processed_filename
@@ -43,272 +41,175 @@ def _format_seconds(seconds: float) -> str:
     return f"{int(hours)}h {int(mins)}m {secs:04.1f}s"
 
 
-@dataclass(slots=True)
-class RunEntry:
-    path: Path
-    metadata: dict[str, Any]
-    signals: dict[str, np.ndarray]
-    t_det: np.ndarray
-    frequency_sample_cm: np.ndarray
-    simulation_config: Any
-    system: Any
-    laser: Any | None
-    bath: Any | None
-    t_coh: np.ndarray | None = None
-    job_metadata: dict[str, Any] | None = None
+def _load_job_metadata(job_dir: Path) -> dict[str, Any]:
+    metadata_path = job_dir / "job_metadata.json"
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"Missing job metadata: {metadata_path}")
+    with metadata_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
-def _load_entry(path: Path) -> RunEntry:
-    artifact = load_run_artifact(path)
-    metadata = dict(artifact["metadata"])
-    signals = {key: np.asarray(val) for key, val in artifact["signals"].items()}
-    t_det = np.asarray(artifact["t_det"], dtype=float)
-    freq_sample = np.asarray(artifact["frequency_sample_cm"], dtype=float)
-    t_coh = np.asarray(artifact["t_coh"], dtype=float) if artifact["t_coh"] is not None else None
-
-    sim_cfg = artifact["simulation_config"]
-    system = artifact["system"]
-    if sim_cfg is None or system is None:
-        raise ValueError(f"Artifact {path} is missing simulation context")
-
-    if sim_cfg.sim_type == "1d":
-        t_coh = None
-
-    return RunEntry(
-        path=path,
-        metadata=metadata,
-        signals=signals,
-        t_det=t_det,
-        frequency_sample_cm=freq_sample,
-        simulation_config=sim_cfg,
-        system=system,
-        laser=artifact["laser"],
-        bath=artifact["bath"],
-        t_coh=t_coh,
-        job_metadata=artifact["job_metadata"],
-    )
+def _partial_paths(data_dir: Path, prefix: str) -> list[Path]:
+    return sorted(data_dir.glob(f"{prefix}_batch_*.partial.npz"))
 
 
-def _discover_entries(anchor: RunEntry) -> list[RunEntry]:
-    entries: list[RunEntry] = []
-    for candidate in sorted(anchor.path.parent.glob("*_run_t*_s*.npz")):
-        entry = _load_entry(candidate)
-        if entry.metadata.get("sim_type") == "2d":
-            continue
-        if entry.metadata.get("run_status", "ok") != "ok":
-            print(f"    ⚠️ Skipping {candidate.name}: run_status={entry.metadata.get('run_status')}")
-            continue
-        entries.append(entry)
-    return entries
-
-
-def _group_by_sample(entries: list[RunEntry]) -> dict[int, list[RunEntry]]:
-    groups: dict[int, list[RunEntry]] = defaultdict(list)
-    for entry in entries:
-        groups[int(entry.metadata["sample_index"])].append(entry)
-    return dict(groups)
-
-
-def _stack_group_to_2d(group: list[RunEntry]) -> RunEntry:
-    if len(group) <= 1:
-        return group[0]
-
-    group_sorted = sorted(group, key=lambda e: float(e.metadata["t_coh_value"]))
-    reference = group_sorted[0]
-    signal_types = list(reference.metadata["signal_types"])
-
-    tol = 0.5 * float(reference.simulation_config.dt)
-    collapsed: list[RunEntry] = []
-    for entry in group_sorted:
-        current_t = float(entry.metadata["t_coh_value"])
-        if collapsed and np.isclose(
-            current_t, float(collapsed[-1].metadata["t_coh_value"]), atol=tol
-        ):
-            for sig in signal_types:
-                collapsed[-1].signals[sig] = 0.5 * (collapsed[-1].signals[sig] + entry.signals[sig])
-            continue
-        collapsed.append(entry)
-
-    stacked_signals = {
-        sig: np.stack([entry.signals[sig] for entry in collapsed], axis=0) for sig in signal_types
-    }
-    t_coh_axis = np.asarray([entry.metadata["t_coh_value"] for entry in collapsed], dtype=float)
-
-    if not np.all(np.diff(t_coh_axis) >= 0):
-        sort_idx = np.argsort(t_coh_axis)
-        t_coh_axis = t_coh_axis[sort_idx]
-        stacked_signals = {sig: arr[sort_idx] for sig, arr in stacked_signals.items()}
-
-    metadata_2d = dict(reference.metadata)
-    metadata_2d.update({"sim_type": "2d", "stacked_points": len(collapsed)})
-    metadata_2d.pop("t_coh_value", None)
-    metadata_2d.pop("t_index", None)
-    metadata_2d.pop("combination_index", None)
-
-    sim_cfg = replace(
-        reference.simulation_config,
-        sim_type="2d",
-        inhom_averaged=bool(reference.metadata.get("inhom_averaged")),
-    )
-
-    return RunEntry(
-        path=reference.path,
-        metadata=metadata_2d,
-        signals=stacked_signals,
-        t_det=reference.t_det,
-        frequency_sample_cm=reference.frequency_sample_cm,
-        simulation_config=sim_cfg,
-        system=reference.system,
-        laser=reference.laser,
-        bath=reference.bath,
-        t_coh=t_coh_axis,
-        job_metadata=reference.job_metadata,
-    )
-
-
-def _average_entries(entries: list[RunEntry]) -> RunEntry:
-    if len(entries) == 1:
-        single = entries[0]
-        if single.simulation_config.inhom_averaged:
-            return single
-        return RunEntry(
-            path=single.path,
-            metadata={**single.metadata, "inhom_averaged": True, "averaged_count": 1},
-            signals=single.signals,
-            t_det=single.t_det,
-            frequency_sample_cm=single.frequency_sample_cm,
-            simulation_config=replace(single.simulation_config, inhom_averaged=True),
-            system=single.system,
-            laser=single.laser,
-            bath=single.bath,
-            t_coh=single.t_coh,
-            job_metadata=single.job_metadata,
-        )
-
-    reference = entries[0]
-    signal_types = list(reference.metadata.get("signal_types", reference.signals.keys()))
-
-    for entry in entries[1:]:
-        current = list(entry.metadata.get("signal_types", entry.signals.keys()))
-        if current != signal_types:
-            raise ValueError(f"Inconsistent signals for {entry.path}")
-        if entry.t_coh is None and reference.t_coh is not None:
-            raise ValueError(f"Missing t_coh axis in {entry.path}")
-        if entry.t_coh is not None and reference.t_coh is not None:
-            if entry.t_coh.shape != reference.t_coh.shape or not np.allclose(
-                entry.t_coh, reference.t_coh
-            ):
-                raise ValueError(
-                    "Inconsistent t_coh axis across samples; "
-                    f"reference={reference.path}, offending={entry.path}"
-                )
-
-    averaged_signals = {
-        sig: np.mean(np.stack([entry.signals[sig] for entry in entries], axis=0), axis=0)
-        for sig in signal_types
-    }
-    avg_freq = np.mean(np.stack([entry.frequency_sample_cm for entry in entries], axis=0), axis=0)
-
-    metadata_out = dict(reference.metadata)
-    metadata_out.update({"inhom_averaged": True, "averaged_count": len(entries)})
-    metadata_out.pop("sample_index", None)
-    metadata_out.pop("combination_index", None)
-
-    return RunEntry(
-        path=reference.path,
-        metadata=metadata_out,
-        signals=averaged_signals,
-        t_det=reference.t_det,
-        frequency_sample_cm=avg_freq,
-        simulation_config=replace(reference.simulation_config, inhom_averaged=True),
-        system=reference.system,
-        laser=reference.laser,
-        bath=reference.bath,
-        t_coh=reference.t_coh,
-        job_metadata=reference.job_metadata,
-    )
-
-
-def process_datas(abs_path: Path, *, skip_if_exists: bool = False) -> Path:
+def process_job_dir(job_dir: Path, *, skip_if_exists: bool = False) -> Path:
     start_all = time.perf_counter()
-    abs_path = abs_path.expanduser().resolve()
-    print(f"Starting process_datas for: {abs_path}")
-    print(f"Skip if exists: {skip_if_exists}")
+    job_dir = job_dir.expanduser().resolve()
+    metadata = _load_job_metadata(job_dir)
 
-    anchor = _load_entry(abs_path)
-    print(
-        "Loaded anchor artifact: "
-        f"signals={list(anchor.signals.keys())}, "
-        f"t_det={anchor.t_det.shape}, "
-        f"t_coh={'None' if anchor.t_coh is None else anchor.t_coh.shape}"
-    )
+    data_dir = Path(metadata["data_dir"]).resolve()
+    prefix = str(metadata["data_base_name"])
+    final_filename = final_processed_filename(str(metadata["sim_type"]))
+    final_path = data_dir / final_filename
 
-    entries = _discover_entries(anchor)
-    print(f"Discovered {len(entries)} input artifacts")
-    if not entries:
-        raise FileNotFoundError("No raw run artifacts found for processing")
-
-    groups = _group_by_sample(entries)
-    print(f"Grouped into {len(groups)} samples: {sorted((k, len(v)) for k, v in groups.items())}")
-
-    processed_per_sample: list[RunEntry] = []
-    for sample_idx, group in groups.items():
-        group_start = time.perf_counter()
-        if len(group) > 1:
-            print(f"Stacking sample {sample_idx}: {len(group)} artifacts")
-            processed_per_sample.append(_stack_group_to_2d(group))
-        else:
-            processed_per_sample.append(group[0])
-            print(f"Sample {sample_idx}: single artifact (no stacking)")
-        print(
-            f"Sample {sample_idx} processing time: {_format_seconds(time.perf_counter() - group_start)}"
-        )
-
-    final_entry = _average_entries(processed_per_sample)
-    final_sim_type = str(final_entry.simulation_config.sim_type)
-    final_filename = final_processed_filename(final_sim_type)
-    final_path = anchor.path.parent / final_filename
+    print(f"Starting strict reduction for job_dir: {job_dir}")
+    print(f"Data directory: {data_dir}")
 
     if skip_if_exists and final_path.exists():
-        print(f"⏭️  Final averaged artifact already exists: {final_path}")
+        print(f"⏭️  Final processed artifact already exists: {final_path}")
         return final_path
 
-    info_path = final_path.with_suffix(".pkl")
-    extra_payload: dict[str, Any] = {}
-    if final_entry.job_metadata:
-        extra_payload.update(final_entry.job_metadata)
-    extra_payload.update({"t_det": final_entry.t_det, "t_coh": final_entry.t_coh})
+    partial_paths = _partial_paths(data_dir, prefix)
+    print(f"Found {len(partial_paths)} partial artifact(s)")
+    if not partial_paths:
+        raise FileNotFoundError(
+            f"No partial reduction artifacts found in {data_dir} for prefix '{prefix}'"
+        )
 
+    info_path = data_dir / f"{prefix}.pkl"
+    info = load_info_file(info_path)
+    sim_cfg = info["sim_config"]
+    system = info["system"]
+    bath = info.get("bath")
+    laser = info.get("laser")
+
+    expected_signal_types = list(metadata["signal_types"])
+    expected_t_det = np.asarray(metadata["t_det"], dtype=float)
+    expected_t_coh = np.asarray(metadata.get("t_coh", []), dtype=float)
+    expected_n_inhom = int(metadata["n_inhom"])
+
+    total_counts: np.ndarray | None = None
+    total_frequency_sum: np.ndarray | None = None
+    total_frequency_count = 0
+    total_signal_sums: dict[str, np.ndarray] | None = None
+
+    for partial_path in partial_paths:
+        loaded = load_partial_reduction_artifact(partial_path)
+        part_meta = dict(loaded["metadata"])
+        part_signals = loaded["signal_sums"]
+        part_counts = np.asarray(loaded["counts_per_t_coh"], dtype=np.int64)
+        part_freq_sum = np.asarray(loaded["frequency_sample_sum_cm"], dtype=float)
+        part_freq_count = int(loaded["frequency_sample_count"])
+
+        if list(part_meta.get("signal_types", [])) != expected_signal_types:
+            raise ValueError(
+                f"Signal types mismatch in {partial_path.name}: "
+                f"expected {expected_signal_types}, got {part_meta.get('signal_types')}"
+            )
+
+        if total_counts is None:
+            total_counts = np.zeros_like(part_counts, dtype=np.int64)
+        elif part_counts.shape != total_counts.shape:
+            raise ValueError(
+                f"counts_per_t_coh shape mismatch in {partial_path.name}: "
+                f"expected {total_counts.shape}, got {part_counts.shape}"
+            )
+
+        if total_frequency_sum is None:
+            total_frequency_sum = np.zeros_like(part_freq_sum, dtype=float)
+        elif part_freq_sum.shape != total_frequency_sum.shape:
+            raise ValueError(
+                f"frequency_sample_sum_cm shape mismatch in {partial_path.name}: "
+                f"expected {total_frequency_sum.shape}, got {part_freq_sum.shape}"
+            )
+
+        if total_signal_sums is None:
+            total_signal_sums = {
+                sig: np.zeros_like(np.asarray(part_signals[sig]), dtype=np.complex128)
+                for sig in expected_signal_types
+            }
+
+        for sig in expected_signal_types:
+            if sig not in part_signals:
+                raise KeyError(f"Missing signal '{sig}' in {partial_path.name}")
+            part_array = np.asarray(part_signals[sig])
+            if part_array.shape != total_signal_sums[sig].shape:
+                raise ValueError(
+                    f"Signal shape mismatch for {sig!r} in {partial_path.name}: "
+                    f"expected {total_signal_sums[sig].shape}, got {part_array.shape}"
+                )
+            total_signal_sums[sig] += part_array
+
+        total_counts += part_counts
+        total_frequency_sum += part_freq_sum
+        total_frequency_count += part_freq_count
+
+    assert total_counts is not None and total_signal_sums is not None and total_frequency_sum is not None
+
+    if np.any(total_counts != expected_n_inhom):
+        bad = np.where(total_counts != expected_n_inhom)[0].tolist()
+        preview = bad[:10]
+        raise RuntimeError(
+            "Strict reduction refused to average incomplete data: "
+            f"expected {expected_n_inhom} successful sample(s) per t_coh, "
+            f"got counts={total_counts.tolist()} (bad indices preview={preview})"
+        )
+
+    if total_frequency_count <= 0:
+        raise RuntimeError("No successful combinations contributed to the reduction")
+
+    averaged_signals_2d = {
+        sig: total_signal_sums[sig] / total_counts[:, None]
+        for sig in expected_signal_types
+    }
+    average_frequency_sample = total_frequency_sum / float(total_frequency_count)
+
+    final_sim_type = str(metadata["sim_type"]).strip().lower()
+    if final_sim_type == "2d":
+        final_t_coh = expected_t_coh
+        final_signals = averaged_signals_2d
+    else:
+        final_t_coh = None
+        final_signals = {sig: arr[0] for sig, arr in averaged_signals_2d.items()}
+
+    final_metadata = {
+        "signal_types": expected_signal_types,
+        "sim_type": final_sim_type,
+        "inhom_averaged": True,
+        "averaged_count": expected_n_inhom,
+    }
+
+    final_info_path = final_path.with_suffix(".pkl")
+    extra_payload = dict(metadata)
+    extra_payload.update({"t_det": expected_t_det, "t_coh": final_t_coh})
     save_info_file(
-        info_path,
-        final_entry.system,
-        final_entry.simulation_config,
-        bath=final_entry.bath,
-        laser=final_entry.laser,
+        final_info_path,
+        system,
+        sim_cfg,
+        bath=bath,
+        laser=laser,
         extra_payload=extra_payload,
     )
 
     out_path = save_run_artifact(
-        signal_arrays=[final_entry.signals[sig] for sig in final_entry.signals],
-        metadata=final_entry.metadata,
-        frequency_sample_cm=final_entry.frequency_sample_cm,
-        data_dir=anchor.path.parent,
+        signal_arrays=[final_signals[sig] for sig in expected_signal_types],
+        metadata=final_metadata,
+        frequency_sample_cm=average_frequency_sample,
+        data_dir=data_dir,
         filename=final_filename,
     )
 
-    print(f"✅ Processed and saved final averaged artifact: {out_path}")
-    print(
-        f"Processed {len(entries)} files, averaged {len(processed_per_sample)} samples in "
-        f"{_format_seconds(time.perf_counter() - start_all)}"
-    )
+    print(f"✅ Final processed artifact written: {out_path}")
+    print(f"Reduction completed in {_format_seconds(time.perf_counter() - start_all)}")
     return out_path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Process spectroscopy data: stack and average across inhomogeneity samples."
+        description="Reduce strict batch partial artifacts into one processed result."
     )
-    parser.add_argument("--abs_path", type=str, required=True, help="Path to any artifact (.npz)")
+    parser.add_argument("--job_dir", type=str, required=True, help="Path to the job directory")
     parser.add_argument(
         "--skip_if_exists",
         action="store_true",
@@ -316,7 +217,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    processed_path = process_datas(Path(args.abs_path), skip_if_exists=args.skip_if_exists)
+    processed_path = process_job_dir(Path(args.job_dir), skip_if_exists=args.skip_if_exists)
     plot_script = (PROJECT_ROOT / "scripts" / "local" / "plot_datas.py").resolve()
     print(f"Final processed artifact: {processed_path}")
     print("\n🎯 Plot with:")

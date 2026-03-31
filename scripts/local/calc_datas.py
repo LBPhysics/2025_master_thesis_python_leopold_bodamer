@@ -1,9 +1,4 @@
-"""Run all combinations of (t_coh, inhomogeneity) locally without batching.
-
-This version delegates all shared preparation to ``common.workflow`` so the
-same config resolution, validation, axis creation, and frequency sampling are
-used by both local and HPC workflows.
-"""
+"""Run all combinations locally and reduce them through the same strict batch workflow used on HPC."""
 
 from __future__ import annotations
 
@@ -26,12 +21,10 @@ import yaml
 from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import (
     allocate_job_dir,
-    build_run_metadata,
     ensure_job_layout,
     job_label_token,
-    pad_or_crop_signals,
     save_info_file,
-    save_run_artifact,
+    save_partial_reduction_artifact,
 )
 
 from common.workflow import (
@@ -41,6 +34,7 @@ from common.workflow import (
     prepare_workflow,
     write_json,
 )
+from local.process_datas import process_job_dir
 
 warnings.filterwarnings(
     "ignore",
@@ -52,31 +46,16 @@ warnings.filterwarnings(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run all spectroscopy combinations (t_coh × inhom index) locally",
+        description="Run all spectroscopy combinations locally with the strict batch-reduction workflow",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Optional path to a YAML simulation config file",
-    )
-    parser.add_argument(
-        "--sim_type",
-        choices=["0d", "1d", "2d"],
-        default=None,
-        help="Simulation dimensionality override",
-    )
-    parser.add_argument(
-        "--rng_seed",
-        type=int,
-        default=None,
-        help="Optional NumPy random seed for reproducible sampling",
-    )
+    parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--sim_type", choices=["0d", "1d", "2d"], default=None)
+    parser.add_argument("--rng_seed", type=int, default=None)
     args = parser.parse_args()
 
     print("=" * 80)
-    print("LOCAL ALL-COMBINATIONS RUNNER")
+    print("LOCAL STRICT RUNNER")
 
     prepared = prepare_workflow(
         config_path=args.config,
@@ -100,12 +79,9 @@ def main() -> None:
     job_paths = ensure_job_layout(job_dir, base_name="raw")
     data_base_path = job_paths.data_base_path
 
-    # print(f"Job workspace: {job_paths.job_dir}")
-
     config_copy_path = job_paths.job_dir / prepared.config_path.name
     with config_copy_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(prepared.merged_cfg, handle, sort_keys=False)
-    # print(f"✅ Resolved config written to {config_copy_path}")
 
     job_metadata = build_job_metadata(
         prepared,
@@ -117,6 +93,8 @@ def main() -> None:
         config_path=config_copy_path,
         time_cut=prepared.time_cut,
     )
+    job_metadata["n_batches"] = 1
+    write_json(job_paths.job_dir / "job_metadata.json", job_metadata)
 
     info_path = data_base_path.parent / f"{data_base_path.name}.pkl"
     save_info_file(
@@ -143,10 +121,16 @@ def main() -> None:
 
     signal_types = list(prepared.sim.simulation_config.signal_types)
     detection_times_length = int(prepared.t_det_axis.size)
+    n_t_coh = int(prepared.t_coh_values.size)
+    signal_sums = {
+        sig: np.zeros((n_t_coh, detection_times_length), dtype=np.complex128)
+        for sig in signal_types
+    }
+    counts_per_t_coh = np.zeros(n_t_coh, dtype=np.int64)
+    frequency_sample_sum_cm = np.zeros(prepared.samples.shape[1], dtype=float)
+    frequency_sample_count = 0
 
     t_start = time.time()
-    saved_paths: list[str] = []
-
     max_workers = int(prepared.sim.simulation_config.max_workers)
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -156,10 +140,10 @@ def main() -> None:
             print(
                 f"\n--- combo {combo.index + 1} / {len(prepared.combinations)}: "
                 f"t_idx={combo.t_index}, t_coh={combo.t_coh:.4f} fs, "
-                f"inhom_idx={combo.inhom_index} ---"
+                f"inhom_idx={combo.inhom_index} ---",
+                flush=True,
             )
 
-            # print("    ▶ entering compute_emitted_field_components()", flush=True)
             call_start = time.time()
             e_components, run_status, status_message = compute_emitted_field_components(
                 config_source=prepared.merged_cfg,
@@ -175,47 +159,57 @@ def main() -> None:
                 flush=True,
             )
 
-            padded_components = pad_or_crop_signals(e_components, detection_times_length)
-
             if run_status != "ok":
-                print(
-                    f"    ⚠️ saving combo as {run_status}; it will be skipped by process_datas.py",
-                    flush=True,
+                raise RuntimeError(
+                    f"Strict local execution refused incomplete combo output: "
+                    f"run_status={run_status}, message={status_message!r}, t_index={combo.t_index}, "
+                    f"inhom_index={combo.inhom_index}"
                 )
 
-            metadata_combo = build_run_metadata(
-                signal_types=signal_types,
-                sim_type="1d" if prepared.sim_type == "2d" else prepared.sim_type,
-                sample_index=combo.inhom_index,
-                t_coh_value=combo.t_coh,
-                run_status=run_status,
-                t_index=int(combo.t_index),
-                global_index=int(combo.index),
-                **({"error": status_message} if status_message else {}),
-            )
+            if len(e_components) != len(signal_types):
+                raise ValueError(
+                    f"Signal count mismatch: expected {len(signal_types)}, got {len(e_components)}"
+                )
 
-            filename = (
-                f"{data_base_path.name}_run_t{combo.t_index:03d}_s{combo.inhom_index:03d}.npz"
-            )
-            path = save_run_artifact(
-                signal_arrays=padded_components,
-                metadata=metadata_combo,
-                frequency_sample_cm=freq_vector,
-                data_dir=data_base_path.parent,
-                filename=filename,
-            )
-            saved_paths.append(str(path))
-            print(f"    ✅ saved {path}")
+            for sig, arr in zip(signal_types, e_components):
+                arr = np.asarray(arr)
+                if arr.shape != (detection_times_length,):
+                    raise ValueError(
+                        f"Signal {sig!r} returned shape {arr.shape}; expected {(detection_times_length,)}"
+                    )
+                signal_sums[sig][combo.t_index] += arr
+
+            counts_per_t_coh[combo.t_index] += 1
+            frequency_sample_sum_cm += freq_vector
+            frequency_sample_count += 1
+
+    partial_path = save_partial_reduction_artifact(
+        signal_sums=signal_sums,
+        counts_per_t_coh=counts_per_t_coh,
+        frequency_sample_sum_cm=frequency_sample_sum_cm,
+        frequency_sample_count=frequency_sample_count,
+        metadata={
+            "signal_types": signal_types,
+            "sim_type": prepared.sim_type,
+            "batch_id": 0,
+            "n_batches": 1,
+            "n_t_coh": n_t_coh,
+            "n_t_det": detection_times_length,
+        },
+        data_dir=data_base_path.parent,
+        filename=f"{data_base_path.name}_batch_000.partial.npz",
+    )
 
     elapsed = time.time() - t_start
     print("=" * 80)
-    print(f"Completed {len(saved_paths)} combination(s) in {elapsed:.2f} s")
-    if saved_paths:
-        print("Latest artifact:")
-        print(f"  {saved_paths[-1]}")
-        print("\n🎯 Next step:")
-        process_script = (PROJECT_ROOT / "scripts" / "local" / "process_datas.py").resolve()
-        print(f"     python \"{process_script}\" --abs_path '{saved_paths[-1]}' --skip_if_exists")
+    print(f"Completed {len(prepared.combinations)} combination(s) in {elapsed:.2f} s")
+    print(f"Partial artifact: {partial_path}")
+
+    processed_path = process_job_dir(job_paths.job_dir, skip_if_exists=False)
+    print(f"Final processed artifact: {processed_path}")
+    print("\n🎯 Next step:")
+    plot_script = (PROJECT_ROOT / "scripts" / "local" / "plot_datas.py").resolve()
+    print(f'     python "{plot_script}" --abs_path "{processed_path}"')
 
 
 if __name__ == "__main__":

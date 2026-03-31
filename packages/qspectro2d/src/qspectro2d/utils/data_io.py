@@ -22,6 +22,68 @@ if TYPE_CHECKING:
 _SIGNAL_PREFIX = "signal::"
 _META_KEY = "metadata_json"
 _SAMPLE_KEY = "frequency_sample_cm"
+_PARTIAL_COUNT_KEY = "counts_per_t_coh"
+_PARTIAL_FREQ_SUM_KEY = "frequency_sample_sum_cm"
+_PARTIAL_FREQ_COUNT_KEY = "frequency_sample_count"
+_PARTIAL_SIGNAL_SUM_PREFIX = "signal_sum::"
+
+
+def save_partial_reduction_artifact(
+    *,
+    signal_sums: Mapping[str, np.ndarray],
+    counts_per_t_coh: Sequence[int],
+    frequency_sample_sum_cm: Sequence[float],
+    frequency_sample_count: int,
+    metadata: Mapping[str, Any],
+    data_dir: Path | str,
+    filename: str,
+) -> Path:
+    """Persist one batch-level partial reduction artifact.
+
+    This is the canonical post-processing input for strict workflows.
+    The file stores per-signal sums on the final grid plus per-t_coh counts.
+    """
+
+    directory = Path(data_dir)
+    abs_path = directory / filename
+
+    payload: dict[str, Any] = {
+        _META_KEY: np.array(_json_dumps(dict(metadata)), dtype=np.str_),
+        _PARTIAL_COUNT_KEY: np.asarray(counts_per_t_coh, dtype=np.int64),
+        _PARTIAL_FREQ_SUM_KEY: np.asarray(frequency_sample_sum_cm, dtype=float),
+        _PARTIAL_FREQ_COUNT_KEY: np.array(int(frequency_sample_count), dtype=np.int64),
+    }
+    for sig, array in signal_sums.items():
+        payload[f"{_PARTIAL_SIGNAL_SUM_PREFIX}{sig}"] = np.asarray(array)
+
+    np.savez(abs_path, **payload)
+    return abs_path
+
+
+def load_partial_reduction_artifact(path: Path | str) -> dict[str, Any]:
+    """Load one batch-level partial reduction artifact."""
+
+    path = Path(path)
+    with np.load(path, allow_pickle=False) as bundle:
+        contents = {key: bundle[key] for key in bundle.files}
+
+    metadata = json.loads(str(contents.pop(_META_KEY).item()))
+    signal_sums: dict[str, np.ndarray] = {}
+    for key in list(contents.keys()):
+        if key.startswith(_PARTIAL_SIGNAL_SUM_PREFIX):
+            sig = key[len(_PARTIAL_SIGNAL_SUM_PREFIX) :]
+            signal_sums[sig] = contents.pop(key)
+
+    return {
+        "path": path,
+        "metadata": metadata,
+        "signal_sums": signal_sums,
+        "counts_per_t_coh": np.asarray(contents.pop(_PARTIAL_COUNT_KEY), dtype=np.int64),
+        "frequency_sample_sum_cm": np.asarray(contents.pop(_PARTIAL_FREQ_SUM_KEY), dtype=float),
+        "frequency_sample_count": int(np.asarray(contents.pop(_PARTIAL_FREQ_COUNT_KEY)).item()),
+    }
+
+
 
 
 def _json_default(obj: Any) -> Any:
