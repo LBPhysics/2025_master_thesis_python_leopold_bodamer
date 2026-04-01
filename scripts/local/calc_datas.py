@@ -30,8 +30,9 @@ from common.workflow import (
     PROJECT_ROOT,
     RUNS_ROOT,
     build_job_metadata,
-    config_stem_token,
+    build_job_dir_label,
     prepare_workflow,
+    resolve_allocated_job_unique_id,
     write_json,
 )
 from local.process_datas import process_job_dir
@@ -69,9 +70,14 @@ def main() -> None:
     print("✅ Simulation object constructed from validated merged config.")
     print(f"✅ Solver validated. time_cut = {prepared.time_cut:.6g}")
 
-    label_token = config_stem_token(prepared.config_path)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_dir = allocate_job_dir(RUNS_ROOT, f"{label_token}_{timestamp}")
+    timestamp = datetime.utcnow().strftime("%d_%H%M%S")
+    base_label = build_job_dir_label(prepared.config_path, timestamp)
+    job_dir = allocate_job_dir(RUNS_ROOT, base_label)
+    job_unique_id = resolve_allocated_job_unique_id(
+        job_dir,
+        base_label=base_label,
+        requested_unique_handle=timestamp,
+    )
     job_paths = ensure_job_layout(job_dir, base_name="raw")
     data_base_path = job_paths.data_base_path
 
@@ -90,6 +96,7 @@ def main() -> None:
         time_cut=prepared.time_cut,
     )
     job_metadata["n_batches"] = 1
+    job_metadata["job_unique_id"] = job_unique_id
     write_json(job_paths.job_dir / "job_metadata.json", job_metadata)
 
     info_path = data_base_path.parent / f"{data_base_path.name}.pkl"

@@ -84,6 +84,7 @@ __all__ = [
     "SCRIPTS_DIR",
     "SIM_CONFIGS_DIR",
     "build_combinations",
+    "build_job_dir_label",
     "build_job_metadata",
     "config_stem_token",
     "extract_job_unique_id",
@@ -91,6 +92,7 @@ __all__ = [
     "final_processed_filename",
     "pick_config_yaml",
     "prepare_workflow",
+    "resolve_allocated_job_unique_id",
     "write_json",
 ]
 
@@ -127,22 +129,72 @@ def config_stem_token(config_path: Path | str) -> str:
     return _sanitize_token(Path(config_path).stem)
 
 
-def extract_job_unique_id(job_dir: Path | str) -> str:
-    """Extract the run-unique suffix from a job directory name.
+def build_job_dir_label(config_path: Path | str, unique_handle: str) -> str:
+    """Return the canonical job-directory label ``<timestamp>_<config_stem>``.
 
-    Examples
-    --------
-    ``hpc_..._20260331_101530`` -> ``20260331_101530``
-    ``hpc_..._20260331_101530_01`` -> ``20260331_101530_01``
+    ``unique_handle`` is expected to be the timestamp token such as
+    ``DD_HHMMSS``.  If ``allocate_job_dir`` detects a collision it appends
+    ``_NN`` to the directory name afterwards.
+    """
+
+    handle_token = _sanitize_token(unique_handle)
+    config_token = config_stem_token(config_path)
+    return "_".join(part for part in (handle_token, config_token) if part)
+
+
+def extract_job_unique_id(job_dir: Path | str) -> str:
+    """Extract the run-unique token from a job directory name.
+
+    Current job directories are named ``DD_HHMMSS_config_stem``.
+    This fallback parser also accepts legacy names where an older full-date
+    timestamp token appeared at the end of the directory name.
     """
 
     name = Path(job_dir).name
+    match = re.match(r"^(\d{2}_\d{6})(?:_|$)", name)
+    if match:
+        return match.group(1)
     match = re.search(r"(\d{8}_\d{6}(?:_\d{2})?)$", name)
+    if match:
+        return match.group(1)
+    match = re.match(r"^(\d{8}_\d{6})(?:_|$)", name)
+    if match:
+        return match.group(1)
+    match = re.search(r"(\d{2}_\d{6}(?:_\d{2})?)$", name)
     if match:
         return match.group(1)
     if "_" in name:
         return _sanitize_token(name.rsplit("_", 1)[-1])
     return _sanitize_token(name)
+
+
+def resolve_allocated_job_unique_id(
+    job_dir: Path | str,
+    *,
+    base_label: str,
+    requested_unique_handle: str,
+) -> str:
+    """Resolve the effective unique id after ``allocate_job_dir`` suffixing.
+
+    Use this immediately after allocating the directory so the stored
+    ``job_unique_id`` preserves any collision suffix as
+    ``DD_HHMMSS_NN`` without guessing from the config stem.
+    """
+
+    name = Path(job_dir).name
+    base_token = _sanitize_token(base_label)
+    unique_token = _sanitize_token(requested_unique_handle)
+
+    if name == base_token:
+        return unique_token
+
+    prefix = f"{base_token}_"
+    if name.startswith(prefix):
+        suffix = name[len(prefix) :]
+        if re.fullmatch(r"\d{2}", suffix):
+            return f"{unique_token}_{suffix}"
+
+    return extract_job_unique_id(name)
 
 
 def format_slurm_job_name(*parts: object) -> str:

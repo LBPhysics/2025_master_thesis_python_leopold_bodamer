@@ -105,5 +105,16 @@ def epsilon_pulses(
     if is_scalar:
         t_array = t_array[None]
 
-    field = np.exp(-1j * pulse_seq.carrier_freq_fs * t_array) * e_pulses(t_array, pulse_seq)
-    return field[0] if is_scalar else field
+    omega = pulse_seq.carrier_freq_fs
+    field_total = np.zeros_like(t_array, dtype=complex)
+
+    for pulse, phase, t_peak, amplitude in zip(
+        pulse_seq.pulses,
+        pulse_seq.pulse_phases,
+        pulse_seq.pulse_peak_times,
+        pulse_seq.pulse_amplitudes,
+    ):
+        envelope = single_pulse_envelope(t_array, pulse)
+        field_total += amplitude * envelope * np.exp(-1j * (omega * (t_array - t_peak) + phase))
+
+    return field_total[0] if is_scalar else field_total

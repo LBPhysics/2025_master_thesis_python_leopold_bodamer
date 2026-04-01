@@ -145,7 +145,11 @@ def process_job_dir(job_dir: Path, *, skip_if_exists: bool = False) -> Path:
         total_frequency_sum += part_freq_sum
         total_frequency_count += part_freq_count
 
-    assert total_counts is not None and total_signal_sums is not None and total_frequency_sum is not None
+    assert (
+        total_counts is not None
+        and total_signal_sums is not None
+        and total_frequency_sum is not None
+    )
 
     if np.any(total_counts != expected_n_inhom):
         bad = np.where(total_counts != expected_n_inhom)[0].tolist()
@@ -160,8 +164,7 @@ def process_job_dir(job_dir: Path, *, skip_if_exists: bool = False) -> Path:
         raise RuntimeError("No successful combinations contributed to the reduction")
 
     averaged_signals_2d = {
-        sig: total_signal_sums[sig] / total_counts[:, None]
-        for sig in expected_signal_types
+        sig: total_signal_sums[sig] / total_counts[:, None] for sig in expected_signal_types
     }
     average_frequency_sample = total_frequency_sum / float(total_frequency_count)
 
@@ -209,7 +212,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Reduce strict batch partial artifacts into one processed result."
     )
-    parser.add_argument("--job_dir", type=str, required=True, help="Path to the job directory")
+    parser.add_argument(
+        "--job_dir",
+        type=str,
+        required=True,
+        help="Path to the job directory, e.g. jobs/01_123456_monomer",
+    )
     parser.add_argument(
         "--skip_if_exists",
         action="store_true",

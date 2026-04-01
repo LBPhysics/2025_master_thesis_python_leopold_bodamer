@@ -18,6 +18,7 @@ by ``fields.e_pulses``. This matches the paper-equation Liouvillian assembled in
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import cached_property
 
@@ -205,6 +206,15 @@ class SimulationModuleOQS:
         self.simulation_config.t_wait = wait_time
         self.simulation_config.t_coh = t_coh_value
         self.laser.pulse_delays = [t_coh_value, wait_time]
+
+    def with_pulse_subset(self, active_indices: list[int]) -> "SimulationModuleOQS":
+        """Return a simulation clone with only the selected pulses active."""
+        return SimulationModuleOQS(
+            simulation_config=SimulationConfig.from_dict(self.simulation_config.to_dict()),
+            system=self.system,
+            laser=deepcopy(self.laser.subset(active_indices)),
+            bath=self.bath,
+        )
 
 
 __all__ = [

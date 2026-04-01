@@ -237,7 +237,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate and submit strict reduction and dependent plotting jobs."
     )
-    parser.add_argument("--job_dir", type=str, required=True)
+    parser.add_argument(
+        "--job_dir",
+        type=str,
+        required=True,
+        help="Path to the job directory, e.g. jobs/01_123456_monomer",
+    )
     parser.add_argument("--skip_if_exists", action="store_true")
     parser.add_argument("--no_submit", action="store_true")
     parser.add_argument("--time_only", action="store_true")

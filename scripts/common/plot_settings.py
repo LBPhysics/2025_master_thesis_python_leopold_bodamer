@@ -6,7 +6,7 @@ SECTION: tuple[tuple[float, float], tuple[float, float]] | None = (
     (1.5, 1.7),  # coherence axis
     (1.5, 1.7),  # detection axis
 )
-PAD_FACTOR: float = 30.0
+PAD_FACTOR: float = 50.0
 CUTOFF_PERCENT: float = 0.0
 CONTOUR_LINES: bool = False
 TRANSPARENTCY: bool = False

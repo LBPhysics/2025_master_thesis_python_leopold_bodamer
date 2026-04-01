@@ -83,89 +83,97 @@ If you need robust low-frequency dephasing, prefer the built-in Ohmic or Drude�
 
 ## Workflow overview
 
-There are two main workflows: **local execution** (for small tests) and **HPC batching** (for large parameter sweeps). Both produce the same plots but differ in scaling and automation.
+There are two supported workflows: a strict local runner for smaller jobs and an
+HPC batching workflow for cluster runs. Both create one dedicated job directory
+under `jobs/`.
 
-### Local Workflow (Run on Your Machine)
-For small-scale runs (e.g., quick tests or limited parameter sweeps). Generates all combinations of coherence times and inhomogeneous samples, then processes them into final averaged spectra.
+The canonical job-directory name is:
 
-1. **Configure simulation** — Duplicate the template in `scripts/simulation_configs/` and adjust physical parameters. `_monomer.yaml` is the default that `calc_datas.py` auto-selects.
-   - All sim_types use `config.t_det` (detection window max time) and `config.t_coh` (coherence time value or sweep upper bound).
-   - For 0d: both are single values.
-   - For 1d: t_coh is single value; t_det is swept from ~0 to the given value.
-   - For 2d: both are swept from ~0 to their given values.
+```text
+DD_HHMMSS_config_stem
+```
 
-1. **Simulate** — Run `python scripts/calc_datas.py --sim_type {0d,1d,2d}` locally.
-   - Generates all combinations based on sim_type and config parameters.
-   - Outputs raw `.npz` files per combination.
+If that exact name already exists, the allocator appends a collision suffix:
 
-   **Example:**
+```text
+DD_HHMMSS_config_stem_01
+```
 
-   ```bash
-   (m_env) path/to/scripts$ python calc_datas.py --sim_type 1d
-   ```
+Whenever a command asks for `--job_dir`, pass the full path to that directory.
+Do not pass only the config stem.
 
-   ```
-   ================================================================================
-   LOCAL ALL-COMBINATIONS RUNNER
-   Config path: /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/scripts/simulation_configs/_monomer.yaml
-   ...
-   Completed 1 combination(s) in 3.26 s
-   Latest artifact:
-   /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz
+### Local workflow (run on your machine)
 
-   🎯 Next step:
-      python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
-   ================================================================================
-   DONE
-   ```
-3. **Process** — Run `python scripts/process_datas.py --abs_path /path/to/any/artifact.npz` to stack (if multiple `t_coh`) and average across samples in one efficient step.
+For small test jobs or limited parameter sweeps.
 
-   **Example:**
+1. **Configure simulation** - Duplicate a template from `scripts/simulation_configs/`
+   and adjust the physical parameters. If `--config` is omitted, the local runner
+   picks the preferred default config automatically.
+2. **Run the strict local workflow** - Use
+   `python scripts/local/calc_datas.py --sim_type {0d,1d,2d} [--config /path/to/config.yaml] [--rng_seed S]`.
+   The script resolves the config once, runs all `(t_coh, inhomogeneous sample)`
+   combinations locally, writes the job artifacts, and immediately performs the
+   strict reduction step.
+3. **Re-run reduction only if needed** - Use
+   `python scripts/local/process_datas.py --job_dir /path/to/jobs/DD_HHMMSS_config_stem [--skip_if_exists]`
+   if you already have partial artifacts and want to rebuild the final processed
+   file without re-running the simulation.
+4. **Plot the processed artifact** - Use
+   `python scripts/local/plot_datas.py --abs_path /path/to/jobs/DD_HHMMSS_config_stem/data/2d_inhom_averaged.npz [--time_only]`.
 
-   ```bash
-   (m_env) path/to/scripts$ python process_datas.py --abs_path '/home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_run_t000_s000.npz' --skip_if_exists
-   ```
+Example local run:
 
-   ```
-   ...
-   🎯 Plot with:
-   python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
-   ```
+```bash
+python scripts/local/calc_datas.py --sim_type 2d --config scripts/simulation_configs/monomer.yaml
+```
 
-4. **Visualize** — Run `python scripts/plot_datas.py --abs_path /path/to/processed_artifact.npz` to generate time/frequency-domain plots (e.g., signals, spectra). The script applies zero-padding with a factor of `PAD_FACTOR` for frequency-domain plots, crops frequency data to the range `SECTION` [10^4 cm⁻¹], and always generates both time and frequency domains.
+Typical job layout:
 
-   **Example:**
+```text
+jobs/01_123456_monomer/
+  job_metadata.json
+  monomer.yaml
+  data/
+    raw.pkl
+    raw_samples.npy
+    raw_combos.json
+    raw_batch_000.partial.npz
+    2d_inhom_averaged.npz
+    2d_inhom_averaged.pkl
+  figures/
+```
 
-   ```bash
-   (m_env) path/to/scripts$ python plot_datas.py --abs_path /home/leopold/Projects/2025_master_thesis_python_leopold_bodamer/jobs/1_atoms/lindblad/RWA/t_dm300.0_t_wait10.0_dt_0.2_1/1d_inhom_averaged.npz
-   ```
+### HPC batching workflow (run on a cluster)
 
-   -> find the figures under `figures/...`
+For large sweeps with many coherence times and inhomogeneous samples.
 
-Simulation outputs remain under `jobs/` and plots under `figures/`.
+1. **Dispatch batches** - Use
+   `python scripts/hpc/calc_dispatcher.py --sim_type {0d,1d,2d} --n_batches N [--rng_seed S] [--no_submit] [--config /path/to/config.yaml]`.
+   This creates `jobs/DD_HHMMSS_config_stem/`, writes the shared job
+   metadata, batch manifests, copied config, and SLURM scripts, and optionally
+   submits the batch jobs.
+2. **Run batches** - Unless `--no_submit` is used, the dispatcher submits
+   `scripts/hpc/run_batch.py` jobs via `sbatch`. Each batch writes exactly one
+   strict partial artifact into the job's `data/` directory.
+3. **Queue reduction and plotting** - After the batch jobs finish, run
+   `python scripts/hpc/plot_dispatcher.py --job_dir /path/to/jobs/DD_HHMMSS_config_stem [--skip_if_exists] [--no_submit] [--time_only]`.
+   This creates the reduction and plotting SLURM scripts and optionally submits
+   them with the correct dependency chain.
 
-### HPC Batching Workflow (Run on a Cluster)
-For large-scale runs (e.g., full sweeps with many inhomogeneous samples and coherence times). Supports all combinations with parallel batching. Processing and plotting are automated.
-Is structured similar to the local workflow but splits the simulation into batches that are atomically executed on the cluster:
-
-1. **Dispatch batches** — Run `python scripts/hpc/calc_dispatcher.py --sim_type {0d,1d,2d} --n_batches N [--rng_seed S] [--no_submit] [--config /path/to/config.yaml]`. Generates SLURM jobs that split work across combinations. If `--config` is omitted, the dispatcher uses the default selection (the first config file prefixed with `_` under scripts/simulation_configs).
-
-2. **Run batches** — Batches auto-submit via `sbatch` (unless `--no_submit`). Each runs `scripts/hpc/run_batch.py` on the cluster, producing partial artifacts in `jobs/...`.
-
-3. **Post-process and plot** — After batches finish, run `python scripts/hpc/plot_dispatcher.py --job_dir /path/to/jobs/<job_label> [--skip_if_exists] [--no_submit] [--time_only]`. Processes data (stacks and averages) and submits a single plotting SLURM job that runs `scripts/local/plot_datas.py`.
-
-## HPC reminder
+HPC reminder:
 
 ```bash
 git pull
 conda activate m_env
 conda env update -f environment.yml --prune  # only when dependencies change
 python scripts/hpc/calc_dispatcher.py --n_batches N --sim_type 2d --config /path/to/config.yaml
-# Wait for batches to finish, then:
-python scripts/hpc/plot_dispatcher.py --job_dir /path/to/jobs/<job_label>
+# Wait for the batch jobs to finish, then replace the job_dir with the actual
+# directory created above, e.g. jobs/01_123456_monomer
+python scripts/hpc/plot_dispatcher.py --job_dir /path/to/jobs/DD_HHMMSS_config_stem
 ```
 
-Logs from batch submissions stay in the same directories referenced by the HPC helper scripts.
+Batch and post-processing logs stay under the corresponding job directory,
+typically in `jobs/DD_HHMMSS_config_stem/logs/`.
 
 ## Future implementation idea:
 

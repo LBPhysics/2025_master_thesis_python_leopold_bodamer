@@ -29,16 +29,16 @@ from common.workflow import (
     PROJECT_ROOT,
     RUNS_ROOT,
     build_job_metadata,
-    config_stem_token,
-    extract_job_unique_id,
+    build_job_dir_label,
     format_slurm_job_name,
     prepare_workflow,
+    resolve_allocated_job_unique_id,
     write_json,
 )
 from qspectro2d.core.simulation.time_axes import compute_times_local
 
-DEFAULT_CPUS_PER_TASK = 25  # makes sense if each phase combo is as costly as the others
-DEFAULT_PARTITION = "GPGPU,metis"
+DEFAULT_CPUS_PER_TASK = 12  # makes sense if each phase combo is as costly as the others
+DEFAULT_PARTITION = "kratos96G,kratos48G,GPGPU,metis"
 
 
 def _split_indices(n_items: int, n_batches: int) -> list[np.ndarray]:
@@ -260,11 +260,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         f"n_batches={args.n_batches}"
     )
 
-    label_token = config_stem_token(prepared.config_path)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    job_dir = allocate_job_dir(RUNS_ROOT, f"{label_token}_{timestamp}")
+    timestamp = datetime.utcnow().strftime("%d_%H%M%S")
+    base_label = build_job_dir_label(prepared.config_path, timestamp)
+    job_dir = allocate_job_dir(RUNS_ROOT, base_label)
     job_paths = ensure_job_layout(job_dir, base_name="raw")
-    job_unique_id = extract_job_unique_id(job_dir)
+    job_unique_id = resolve_allocated_job_unique_id(
+        job_dir,
+        base_label=base_label,
+        requested_unique_handle=timestamp,
+    )
 
     logs_dir = job_dir / "logs"
     logs_dir.mkdir(exist_ok=True)

@@ -15,7 +15,7 @@ import numpy as np
 from ..config.defaults import COMPONENT_MAP, phase_cycling_phases
 from ..config.factory import load_simulation_config
 from ..core.simulation.time_axes import compute_t_det
-from .evolution import compute_polarisation_over_window, simulation_with_pulses
+from .evolution import compute_polarisation_over_window
 
 __all__ = ["compute_emitted_field_components"]
 
@@ -62,7 +62,7 @@ def _worker_polarisation(
     sim_oqs.system.update_frequencies_cm(freq_vector)
     sim_oqs.refresh_cache()
 
-    run_sim = sim_oqs if active_pulses is None else simulation_with_pulses(sim_oqs, active_pulses)
+    run_sim = sim_oqs if active_pulses is None else sim_oqs.with_pulse_subset(active_pulses)
     _set_phase_subset(run_sim, phi1=phi1, phi2=phi2, active_pulses=active_pulses)
 
     t_det = np.asarray(detection_window, dtype=float)

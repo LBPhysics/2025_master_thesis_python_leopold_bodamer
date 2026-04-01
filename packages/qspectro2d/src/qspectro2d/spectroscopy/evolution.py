@@ -16,7 +16,6 @@ SimulationModuleOQS.
 
 from __future__ import annotations
 from qutip import Qobj, brmesolve, mesolve
-from copy import deepcopy
 import numpy as np
 
 from ..core.simulation import SimulationModuleOQS
@@ -26,7 +25,6 @@ from ..diagnostics.solver_inputs import log_redfield_solver_debug
 __all__ = [
     "compute_evolution",
     "compute_polarisation_over_window",
-    "simulation_with_pulses",
 ]
 
 
@@ -51,6 +49,7 @@ def slice_polarisation_to_window(
     """Slice the polarisation list to the requested detection-window times."""
     times = np.asarray(times)
     window = np.asarray(window)
+    polarisation_array = np.asarray(polarisation, dtype=np.complex128)
 
     indices = np.searchsorted(times, window, side="left")
     indices = np.clip(indices, 0, len(times) - 1)
@@ -68,7 +67,7 @@ def slice_polarisation_to_window(
             key=lambda candidate: abs(times[candidate] - time_value),
         )
 
-    return np.array([polarisation[int(index)] for index in selected_indices], dtype=complex)
+    return polarisation_array[selected_indices]
 
 
 def compute_evolution(
@@ -146,8 +145,10 @@ def compute_evolution(
 
     if e_ops is None:
         data = result.states
-    else:
+    elif len(result.expect) == 1:
         data = np.asarray(result.expect[0], dtype=np.complex128)
+    else:
+        data = [np.asarray(values, dtype=np.complex128) for values in result.expect]
 
     return np.asarray(t_list, dtype=float), data
 
@@ -155,11 +156,11 @@ def compute_evolution(
 def compute_polarisation_over_window(
     sim_oqs: SimulationModuleOQS, window=None, *, solver_times=None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return the canonical signal for the configured solver convention.
-    Evolve once with current laser settings and return (t_det, P(t_det)),
-    where P is computed on the requested detection-window times.
-    rwa_sl=False -> lab-frame signal
-    rwa_sl=True  -> rotating-frame signal
+    """Return the canonical positive-frequency signal on the requested detection axis.
+
+    For ``rwa_sl=False`` this is the lab-frame positive-frequency polarisation.
+    For ``rwa_sl=True`` this is the rotating-frame envelope consistent with the
+    paper convention used by ``fields.e_pulses``.
     """
     if window is None:
         window = compute_t_det(sim_oqs.simulation_config)
@@ -170,14 +171,3 @@ def compute_polarisation_over_window(
 
     times, polarisation_t = compute_evolution(sim_oqs, e_ops=[mu_plus], solver_times=solver_times)
     return window, slice_polarisation_to_window(times, polarisation_t, window)
-
-
-def simulation_with_pulses(
-    sim_oqs: SimulationModuleOQS,
-    active_indices: list[int],
-) -> SimulationModuleOQS:
-    """Return a deep-copied simulation with only the selected pulses active."""
-    sim_copy = deepcopy(sim_oqs)
-    sim_copy.laser = sim_copy.laser.subset(active_indices)
-    sim_copy.refresh_cache()
-    return sim_copy
