@@ -98,11 +98,7 @@ DEFAULTS = {
     },
     "config": {
         "solver": "redfield",
-        "solver_options": {
-            "method": (
-                "lsoda"
-            ),  # automatically switches between stiff and non-stiff methods, see https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html#scipy.integrate.solve_ivp
-        },
+        "solver_options": {},
         "solver_run_kwargs": {
             "sec_cutoff": 1.0e-3,
         },
