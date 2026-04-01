@@ -10,4 +10,12 @@ PAD_FACTOR: float = 50.0
 CUTOFF_PERCENT: float = 0.0
 CONTOUR_LINES: bool = False
 TRANSPARENTCY: bool = False
-__all__ = ["SECTION", "PAD_FACTOR", "CUTOFF_PERCENT", "CONTOUR_LINES", "TRANSPARENTCY"]
+FIG_FORMATS: list[str] = ["svg", "png"]  # Save both high-quality SVG and low-cost PNG
+__all__ = [
+    "SECTION",
+    "PAD_FACTOR",
+    "CUTOFF_PERCENT",
+    "CONTOUR_LINES",
+    "TRANSPARENTCY",
+    "FIG_FORMATS",
+]

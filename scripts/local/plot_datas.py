@@ -19,7 +19,7 @@ from plotstyle import FIG_FORMAT, save_fig
 from qspectro2d import load_simulation_data
 from qspectro2d.spectroscopy.post_processing import compute_spectra
 from qspectro2d.visualization.plotting import convert_plot_axes, plot_el_field
-from common.plot_settings import CUTOFF_PERCENT, CONTOUR_LINES, PAD_FACTOR, SECTION, TRANSPARENTCY
+from common.plot_settings import CUTOFF_PERCENT, CONTOUR_LINES, PAD_FACTOR, SECTION, TRANSPARENTCY, FIG_FORMATS
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
@@ -77,7 +77,8 @@ def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
     candidate = figures_dir / stem
     base = candidate
     counter = 1
-    while candidate.with_suffix(default_ext).exists():
+    # Check for both SVG and PNG files to avoid conflicts (since we save both formats)
+    while candidate.with_suffix(default_ext).exists() or candidate.with_suffix(".png").exists():
         candidate = base.with_name(f"{stem}_{counter:02d}")
         counter += 1
     return candidate
@@ -161,6 +162,7 @@ def main() -> None:
                     figures_root,
                     _figure_stem("time", signal_type, component, config_stem=config_stem),
                 ),
+                formats=FIG_FORMATS,
             )
             print(f"Saved: {saved}")
         print(
@@ -222,6 +224,7 @@ def main() -> None:
                     _figure_stem("freq", signal_type, component, config_stem=config_stem),
                 ),
                 transparent=TRANSPARENTCY,
+                formats=FIG_FORMATS,
             )
             print(f"Saved: {saved}")
         print(
