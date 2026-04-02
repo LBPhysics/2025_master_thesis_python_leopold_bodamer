@@ -407,10 +407,10 @@ def _plot_el_field_1d(
     color, linestyle = _style_for_component(component, 1, domain=domain)
 
     values = np.asarray(plot_data, dtype=float)
-    if values.size > 0 and not np.all(np.isnan(values)):
-        max_abs = np.max(np.abs(values))
-        if max_abs > 0:
-            values = values / max_abs
+    # if values.size > 0 and not np.all(np.isnan(values)):
+    #    max_abs = np.max(np.abs(values))
+    #    if max_abs > 0:
+    #        values = values / max_abs
 
     x_label, y_label, title_suffix = _domain_labels(domain, 1)
 

@@ -67,7 +67,7 @@ def e_pulses(
     ``t_k`` through ``single_pulse_envelope``. With pulse amplitude ``A_k`` and
     explicit phase ``phi_k``, we use the paper-style convention
 
-        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L t + phi_k)] ,
+        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t-t_k) + phi_k)] ,
 
     so that
 
@@ -85,14 +85,17 @@ def e_pulses(
     if is_scalar:
         t_array = t_array[None]
 
+    wL = pulse_seq.carrier_freq_fs
     field_total = np.zeros_like(t_array, dtype=complex)
-    for pulse, phase, amplitude in zip(
+    for pulse, phi_k, A_k, t_k in zip(
         pulse_seq.pulses,
         pulse_seq.pulse_phases,
         pulse_seq.pulse_amplitudes,
+        pulse_seq.pulse_peak_times,
     ):
         envelope = single_pulse_envelope(t_array, pulse)
-        field_total += amplitude * np.exp(-1j * phase) * envelope
+        phase_eff = phi_k - wL * t_k
+        field_total += A_k * envelope * np.exp(-1j * phase_eff)
     return field_total[0] if is_scalar else field_total
 
 
@@ -105,16 +108,5 @@ def epsilon_pulses(
     if is_scalar:
         t_array = t_array[None]
 
-    omega = pulse_seq.carrier_freq_fs
-    field_total = np.zeros_like(t_array, dtype=complex)
-
-    for pulse, phase, t_peak, amplitude in zip(
-        pulse_seq.pulses,
-        pulse_seq.pulse_phases,
-        pulse_seq.pulse_peak_times,
-        pulse_seq.pulse_amplitudes,
-    ):
-        envelope = single_pulse_envelope(t_array, pulse)
-        field_total += amplitude * envelope * np.exp(-1j * (omega * (t_array - t_peak) + phase))
-
-    return field_total[0] if is_scalar else field_total
+    field = np.exp(-1j * pulse_seq.carrier_freq_fs * t_array) * e_pulses(t_array, pulse_seq)
+    return field[0] if is_scalar else field

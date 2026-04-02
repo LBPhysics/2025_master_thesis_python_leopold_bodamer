@@ -155,6 +155,7 @@ def get_expect_vals_with_RWA(
         dipole_op:
             Dipole operator in the same basis/representation as e_ops.
     """
+    """
     if rwa_sl:
         # By default we assume stored states are in the rotating frame and we want lab-frame
         # expectation values. If you need the opposite, call `to_rotating_frame` explicitly
@@ -165,6 +166,7 @@ def get_expect_vals_with_RWA(
             n_atoms,
             omega_laser,
         )
+    """
     states_lab = states
     ## Calculate expectation values for each state and each operator
     updated_expects = []
