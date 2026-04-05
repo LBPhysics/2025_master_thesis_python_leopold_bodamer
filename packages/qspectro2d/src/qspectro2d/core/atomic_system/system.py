@@ -23,6 +23,11 @@ class AtomicSystem:
     coupling_cm: float = 0.0
     delta_inhomogen_cm: float = 0.0
     max_excitation: int = 1
+    # Store dissipative rates on the system so every solver backend uses the
+    # same configured values rather than package-level defaults.
+    deph_rate_fs: float = 1 / 100
+    down_rate_fs: float = 1 / 300
+    up_rate_fs: float = 0.0
 
     def __post_init__(self) -> None:
         self.frequencies_cm_history = [self.frequencies_cm.copy()]

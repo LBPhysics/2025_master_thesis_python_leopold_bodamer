@@ -78,6 +78,9 @@ def load_simulation_atomic_system(cfg: Mapping[str, Any]) -> AtomicSystem:
         coupling_cm=float(atomic_cfg["coupling_cm"]),
         delta_inhomogen_cm=float(atomic_cfg["delta_inhomogen_cm"]),
         max_excitation=int(atomic_cfg["max_excitation"]),
+        deph_rate_fs=float(atomic_cfg["deph_rate_fs"]),
+        down_rate_fs=float(atomic_cfg["down_rate_fs"]),
+        up_rate_fs=float(atomic_cfg["up_rate_fs"]),
     )
 
 

@@ -8,12 +8,6 @@ import numpy as np
 from qutip import BosonicEnvironment, Qobj, QobjEvo
 
 from .atomic_system import AtomicSystem, pair_to_index
-from ..config.defaults import DEFAULTS
-
-ATOMIC_DEFAULTS = DEFAULTS["atomic"]
-DEPH_RATE_FS = ATOMIC_DEFAULTS["deph_rate_fs"]
-DOWN_RATE_FS = ATOMIC_DEFAULTS["down_rate_fs"]
-UP_RATE_FS = ATOMIC_DEFAULTS["up_rate_fs"]
 
 
 def _dephasing_projector(system: AtomicSystem, index: int) -> Qobj:
@@ -96,14 +90,17 @@ def lindblad_decay_channels(system: AtomicSystem) -> list[Qobj]:
                 site_ops[j_atom] += pair_proj
 
     for i_atom in range(1, system.n_atoms + 1):
-        add_channel(site_ops[i_atom], DEPH_RATE_FS)
+        # For projector-type dephasing collapse operators, QuTiP contributes
+        # half the collapse rate to off-diagonal decay. Using 2 * gamma_phi
+        # makes `deph_rate_fs` equal to the paper's pure-dephasing rate 1/T2*.
+        add_channel(site_ops[i_atom], 2.0 * system.deph_rate_fs)
 
     # Keep monomer thermalization
     if system.n_atoms == 1:
         lower = system.basis[0] * system.basis[1].dag()
-        add_channel(lower, DOWN_RATE_FS)
-        if UP_RATE_FS > 0:
-            add_channel(system.basis[1] * system.basis[0].dag(), UP_RATE_FS)
+        add_channel(lower, system.down_rate_fs)
+        if system.up_rate_fs > 0:
+            add_channel(system.basis[1] * system.basis[0].dag(), system.up_rate_fs)
 
     return channels
 

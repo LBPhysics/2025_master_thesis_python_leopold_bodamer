@@ -15,12 +15,6 @@ from qutip import Qobj, stacked_index
 
 from ..laser_system.fields import e_pulses
 from .simulation import SimulationModuleOQS
-from ...config.defaults import DEFAULTS
-
-ATOMIC_DEFAULTS = DEFAULTS["atomic"]
-DEPH_RATE_FS = ATOMIC_DEFAULTS["deph_rate_fs"]
-DOWN_RATE_FS = ATOMIC_DEFAULTS["down_rate_fs"]
-UP_RATE_FS = ATOMIC_DEFAULTS["up_rate_fs"]
 
 __all__ = ["matrix_ODE_paper", "paper_liouvillian_l0"]
 
@@ -38,7 +32,10 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
         mu_eg = complex(dip_op[1, 0])  # raising branch
         mu_ge = complex(dip_op[0, 1])  # lowering branch = conj(mu_eg) for Hermitian dipole
         detuning = sim_oqs.system.frequencies_fs[0] - pulse_seq.carrier_freq_fs
-        deph_rate_tot = DEPH_RATE_FS + 0.5 * (DOWN_RATE_FS + UP_RATE_FS)
+        deph_rate_fs = float(sim_oqs.system.deph_rate_fs)
+        down_rate_fs = float(sim_oqs.system.down_rate_fs)
+        up_rate_fs = float(sim_oqs.system.up_rate_fs)
+        deph_rate_tot = deph_rate_fs + 0.5 * (down_rate_fs + up_rate_fs)
 
         idx_gg = stacked_index(size, 0, 0)
         idx_ge = stacked_index(size, 0, 1)
@@ -49,10 +46,10 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
         L_plus = np.zeros_like(L0)
         L_minus = np.zeros_like(L0)
 
-        L0[idx_gg, idx_gg] = -UP_RATE_FS
-        L0[idx_gg, idx_ee] = DOWN_RATE_FS
-        L0[idx_ee, idx_gg] = UP_RATE_FS
-        L0[idx_ee, idx_ee] = -DOWN_RATE_FS
+        L0[idx_gg, idx_gg] = -up_rate_fs
+        L0[idx_gg, idx_ee] = down_rate_fs
+        L0[idx_ee, idx_gg] = up_rate_fs
+        L0[idx_ee, idx_ee] = -down_rate_fs
         L0[idx_eg, idx_eg] = -deph_rate_tot - 1j * detuning
         L0[idx_ge, idx_ge] = -deph_rate_tot + 1j * detuning
 
