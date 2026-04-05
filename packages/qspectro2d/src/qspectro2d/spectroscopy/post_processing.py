@@ -11,6 +11,7 @@ __all__ = [
 
 
 ArrayOrSparse = Union[np.ndarray, sp.spmatrix]
+ApodizationKind = str | None
 
 
 def _normalize_range(section: tuple[float, float]) -> tuple[float, float]:
@@ -30,6 +31,28 @@ def _shifted_roi_indices(
     return idx_shifted, idx_unshifted
 
 
+def _apodization_window(length: int, kind: ApodizationKind) -> np.ndarray | None:
+    if kind is None:
+        return None
+
+    key = str(kind).strip().lower()
+    if key in {"", "none", "off", "false"}:
+        return None
+
+    if length <= 1:
+        return np.ones(length, dtype=float)
+    if key == "hann":
+        return np.hanning(length)
+    if key == "hamming":
+        return np.hamming(length)
+    if key == "blackman":
+        return np.blackman(length)
+
+    raise ValueError(
+        "Unsupported apodization kind. Use one of: None, 'hann', 'hamming', 'blackman'."
+    )
+
+
 def compute_spectra(
     datas: list[np.ndarray],
     signal_types: list[str] | None = None,
@@ -38,6 +61,7 @@ def compute_spectra(
     pad: float = 1.0,
     *,
     section: tuple[tuple[float, float], tuple[float, float]] | None = None,
+    apodization: ApodizationKind = None,
 ) -> tuple[np.ndarray | None, np.ndarray, list[ArrayOrSparse], list[str]]:
     """Compute spectra along detection and optional coherence axes.
 
@@ -89,6 +113,11 @@ def compute_spectra(
         - 1D: only the first tuple is used and interpreted as ``(det_min, det_max)``
 
         If provided, the function always returns sparse ROI objects.
+    apodization
+        Optional FFT window applied before the transform. Supported values are
+        ``None`` / ``"none"`` / ``"off"``, ``"hann"``, ``"hamming"``, and
+        ``"blackman"``. In 2D the same window kind is applied independently
+        along coherence and detection via an outer product.
 
     Returns
     -------
@@ -145,6 +174,7 @@ def compute_spectra(
 
     n_det_ext = int(np.ceil(pad * n_det))
     dt_det = float(t_det[1] - t_det[0])
+    det_window = _apodization_window(n_det, apodization)
 
     # Detection axis in 10^4 cm^-1
     freq_dets = np.fft.fftfreq(n_det_ext, d=dt_det)
@@ -155,10 +185,12 @@ def compute_spectra(
         n_coh = None
         n_coh_ext = None
         nu_cohs = None
+        coh_window = None
     else:
         n_coh = int(t_coh.size)
         n_coh_ext = int(np.ceil(pad * n_coh))
         dt_coh = float(t_coh[1] - t_coh[0])
+        coh_window = _apodization_window(n_coh, apodization)
 
         freq_cohs = np.fft.fftfreq(n_coh_ext, d=dt_coh)
         nu_cohs = np.fft.fftshift(freq_cohs / 2.998 * 10.0)
@@ -207,6 +239,9 @@ def compute_spectra(
             if arr.ndim != 1 or arr.shape[0] != n_det:
                 raise ValueError(f"datas[{idx}] must be 1D with length len(t_det)")
 
+            if det_window is not None:
+                arr = arr * det_window
+
             spec_det = np.fft.fft(arr, n=n_det_ext, axis=0)
 
             if not use_sparse_roi:
@@ -228,6 +263,11 @@ def compute_spectra(
         if arr.shape[1] != n_det:
             arr = arr[:, :n_det]
 
+        if coh_window is not None:
+            arr = arr * coh_window[:, None]
+        if det_window is not None:
+            arr = arr * det_window[None, :]
+
         # Detection axis
         spec_2d = np.fft.fft(arr, n=n_det_ext, axis=1)
 
@@ -236,7 +276,11 @@ def compute_spectra(
             spec_2d = np.fft.fft(spec_2d, n=n_coh_ext, axis=0)
             out_types.append("nonrephasing")
         else:
-            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0)
+            # Match the unnormalised discrete Fourier-integral convention used
+            # for the nonrephasing branch. NumPy's ifft carries a built-in
+            # 1 / N factor, so undo it here to keep rephasing and
+            # nonrephasing on the same absolute scale.
+            spec_2d = np.fft.ifft(spec_2d, n=n_coh_ext, axis=0) * n_coh_ext
             out_types.append("rephasing")
 
         if not use_sparse_roi:

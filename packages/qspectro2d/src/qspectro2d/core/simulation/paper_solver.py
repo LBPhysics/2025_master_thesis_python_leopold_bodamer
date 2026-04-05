@@ -186,17 +186,21 @@ def _paper_liouvillian_context(sim_oqs: SimulationModuleOQS) -> dict:
 
     L_plus[idx_31, idx_11] = +1j * dip_op[3, 1]
     L_plus[idx_31, idx_21] = +1j * dip_op[3, 2]
+    L_plus[idx_31, idx_33] = -1j * dip_op[3, 1]
     L_minus[idx_31, idx_30] = -1j * dip_op[1, 0]
     L_minus[idx_13, idx_11] = np.conj(L_plus[idx_31, idx_11])
     L_minus[idx_13, idx_12] = np.conj(L_plus[idx_31, idx_21])
     L_plus[idx_13, idx_03] = np.conj(L_minus[idx_31, idx_30])
+    L_minus[idx_13, idx_33] = np.conj(L_plus[idx_31, idx_33])
 
     L_plus[idx_32, idx_22] = +1j * dip_op[3, 2]
     L_plus[idx_32, idx_12] = +1j * dip_op[3, 1]
+    L_plus[idx_32, idx_33] = -1j * dip_op[3, 2]
     L_minus[idx_32, idx_30] = -1j * dip_op[2, 0]
     L_minus[idx_23, idx_22] = np.conj(L_plus[idx_32, idx_22])
     L_minus[idx_23, idx_21] = np.conj(L_plus[idx_32, idx_12])
     L_plus[idx_23, idx_03] = np.conj(L_minus[idx_32, idx_30])
+    L_minus[idx_23, idx_33] = np.conj(L_plus[idx_32, idx_33])
 
     L_plus[idx_00, idx_01] = -1j * dip_op[1, 0]
     L_plus[idx_00, idx_02] = -1j * dip_op[2, 0]

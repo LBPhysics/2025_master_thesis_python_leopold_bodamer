@@ -58,51 +58,39 @@ def pulse_envelopes(
 def e_pulses(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
-    r"""
-    Return the slowly varying complex field coefficient ``e(t)``.
+    """
+    Return the slowly varying field envelope ``E(t)`` used in the paper-style RWA.
 
-    Convention
-    ----------
-    Each pulse envelope ``s_k(t)`` is already centered at its own peak time
-    ``t_k`` through ``single_pulse_envelope``. With pulse amplitude ``A_k`` and
-    explicit phase ``phi_k``, we use the paper-style convention
+    Following Mančal/Pisliakov (2006), the lab-frame positive-frequency field is
 
-        epsilon_k^(+)(t) = A_k s_k(t) exp[-i (omega_L (t-t_k) + phi_k)] ,
-
-    so that
-
-        epsilon^(+)(t) = exp(-i omega_L t) e(t)
+        epsilon^(+)(t) = exp(-i omega_L t) E(t),
 
     with
+        E(t) = sum_k A_k s_k(t) exp(-i phi_k),
 
-        e(t) = sum_k A_k s_k(t) exp(-i phi_k) .
-
-    Therefore the pulse timing enters only through the centered envelope
-    ``s_k(t)``, not through an additional carrier-phase factor ``omega_L t_k``.
+    where the pulse timing is carried by the centred envelope ``s_k(t)``.
     """
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
     if is_scalar:
         t_array = t_array[None]
 
-    wL = pulse_seq.carrier_freq_fs
     field_total = np.zeros_like(t_array, dtype=complex)
-    for pulse, phi_k, A_k, t_k in zip(
+    for pulse, phi_k, A_k in zip(
         pulse_seq.pulses,
         pulse_seq.pulse_phases,
         pulse_seq.pulse_amplitudes,
-        pulse_seq.pulse_peak_times,
     ):
         envelope = single_pulse_envelope(t_array, pulse)
-        phase_eff = phi_k - wL * t_k
-        field_total += A_k * envelope * np.exp(-1j * phase_eff)
+        field_total += A_k * np.exp(-1j * phi_k) * envelope
+
     return field_total[0] if is_scalar else field_total
 
 
 def epsilon_pulses(
     t: Union[float, np.ndarray], pulse_seq: LaserPulseSequence
 ) -> Union[complex, np.ndarray]:
-    r"""Return the lab-frame positive-frequency field ``epsilon^(+)(t)``."""
+    """Return the lab-frame positive-frequency field ``epsilon^(+)(t)``."""
     t_array = np.asarray(t, dtype=float)
     is_scalar = t_array.ndim == 0
     if is_scalar:

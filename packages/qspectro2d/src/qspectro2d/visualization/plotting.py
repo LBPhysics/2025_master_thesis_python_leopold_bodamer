@@ -5,8 +5,7 @@ from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.sparse as sp
-from matplotlib.colors import TwoSlopeNorm
-
+from matplotlib.colors import Normalize, TwoSlopeNorm 
 from plotstyle import COLORS, LINE_STYLES, init_style, simplify_figure_text
 
 from ..core.laser_system import (
@@ -124,6 +123,48 @@ def _plot_complex_series(
         )
 
 
+def _finite_values(data: np.ndarray) -> np.ndarray:
+    data = np.ma.asarray(data)
+    if np.ma.isMaskedArray(data):
+        values = data.compressed()
+    else:
+        values = np.ravel(np.asarray(data))
+
+    values = np.asarray(values, dtype=float)
+    return values[np.isfinite(values)]
+
+
+def _default_plot_norm(
+    component: str,
+    plot_data: np.ndarray,
+) -> Normalize | None:
+    """
+    Default plotting norm if no explicit norm is passed.
+
+    real/imag/phase:
+        symmetric about zero using the actually shown data
+    abs:
+        from 0 to the actually shown maximum
+    """
+    values = _finite_values(plot_data)
+    if values.size == 0:
+        return None
+
+    if component in {"real", "imag", "phase"}:
+        vmax = float(np.max(np.abs(values)))
+        if vmax <= 0.0:
+            return None
+        return TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+
+    if component == "abs":
+        vmax = float(np.max(values))
+        if vmax <= 0.0:
+            return None
+        return Normalize(vmin=0.0, vmax=vmax)
+
+    raise ValueError(f"Unsupported component: {component!r}")
+    
+    
 def plot_pulse_envelopes(
     times: np.ndarray,
     pulse_seq: LaserPulseSequence,
@@ -309,7 +350,7 @@ def plot_example_evo(
         _add_legend(axis, True)
 
     add_text_box(ax=axes[0], kwargs=kwargs)
-    axes[-1].set_xlabel(r"$t\,/\,\mathrm{fs}$")
+    #axes[-1].set_xlabel(r"$t\,/\,\mathrm{fs}$")
 
     plt.tight_layout()
     simplify_figure_text(fig)
@@ -325,9 +366,12 @@ def plot_el_field(
     ax: plt.Axes | None = None,
     cutoff_percent: float = 0.0,
     contour_lines: bool = False,
+    normalization_factor: float | None = None,
+    plot_norm: Normalize | None = None,
     **kwargs: dict,
 ) -> plt.Figure:
     """Plot emitted field."""
+
     if component not in {"real", "imag", "abs", "phase"}:
         raise ValueError("component must be one of: 'real', 'imag', 'abs', 'phase'")
     if domain not in {"time", "freq"}:
@@ -362,6 +406,12 @@ def plot_el_field(
         threshold = cutoff_percent / 100.0 * np.max(np.abs(plot_data))
         plot_data = np.ma.masked_where(np.abs(plot_data) < threshold, plot_data)
 
+    is_normalised = normalization_factor is not None and component != "phase"
+    if is_normalised:
+        factor = float(normalization_factor)
+        if np.isfinite(factor) and factor > 0.0:
+            plot_data = plot_data / factor
+
     fig, ax = _get_fig_ax(ax)
 
     if plot_data.ndim == 1:
@@ -372,6 +422,8 @@ def plot_el_field(
             component=component,
             domain=domain,
             base_title=base_title,
+            plot_norm=plot_norm,
+            is_normalised=is_normalised,
         )
     elif plot_data.ndim == 2:
         if axis_coh is None:
@@ -385,6 +437,8 @@ def plot_el_field(
             domain=domain,
             base_title=base_title,
             contour_lines=contour_lines,
+            plot_norm=plot_norm,
+            is_normalised=is_normalised,
         )
     else:
         raise ValueError("data must be 1D or 2D")
@@ -394,7 +448,6 @@ def plot_el_field(
     simplify_figure_text(fig)
     return fig
 
-
 def _plot_el_field_1d(
     *,
     ax: plt.Axes,
@@ -403,16 +456,14 @@ def _plot_el_field_1d(
     component: str,
     domain: str,
     base_title: str,
+    plot_norm: Normalize | None = None,
+    is_normalised: bool = False,
 ) -> None:
     color, linestyle = _style_for_component(component, 1, domain=domain)
 
     values = np.asarray(plot_data, dtype=float)
-    # if values.size > 0 and not np.all(np.isnan(values)):
-    #    max_abs = np.max(np.abs(values))
-    #    if max_abs > 0:
-    #        values = values / max_abs
-
-    x_label, y_label, title_suffix = _domain_labels(domain, 1)
+    x_label, _, title_suffix = _domain_labels(domain, 1)
+    y_label = _component_signal_label(component, is_normalised=is_normalised)
 
     ax.plot(
         axis_det,
@@ -423,9 +474,21 @@ def _plot_el_field_1d(
     )
     ax.set_title(base_title + " " + title_suffix)
     ax.set_xlabel(x_label)
-    ax.set_ylabel(r"$" + y_label.strip("$") + r" / \max(|" + y_label.strip("$") + r"|)$")
-    ax.legend()
+    ax.set_ylabel(y_label)
 
+    if plot_norm is not None:
+        vmin = getattr(plot_norm, "vmin", None)
+        vmax = getattr(plot_norm, "vmax", None)
+        if (
+            vmin is not None
+            and vmax is not None
+            and np.isfinite(vmin)
+            and np.isfinite(vmax)
+            and float(vmin) < float(vmax)
+        ):
+            ax.set_ylim(float(vmin), float(vmax))
+
+    ax.legend()
 
 def _plot_el_field_2d(
     *,
@@ -437,8 +500,11 @@ def _plot_el_field_2d(
     domain: str,
     base_title: str,
     contour_lines: bool = False,
+    plot_norm: Normalize | None = None,
+    is_normalised: bool = False,
 ) -> None:
-    colormap, norm = _style_for_component(component, 2, data=plot_data, domain=domain)
+    colormap, _ = _style_for_component(component, 2, data=plot_data, domain=domain)
+    norm = plot_norm if plot_norm is not None else _default_plot_norm(component, plot_data)
 
     def _axis_extent(axis: np.ndarray) -> tuple[float, float]:
         axis = np.asarray(axis, dtype=float)
@@ -478,12 +544,13 @@ def _plot_el_field_2d(
             ax=ax,
         )
 
-    x_label, y_label, cbar_label, title_suffix = _domain_labels(domain, 2)
+    x_label, y_label, _, title_suffix = _domain_labels(domain, 2)
+    cbar_label = _component_signal_label(component, is_normalised=is_normalised)
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_title(base_title + " " + title_suffix)
-    plt.colorbar(im, ax=ax, label=cbar_label)
 
+    plt.colorbar(im, ax=ax, label=cbar_label)
 
 def crop_nd_data_along_axis(
     coord_array: np.ndarray,
@@ -553,6 +620,24 @@ def _component_data(data: np.ndarray, component: str) -> tuple[np.ndarray, str]:
     if component == "phase":
         return np.angle(data), r"$\text{Phase}$"
     raise ValueError("Invalid component.")
+
+
+def _component_signal_label(component: str, *, is_normalised: bool = False) -> str:
+    """Return an explicit axis/colorbar label for the plotted component."""
+    if component == "real":
+        numerator = r"\mathrm{Re}[E_{k_S}]"
+    elif component == "imag":
+        numerator = r"\mathrm{Im}[E_{k_S}]"
+    elif component == "abs":
+        numerator = r"|E_{k_S}|"
+    elif component == "phase":
+        return r"$\arg(E_{k_S})$"
+    else:
+        raise ValueError(f"Invalid component: {component!r}")
+
+    if is_normalised:
+        return rf"${numerator} / |E_{{k_S}}|_{{\max}}$"
+    return rf"${numerator}$"
 
 
 def _domain_labels(domain: str, ndim: int):

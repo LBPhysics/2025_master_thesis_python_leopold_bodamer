@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -53,12 +54,31 @@ def _partial_paths(data_dir: Path, prefix: str) -> list[Path]:
     return sorted(data_dir.glob(f"{prefix}_batch_*.partial.npz"))
 
 
+def _resolve_data_dir(job_dir: Path, metadata: dict[str, Any]) -> Path:
+    if os.name == "nt" and str(metadata["data_dir"]).startswith("/"):
+        fallback_dir = (job_dir / "data").resolve()
+        if fallback_dir.exists():
+            print(f"Using local data dir for POSIX metadata path: {fallback_dir}")
+            return fallback_dir
+
+    configured_dir = Path(metadata["data_dir"]).expanduser()
+    if configured_dir.exists():
+        return configured_dir.resolve()
+
+    fallback_dir = (job_dir / "data").resolve()
+    if fallback_dir.exists():
+        print(f"Falling back to local data dir: {fallback_dir}")
+        return fallback_dir
+
+    return configured_dir.resolve()
+
+
 def process_job_dir(job_dir: Path, *, skip_if_exists: bool = False) -> Path:
     start_all = time.perf_counter()
     job_dir = job_dir.expanduser().resolve()
     metadata = _load_job_metadata(job_dir)
 
-    data_dir = Path(metadata["data_dir"]).resolve()
+    data_dir = _resolve_data_dir(job_dir, metadata)
     prefix = str(metadata["data_base_name"])
     final_filename = final_processed_filename(str(metadata["sim_type"]))
     final_path = data_dir / final_filename
@@ -203,7 +223,7 @@ def process_job_dir(job_dir: Path, *, skip_if_exists: bool = False) -> Path:
         filename=final_filename,
     )
 
-    print(f"✅ Final processed artifact written: {out_path}")
+    print(f"Final processed artifact written: {out_path}")
     print(f"Reduction completed in {_format_seconds(time.perf_counter() - start_all)}")
     return out_path
 

@@ -10,14 +10,16 @@
 # My ignored files
 /packages/plotstyle/figures/
 /scripts/simulation_configs/
-/figures/
-/notebooks/
+/tests/
+.pytest_visual/
+.mplconfig/
+.mplconfig_rebuild/
 /jobs/
 .idea/
-*.yaml
+*.ipynb
 
 # Ignore Python cache files
-__pycache__/
+*__pycache__/
 *.pyc
 *.pyo
 

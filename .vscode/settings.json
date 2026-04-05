@@ -10,6 +10,9 @@
         "**/.ipynb_checkpoints": true,
         "**/*.egg-info": true,
         "**/.pytest_cache": true,
+        "**/.pytest_visual": true,
+        "**/.mplconfig": true,
+        "**/.mplconfig_rebuild": true,
         "**/.coverage": true,
         "**/build": true,
         "**/dist": true

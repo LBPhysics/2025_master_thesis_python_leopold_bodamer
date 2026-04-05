@@ -7,6 +7,17 @@ SECTION: tuple[tuple[float, float], tuple[float, float]] | None = (
     (1.5, 1.7),  # detection axis
 )
 PAD_FACTOR: float = 50.0
+APODIZATION_WINDOW: str | None = None
+"""
+Set to ``None`` to disable apodization, or choose one of:
+    - "hann"
+    - "hamming"
+    - "blackman"
+
+The same window is applied along every transformed axis:
+    - 1D: detection axis
+    - 2D: coherence and detection axes
+"""
 CUTOFF_PERCENT: float = 0.0
 CONTOUR_LINES: bool = False
 TRANSPARENTCY: bool = False
@@ -14,8 +25,24 @@ FIG_FORMATS: list[str] = ["svg", "png"]  # Save both high-quality SVG and low-co
 __all__ = [
     "SECTION",
     "PAD_FACTOR",
+    "APODIZATION_WINDOW",
     "CUTOFF_PERCENT",
     "CONTOUR_LINES",
     "TRANSPARENTCY",
     "FIG_FORMATS",
 ]
+
+
+# -------------------------------------------------------------------------
+# Normalisation settings
+# -------------------------------------------------------------------------
+# If True, divide every plotted component by one common factor:
+#       max(abs(complex_data))
+# so that |signal| peaks at 1.
+NORMALISE_TIME_DOMAIN = True
+NORMALISE_FREQUENCY_DOMAIN = True
+
+# "all_signals"  -> one common factor across all signals in that domain
+# "per_signal"   -> one common factor per signal_type
+TIME_NORM_SCOPE = "all_signals"
+FREQ_NORM_SCOPE = "all_signals" # OR per_signal         FREQ_NORM_SCOPE = "all_signals" -> renders rephasing be be much weaker than non-rephasing,

@@ -238,7 +238,9 @@ def get_max_workers() -> int:
     return slurm_cpus if slurm_cpus > 0 else int(local_cpus)
 
 
-def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
+def _normalize_solver_state_constraints(
+    cfg: dict[str, Any], *, emit_runtime_warnings: bool = True
+) -> None:
     sim_cfg = cfg["config"]
     laser_cfg = cfg["laser"]
 
@@ -247,24 +249,26 @@ def _normalize_solver_state_constraints(cfg: dict[str, Any]) -> None:
     initial_state = str(sim_cfg.get("initial_state", "ground"))
 
     if solver == "paper_eqs" and not rwa_sl:
-        warnings.warn(
-            "solver='paper_eqs' requires laser.rwa_sl=True; forcing rwa_sl=True.",
-            category=UserWarning,
-            stacklevel=2,
-        )
+        if emit_runtime_warnings:
+            warnings.warn(
+                "solver='paper_eqs' requires laser.rwa_sl=True; forcing rwa_sl=True.",
+                category=UserWarning,
+                stacklevel=2,
+            )
         laser_cfg["rwa_sl"] = True
 
     if initial_state == "thermal" and solver != "redfield":
-        warnings.warn(
-            "config.initial_state='thermal' is only supported for solver='redfield'; "
-            "forcing initial_state='ground'.",
-            category=UserWarning,
-            stacklevel=2,
-        )
+        if emit_runtime_warnings:
+            warnings.warn(
+                "config.initial_state='thermal' is only supported for solver='redfield'; "
+                "forcing initial_state='ground'.",
+                category=UserWarning,
+                stacklevel=2,
+            )
         sim_cfg["initial_state"] = "ground"
 
 
-def _enforce_nonrwa_output_dt(cfg: dict[str, Any]) -> None:
+def _enforce_nonrwa_output_dt(cfg: dict[str, Any], *, emit_runtime_warnings: bool = True) -> None:
     """Actively reduce config.dt for raw no-RWA output if it would alias.
 
     Here config.dt is treated as the saved/output spacing.
@@ -291,21 +295,22 @@ def _enforce_nonrwa_output_dt(cfg: dict[str, Any]) -> None:
     omega_L_fs = float(convert_cm_to_fs(laser_cfg["carrier_freq_cm"]))  # rad/fs
     optical_period_fs = 2.0 * np.pi / omega_L_fs
     nyquist_dt_fs = optical_period_fs / 2.0
-    recommended_dt_fs = optical_period_fs / 4.0
+    recommended_dt_fs = optical_period_fs / 5.0
 
     dt_out = float(sim_cfg["dt"])
     if dt_out > nyquist_dt_fs:
         old_dt = dt_out
         sim_cfg["dt"] = recommended_dt_fs
 
-        warnings.warn(
-            "laser.rwa_sl=False: config.dt was automatically reduced from "
-            f"{old_dt:.6g} fs to {recommended_dt_fs:.6g} fs because the original "
-            "output spacing would alias the raw lab-frame optical carrier "
-            f"(T_opt={optical_period_fs:.6g} fs, Nyquist limit={nyquist_dt_fs:.6g} fs).",
-            category=UserWarning,
-            stacklevel=2,
-        )
+        if emit_runtime_warnings:
+            warnings.warn(
+                "laser.rwa_sl=False: config.dt was automatically reduced from "
+                f"{old_dt:.6g} fs to {recommended_dt_fs:.6g} fs because the original "
+                "output spacing would alias the raw lab-frame optical carrier "
+                f"(T_opt={optical_period_fs:.6g} fs, Nyquist limit={nyquist_dt_fs:.6g} fs).",
+                category=UserWarning,
+                stacklevel=2,
+            )
 
 
 def _inject_default_max_step(cfg: dict[str, Any]) -> None:
@@ -339,14 +344,16 @@ def _inject_default_max_step(cfg: dict[str, Any]) -> None:
     else:
         # Assume dt_out was already made carrier-safe by _enforce_nonrwa_output_dt.
         # Choose a modest amount of internal substepping relative to saved spacing.
-        no_rwa_substeps = 4  # use 2 for 0.5*dt_out, 4 for 0.25*dt_out
-        sim_cfg["solver_options"]["max_step"] = dt_out  # TODO / no_rwa_substeps
+        no_rwa_substeps = 1  # use 2 for 0.5*dt_out, 4 for 0.25*dt_out
+        sim_cfg["solver_options"]["max_step"] = dt_out  / no_rwa_substeps
 
 
 # -----------------------------------------------------------------------------
 # Public config API
 # -----------------------------------------------------------------------------
-def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def merge_config(
+    user_cfg: Mapping[str, Any] | None = None, *, emit_runtime_warnings: bool = True
+) -> dict[str, Any]:
     cfg = get_defaults()
     if user_cfg:
         _merge_dict(cfg, user_cfg)
@@ -369,16 +376,16 @@ def merge_config(user_cfg: Mapping[str, Any] | None = None) -> dict[str, Any]:
         sim_cfg.get("solver_run_kwargs", {}),
     )
 
-    _normalize_solver_state_constraints(cfg)
-    _enforce_nonrwa_output_dt(cfg)
+    _normalize_solver_state_constraints(cfg, emit_runtime_warnings=emit_runtime_warnings)
+    _enforce_nonrwa_output_dt(cfg, emit_runtime_warnings=emit_runtime_warnings)
     _inject_default_max_step(cfg)
     return cfg
 
 
-def load_config(path: str | Path | None = None) -> dict[str, Any]:
+def load_config(path: str | Path | None = None, *, emit_runtime_warnings: bool = True) -> dict[str, Any]:
     if path is None:
-        return merge_config()
-    return merge_config(_read_yaml(Path(path)))
+        return merge_config(emit_runtime_warnings=emit_runtime_warnings)
+    return merge_config(_read_yaml(Path(path)), emit_runtime_warnings=emit_runtime_warnings)
 
 
 def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = True) -> None:
@@ -572,9 +579,9 @@ def resolve_config(
     """Resolve config from path or dict, merging and validating."""
     cfg: dict[str, Any]
     if config_or_path is None or isinstance(config_or_path, (str, Path)):
-        cfg = load_config(config_or_path)
+        cfg = load_config(config_or_path, emit_runtime_warnings=emit_runtime_warnings)
     else:
-        cfg = merge_config(config_or_path)
+        cfg = merge_config(config_or_path, emit_runtime_warnings=emit_runtime_warnings)
     validate_config(cfg, emit_runtime_warnings=emit_runtime_warnings)
     return cfg
 
