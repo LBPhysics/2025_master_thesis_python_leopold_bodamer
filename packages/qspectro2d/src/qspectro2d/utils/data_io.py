@@ -110,23 +110,6 @@ def _info_path(directory: Path, prefix: str) -> Path:
     return directory / f"{prefix}.pkl"
 
 
-def build_run_metadata(
-    *,
-    signal_types: Sequence[str],
-    sim_type: str,
-    sample_index: int,
-    **extra: Any,
-) -> dict[str, Any]:
-    """Build canonical per-run metadata with required keys at the source level."""
-    metadata: dict[str, Any] = {
-        "signal_types": list(signal_types),
-        "sim_type": str(sim_type),
-        "sample_index": int(sample_index),
-    }
-    metadata.update(extra)
-    return metadata
-
-
 def pad_or_crop_signals(
     signal_arrays: Sequence[np.ndarray],
     target_length: int,
@@ -471,11 +454,3 @@ def allocate_job_dir(root: Path, base_label: str) -> Path:
         counter += 1
 
 
-def job_label_token(sim_config, system, *, sim_type: str | None = None) -> str:
-    """Return a flattened identifier derived from the config and system."""
-
-    base = generate_base_sub_dir(sim_config, system)
-    parts = [part for part in base.parts if part and str(part).lower() != "none"]
-    prefix = (sim_type or getattr(sim_config, "sim_type", None) or "sim").strip()
-    token_parts = [prefix, *parts]
-    return "_".join(token_parts)

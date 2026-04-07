@@ -75,31 +75,3 @@ __all__ = [
 ]
 
 
-# PACKAGE INFORMATION
-def get_package_info():
-    """
-    Display package information and available modules.
-    """
-    info = f"""
-QSpectro2D Package Information
-=============================
-Version: {__version__}
-Author: {__author__}
-
-Main subpackages:
-- config: Configuration settings and constants
-- core: Fundamental simulation components (AtomicSystem, LaserPulseSequence, solvers, bath models)
-- spectroscopy: 1D/2D spectroscopy calculations and post-processing
-- utils: File I/O, units, and helper utilities
-- visualization: Plotting and data visualization tools
-
-For detailed documentation, see individual module docstrings.
-"""
-    return info
-
-
-def list_available_functions():
-    """
-    List all functions available in the main namespace.
-    """
-    return __all__
