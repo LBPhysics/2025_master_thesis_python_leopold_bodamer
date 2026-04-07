@@ -20,7 +20,7 @@ import numpy as np
 
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_t_det, compute_times_local
-from ..diagnostics.solver_inputs import log_redfield_solver_debug
+from ..diagnostics.solver_inputs import log_lindblad_solver_debug, log_redfield_solver_debug
 
 __all__ = [
     "compute_evolution",
@@ -130,7 +130,21 @@ def compute_evolution(
         except Exception:
             log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
             raise
-    elif solver in {"lindblad", "paper_eqs"}:
+    elif solver == "lindblad":
+        try:
+            result = mesolve(
+                H=hamiltonian,
+                rho0=state0,
+                tlist=t_list,
+                c_ops=sim_oqs.decay_channels,
+                e_ops=e_ops,
+                options=options,
+                **run_kwargs,
+            )
+        except Exception:
+            log_lindblad_solver_debug(sim_oqs, t_list, run_kwargs, options)
+            raise
+    elif solver == "paper_eqs":
         result = mesolve(
             H=hamiltonian,
             rho0=state0,

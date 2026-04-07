@@ -112,6 +112,12 @@ def compute_emitted_field_components(
     signal_types = list(config.signal_types)
     phase_values = [float(phi) for phi in phase_cycling_phases(config.n_phases)]
     freq_vector_list = [float(x) for x in freq_vector]
+    freq_vector_debug = np.array2string(
+        np.asarray(freq_vector_list, dtype=float),
+        precision=12,
+        separator=", ",
+        max_line_width=1000,
+    )
 
     time_mask = None
     if time_cut is not None and np.isfinite(time_cut):
@@ -129,13 +135,20 @@ def compute_emitted_field_components(
 
     issues: list[str] = []
 
-    def _result_key(worker_kind: str, phi1: float, phi2: float) -> str:
-        return f"{worker_kind}(phi1={phi1:.6g}, phi2={phi2:.6g})"
-
-    def _normalise_worker_result(
+    def _result_key(
         worker_kind: str,
         phi1: float,
         phi2: float,
+        active_pulses: list[int] | None,
+    ) -> str:
+        pulses_label: str | list[int] = "all" if active_pulses is None else list(active_pulses)
+        return (
+            f"{worker_kind}(phi1={phi1:.6g}, phi2={phi2:.6g}, "
+            f"active_pulses={pulses_label})"
+        )
+
+    def _normalise_worker_result(
+        worker_label: str,
         result: tuple[np.ndarray, np.ndarray],
     ) -> np.ndarray:
         _, polarisation = result
@@ -143,7 +156,7 @@ def compute_emitted_field_components(
 
         if polarisation.shape != (component_count,):
             raise ValueError(
-                f"{_result_key(worker_kind, phi1, phi2)} returned shape "
+                f"{worker_label} returned shape "
                 f"{polarisation.shape}, expected {(component_count,)}"
             )
 
@@ -155,7 +168,7 @@ def compute_emitted_field_components(
                 else float("nan")
             )
             raise ValueError(
-                f"{_result_key(worker_kind, phi1, phi2)} returned non-finite values "
+                f"{worker_label} returned non-finite values "
                 f"starting at index={first_bad}, t_det={bad_t:.6g} fs"
             )
 
@@ -185,7 +198,7 @@ def compute_emitted_field_components(
 
     assert executor is not None
     try:
-        futures: dict[Any, tuple[str, float, float]] = {}
+        futures: dict[Any, tuple[str, float, float, list[int] | None]] = {}
 
         for worker_kind, phi1, phi2, active_pulses in job_specs:
             fut = executor.submit(
@@ -198,20 +211,22 @@ def compute_emitted_field_components(
                 detection_window_list,
                 active_pulses,
             )
-            futures[fut] = (worker_kind, phi1, phi2)
+            futures[fut] = (worker_kind, phi1, phi2, active_pulses)
 
         for future in as_completed(futures):
-            worker_kind, phi1_requested, phi2_requested = futures[future]
+            worker_kind, phi1_requested, phi2_requested, active_pulses = futures[future]
+            worker_label = (
+                f"{_result_key(worker_kind, phi1_requested, phi2_requested, active_pulses)} "
+                f"@ t_coh={t_coh_value:.6g}, freq_vector={freq_vector_debug}"
+            )
 
             try:
                 polarisation = _normalise_worker_result(
-                    worker_kind,
-                    phi1_requested,
-                    phi2_requested,
+                    worker_label,
                     future.result(),
                 )
             except Exception as exc:
-                issues.append(f"{_result_key(worker_kind, phi1_requested, phi2_requested)}: {exc}")
+                issues.append(f"{worker_label}: {exc}")
                 continue
 
             if worker_kind == "total":

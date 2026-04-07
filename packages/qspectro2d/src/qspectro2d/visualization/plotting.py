@@ -540,7 +540,7 @@ def _add_component_colorbars(
 
 
 def _signal_grid_figsize(n_rows: int, n_cols: int) -> tuple[float, float]:
-    panel = 5.0
+    panel = 4.0
     w_gap = 0.0
     h_gap = 0.0
     left = 0.0
