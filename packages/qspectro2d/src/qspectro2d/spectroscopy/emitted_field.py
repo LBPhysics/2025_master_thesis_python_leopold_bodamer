@@ -55,18 +55,56 @@ def _worker_polarisation(
     active_pulses: list[int] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Worker for one phase-cycling polarisation calculation."""
+    from qutip.solver.integrator.integrator import IntegratorException
+
+    from qspectro2d.config import resolve_config
     from qspectro2d.config.factory import load_simulation
 
-    sim_oqs = load_simulation(config_source, emit_runtime_warnings=False)
-    sim_oqs.update_delays(t_coh=t_coh)
-    sim_oqs.system.update_frequencies_cm(freq_vector)
-    sim_oqs.refresh_cache()
+    def _build_run_sim(method_override: str | None = None):
+        simulation_source: Mapping[str, Any] | str = config_source
+        if method_override is not None:
+            resolved_cfg = resolve_config(config_source, emit_runtime_warnings=False)
+            resolved_cfg.setdefault("config", {}).setdefault("solver_options", {})["method"] = (
+                method_override
+            )
+            simulation_source = resolved_cfg
 
-    run_sim = sim_oqs if active_pulses is None else sim_oqs.with_pulse_subset(active_pulses)
-    _set_phase_subset(run_sim, phi1=phi1, phi2=phi2, active_pulses=active_pulses)
+        sim_oqs = load_simulation(simulation_source, emit_runtime_warnings=False)
+        sim_oqs.update_delays(t_coh=t_coh)
+        sim_oqs.system.update_frequencies_cm(freq_vector)
+        sim_oqs.refresh_cache()
 
+        run_sim = sim_oqs if active_pulses is None else sim_oqs.with_pulse_subset(active_pulses)
+        _set_phase_subset(run_sim, phi1=phi1, phi2=phi2, active_pulses=active_pulses)
+        return run_sim
+
+    run_sim = _build_run_sim()
     t_det = np.asarray(detection_window, dtype=float)
-    _, polarisation = compute_polarisation_over_window(run_sim, t_det)
+    try:
+        _, polarisation = compute_polarisation_over_window(run_sim, t_det)
+    except IntegratorException as exc:
+        current_method = str(run_sim.simulation_config.solver_options.get("method", "")).lower()
+        if current_method != "lsoda":
+            print(
+                f"\n\nWARNING: ODE solver '{current_method}' failed;\n\n")
+            raise
+
+        print(
+            "WARNING: LSODA worker failed; retrying with BDF "
+            f"(solver={run_sim.simulation_config.ode_solver}, "
+            f"t_coh={float(t_coh):.6g}, phi1={float(phi1):.6g}, phi2={float(phi2):.6g}, "
+            f"active_pulses={'all' if active_pulses is None else list(active_pulses)})",
+            flush=True,
+        )
+        try:
+            retry_run_sim = _build_run_sim(method_override="bdf")
+            _, polarisation = compute_polarisation_over_window(retry_run_sim, t_det)
+        except Exception as retry_exc:
+            raise RuntimeError(
+                f"LSODA failed with {type(exc).__name__}: {exc}; "
+                f"BDF retry also failed with {type(retry_exc).__name__}: {retry_exc}"
+            ) from retry_exc
+
     return t_det, polarisation
 
 

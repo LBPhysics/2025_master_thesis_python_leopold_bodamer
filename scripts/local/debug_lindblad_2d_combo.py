@@ -81,22 +81,8 @@ def _apply_worker_phases(
     raise ValueError(f"Unsupported worker_kind={worker_kind!r}")
 
 
-def _build_solver_times(sim_oqs, *, t0_override: float | None) -> tuple[np.ndarray, np.ndarray]:
-    auto_times = compute_times_local(sim_oqs.simulation_config)
-    if t0_override is None:
-        return auto_times, auto_times
-
-    dt = float(sim_oqs.simulation_config.dt)
-    t_det = float(sim_oqs.simulation_config.t_det)
-    t0 = float(t0_override)
-    n_steps = int(np.floor((t_det - t0) / dt)) + 1
-    if n_steps < 2:
-        raise ValueError(
-            f"t0_override={t0} yields fewer than two solver points for t_det={t_det}, dt={dt}"
-        )
-
-    solver_times = t0 + dt * np.arange(n_steps, dtype=float)
-    return auto_times, solver_times
+def _build_solver_times(sim_oqs) -> np.ndarray:
+    return compute_times_local(sim_oqs.simulation_config)
 
 
 def _print_case_header(
@@ -110,7 +96,6 @@ def _print_case_header(
     phi1: float,
     phi2: float,
     sim_oqs,
-    auto_times: np.ndarray,
     solver_times: np.ndarray,
     method_override: str | None,
 ) -> None:
@@ -145,8 +130,7 @@ def _print_case_header(
             for start, end in (pulse.active_time_range for pulse in sim_oqs.laser.pulses)
         ],
     )
-    print("auto solver t0:", float(auto_times[0]))
-    print("actual solver t0:", float(solver_times[0]))
+    print("solver t0:", float(solver_times[0]))
     print("solver_times len:", int(solver_times.size))
     print("solver_times first few:", solver_times[:5].tolist())
     print("solver_times last few:", solver_times[-5:].tolist())
@@ -164,7 +148,6 @@ def _run_one_case(
     phi1: float,
     phi2: float,
     t_coh_value: float,
-    t0_override: float | None,
     method_override: str | None,
 ) -> bool:
     sim_oqs = load_simulation(resolved_cfg, emit_runtime_warnings=False)
@@ -181,7 +164,7 @@ def _run_one_case(
         phi2=phi2,
     )
 
-    auto_times, solver_times = _build_solver_times(run_sim, t0_override=t0_override)
+    solver_times = _build_solver_times(run_sim)
     detection_window = compute_t_det(run_sim.simulation_config)
 
     _print_case_header(
@@ -194,7 +177,6 @@ def _run_one_case(
         phi1=phi1,
         phi2=phi2,
         sim_oqs=run_sim,
-        auto_times=auto_times,
         solver_times=solver_times,
         method_override=method_override,
     )
@@ -254,12 +236,6 @@ def _parse_args() -> argparse.Namespace:
         help="Override config.solver_options.method for this debug run",
     )
     parser.add_argument(
-        "--t0-override",
-        type=float,
-        default=None,
-        help="Force the solver-local start time and build an explicit solver grid",
-    )
-    parser.add_argument(
         "--max-workers",
         type=int,
         default=1,
@@ -301,7 +277,6 @@ def main() -> None:
             phi1=float(args.phi1),
             phi2=float(args.phi2),
             t_coh_value=float(t_coh_value),
-            t0_override=args.t0_override,
             method_override=args.method_override,
         )
         any_failed = any_failed or (not ok)

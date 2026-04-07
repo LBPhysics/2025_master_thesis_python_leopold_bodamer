@@ -92,7 +92,7 @@ DEFAULTS = {
     },
     "config": {
         "solver": "redfield",
-        "solver_options": {"method": "lsoda"},
+        "solver_options": {"method": "bdf"},
         "solver_run_kwargs": {
             "sec_cutoff": 1.0e-3,
         },
