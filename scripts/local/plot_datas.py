@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 import argparse
 import os
 import sys
@@ -18,10 +19,14 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from plotstyle import FIG_FORMAT, save_fig
+from plotstyle import save_fig
 from qspectro2d import load_simulation_data
 from qspectro2d.spectroscopy.post_processing import compute_spectra
-from qspectro2d.visualization.plotting import convert_plot_axes, plot_el_field
+from qspectro2d.visualization.plotting import (
+    convert_plot_axes,
+    plot_el_field_signal_grid,
+    validate_plot_components,
+)
 from common.plot_settings import (
     CUTOFF_PERCENT,
     CONTOUR_LINES,
@@ -34,23 +39,20 @@ from common.plot_settings import (
     NORMALISE_FREQUENCY_DOMAIN,
     TIME_NORM_SCOPE,
     FREQ_NORM_SCOPE,
+    COMPONENTS,
 )
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-for _parent in SCRIPTS_DIR.parents:
-    if (_parent / ".git").is_dir():
-        PROJECT_ROOT = _parent
-        break
-else:
-    raise RuntimeError("Could not locate project root (missing .git directory)")
-
-SIGNAL_CODE = {
-    "rephasing": "R",
-    "nonrephasing": "NR",
-    "absorptive": "A",
-}
+SignalData = np.ndarray | sp.spmatrix
 
 print = partial(print, flush=True)
+
+
+@dataclass
+class DomainPlotPayload:
+    signal_labels: list[str]
+    signal_datas: list[SignalData]
+    normalization_factors: list[float | None]
+    plot_norms_by_signal: list[dict[str, Normalize | None]]
 
 def _format_seconds(seconds: float) -> str:
     if seconds < 1:
@@ -64,13 +66,55 @@ def _format_seconds(seconds: float) -> str:
     return f"{int(hours)}h {int(mins)}m {secs:04.1f}s"
 
 
+def _print_section(title: str) -> None:
+    print(f"\n{title}")
+    print("-" * len(title))
+
+
+def _print_kv(label: str, value: object, *, indent: int = 2) -> None:
+    print(f"{' ' * indent}{label:<22} {value}")
+
+
+def _format_signal_shapes(signals: dict[str, np.ndarray | sp.spmatrix]) -> str:
+    return ", ".join(f"{name}: {signal.shape}" for name, signal in signals.items())
+
+
+def _print_path(label: str, path: Path | str, *, indent: int = 2) -> None:
+    print(f"{' ' * indent}{label}:")
+    print(f"{' ' * (indent + 2)}{Path(path)}")
+
+
+def _print_saved_paths(saved: Path | str | Sequence[Path | str]) -> None:
+    saved_paths = saved if isinstance(saved, (list, tuple)) else [saved]
+    print("  Saved files:")
+    for path in saved_paths:
+        suffix = Path(path).suffix.lstrip(".").upper() or "FILE"
+        print(f"    [{suffix}] {Path(path)}")
+
+
+def _parse_apodization_window(value: str | None) -> str | None:
+    if value is None:
+        return APODIZATION_WINDOW
+
+    cleaned = value.strip().lower()
+    if cleaned == "none":
+        return None
+    if cleaned in {"hann", "hamming", "blackman"}:
+        return cleaned
+    raise ValueError(
+        "apodization window must be one of: none, hann, hamming, blackman"
+    )
+
+
 def _resolve_figures_dir(job_metadata: dict[str, Any], *, artifact_path: Path | str | None = None) -> Path:
     figures_dir = Path(job_metadata["figures_dir"]).expanduser()
     if artifact_path is not None and os.name == "nt" and str(job_metadata["figures_dir"]).startswith("/"):
         artifact_path = Path(artifact_path).resolve()
         fallback_dir = artifact_path.parent.parent / "figures"
         fallback_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Using local figures dir for POSIX metadata path: {fallback_dir}")
+        print("\nFigures directory fallback:")
+        print("  POSIX metadata path is not writable on Windows.")
+        _print_path("Using local figures dir", fallback_dir, indent=2)
         return fallback_dir
 
     try:
@@ -83,7 +127,9 @@ def _resolve_figures_dir(job_metadata: dict[str, Any], *, artifact_path: Path | 
         artifact_path = Path(artifact_path).resolve()
         fallback_dir = artifact_path.parent.parent / "figures"
         fallback_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Falling back to local figures dir: {fallback_dir}")
+        print("\nFigures directory fallback:")
+        print("  Could not create the metadata-defined figures directory.")
+        _print_path("Using local figures dir", fallback_dir, indent=2)
         return fallback_dir
 
 
@@ -93,23 +139,40 @@ def _extract_config_stem(job_metadata: dict[str, Any]) -> str:
         raise KeyError("Missing required job_metadata['config_stem']")
     return value
 
+def _domain_figure_stem(
+    domain: str,
+    *,
+    components: Sequence[str],
+    config_stem: str,
+    apodization_window: str | None = None,
+) -> str:
+    stem = f"{domain}_all_signals_{_component_tag(components)}_{config_stem}"
+    if domain == "freq" and apodization_window is not None:
+        stem = f"{stem}_apod_{apodization_window}"
+    return stem
 
-def _figure_stem(domain: str, signal: str, component: str, *, config_stem: str) -> str:
-    try:
-        signal_code = SIGNAL_CODE[str(signal)]
-    except KeyError as exc:
-        raise KeyError(f"Unsupported signal type for filename mapping: {signal!r}") from exc
 
-    return f"{domain}_{signal_code}_{component}_{config_stem}"
+def _component_tag(components: Sequence[str]) -> str:
+    return "_".join(components)
 
 
-def _unique_fig_path(figures_dir: Path, stem: str) -> Path:
+def _domain_suptitle(domain: str) -> str:
+    return "Time Domain Signals" if domain == "time" else "Frequency Domain Spectra"
+
+
+def _unique_fig_path(figures_dir: Path, stem: str, *, formats: Sequence[str]) -> Path:
     figures_dir.mkdir(parents=True, exist_ok=True)
-    default_ext = f".{FIG_FORMAT.lstrip('.')}"
+    suffixes = {
+        f".{str(fmt).strip().lstrip('.').lower()}"
+        for fmt in formats
+        if str(fmt).strip()
+    }
+    if not suffixes:
+        suffixes = {".png"}
     candidate = figures_dir / stem
     base = candidate
     counter = 1
-    while candidate.with_suffix(default_ext).exists() or candidate.with_suffix(".png").exists():
+    while any(candidate.with_suffix(suffix).exists() for suffix in suffixes):
         candidate = base.with_name(f"{stem}_{counter:02d}")
         counter += 1
     return candidate
@@ -207,10 +270,7 @@ def _plot_norm_for_component(
         return None
 
     if component == "abs":
-        if normalization_factor is not None:
-            return Normalize(vmin=0.0, vmax=1.0)
-
-        vmax = _max_abs_complex_data(data)
+        vmax = _normalised_peak(_max_abs_complex_data(data), normalization_factor)
         if np.isfinite(vmax) and vmax > 0.0:
             return Normalize(vmin=0.0, vmax=vmax)
         return None
@@ -230,15 +290,14 @@ def _print_signal_scale_summary(
     raw_imag_peak = _max_abs_component_data(data, "imag")
     signed_peak = max(raw_real_peak, raw_imag_peak)
 
-    print(f"  [{domain}] raw peak |S| = {raw_abs_peak:.6e}")
+    print(f"  [{domain}] {signal_type}")
+    _print_kv("raw peak |S|", f"{raw_abs_peak:.6e}", indent=4)
 
     if normalization_factor is None:
-        print(
-            "  "
-            f"[{domain}] signed display range for {signal_type}: "
-            f"[-{signed_peak:.3e}, {signed_peak:.3e}] "
-            f"with |Re|max={raw_real_peak:.3e}, |Im|max={raw_imag_peak:.3e}"
-        )
+        _print_kv("|Re|max", f"{raw_real_peak:.3e}", indent=4)
+        _print_kv("|Im|max", f"{raw_imag_peak:.3e}", indent=4)
+        _print_kv("signed display", f"[-{signed_peak:.3e}, {signed_peak:.3e}]", indent=4)
+        print("")
         return
 
     norm_abs_peak = _normalised_peak(raw_abs_peak, normalization_factor)
@@ -246,14 +305,132 @@ def _print_signal_scale_summary(
     norm_imag_peak = _normalised_peak(raw_imag_peak, normalization_factor)
     norm_signed_peak = max(norm_real_peak, norm_imag_peak)
 
-    print(
-        "  "
-        f"[{domain}] normalisation factor = {float(normalization_factor):.6e}; "
-        f"normalised |S|max={norm_abs_peak:.3f}, "
-        f"|Re|max={norm_real_peak:.3f}, "
-        f"|Im|max={norm_imag_peak:.3f}, "
-        f"signed display range=[-{norm_signed_peak:.3f}, {norm_signed_peak:.3f}]"
+    _print_kv("normalisation", f"{float(normalization_factor):.6e}", indent=4)
+    _print_kv("normalised |S|max", f"{norm_abs_peak:.3f}", indent=4)
+    _print_kv("normalised |Re|max", f"{norm_real_peak:.3f}", indent=4)
+    _print_kv("normalised |Im|max", f"{norm_imag_peak:.3f}", indent=4)
+    _print_kv("signed display", f"[-{norm_signed_peak:.3f}, {norm_signed_peak:.3f}]", indent=4)
+    print("")
+
+
+def _normalisation_factor_for_signal(
+    data: SignalData,
+    *,
+    normalise: bool,
+    norm_scope: str,
+    global_factor: float | None,
+) -> float | None:
+    if not normalise:
+        return None
+    if norm_scope == "all_signals":
+        return global_factor
+    return _group_normalisation_factor([data])
+
+
+def _build_domain_plot_payload(
+    *,
+    domain: str,
+    signal_items: Sequence[tuple[str, SignalData]],
+    components: Sequence[str],
+    normalise: bool,
+    norm_scope: str,
+) -> DomainPlotPayload:
+    signal_items = list(signal_items)
+    if normalise and norm_scope == "all_signals":
+        global_factor = _group_normalisation_factor([data for _, data in signal_items])
+    else:
+        global_factor = None
+
+    payload = DomainPlotPayload(
+        signal_labels=[],
+        signal_datas=[],
+        normalization_factors=[],
+        plot_norms_by_signal=[],
     )
+
+    for signal_type, signal_data in signal_items:
+        normalization_factor = _normalisation_factor_for_signal(
+            signal_data,
+            normalise=normalise,
+            norm_scope=norm_scope,
+            global_factor=global_factor,
+        )
+        _print_signal_scale_summary(
+            domain=domain,
+            signal_type=signal_type,
+            data=signal_data,
+            normalization_factor=normalization_factor,
+        )
+        payload.signal_labels.append(signal_type)
+        payload.signal_datas.append(signal_data)
+        payload.normalization_factors.append(normalization_factor)
+        payload.plot_norms_by_signal.append(
+            {
+                component: _plot_norm_for_component(
+                    signal_data,
+                    component,
+                    normalization_factor,
+                )
+                for component in components
+            }
+        )
+
+    return payload
+
+
+def _render_domain_figure(
+    *,
+    domain: str,
+    axis_det: np.ndarray,
+    signal_items: Sequence[tuple[str, SignalData]],
+    components: Sequence[str],
+    figures_root: Path,
+    config_stem: str,
+    normalise: bool,
+    norm_scope: str,
+    axis_coh: np.ndarray | None = None,
+    cutoff_percent: float = 0.0,
+    contour_lines: bool = False,
+    apodization_window: str | None = None,
+) -> None:
+    payload = _build_domain_plot_payload(
+        domain=domain,
+        signal_items=signal_items,
+        components=components,
+        normalise=normalise,
+        norm_scope=norm_scope,
+    )
+
+    print(f"  Building combined {domain}-domain figure...\n")
+    fig = plot_el_field_signal_grid(
+        axis_det=axis_det,
+        signal_datas=payload.signal_datas,
+        signal_labels=payload.signal_labels,
+        axis_coh=axis_coh,
+        components=components,
+        domain=domain,
+        cutoff_percent=cutoff_percent,
+        contour_lines=contour_lines,
+        normalization_factors=payload.normalization_factors,
+        plot_norms_by_signal=payload.plot_norms_by_signal,
+        suptitle=_domain_suptitle(domain),
+    )
+    saved = save_fig(
+        fig,
+        filename=_unique_fig_path(
+            figures_root,
+            _domain_figure_stem(
+                domain,
+                components=components,
+                config_stem=config_stem,
+                apodization_window=apodization_window,
+            ),
+            formats=FIG_FORMATS,
+        ),
+        transparent=TRANSPARENTCY,
+        formats=FIG_FORMATS,
+    )
+    _print_saved_paths(saved)
 
 
 def main() -> None:
@@ -271,10 +448,25 @@ def main() -> None:
         action="store_true",
         help="Only plot time-domain signals (skip frequency-domain plots).",
     )
+    parser.add_argument(
+        "--freq_only",
+        action="store_true",
+        help="Only plot frequency-domain signals (skip time-domain plots).",
+    )
+    parser.add_argument(
+        "--apodization_window",
+        type=str,
+        default=None,
+        help="Override APODIZATION_WINDOW with one of: none, hann, hamming, blackman.",
+    )
     args = parser.parse_args()
+    apodization_window = _parse_apodization_window(args.apodization_window)
+    if args.time_only and args.freq_only:
+        raise ValueError("--time_only and --freq_only cannot be used together")
 
     start_all = time.perf_counter()
-    print(f"Starting plot_datas for: {args.abs_path}")
+    _print_section("plot_datas")
+    _print_path("Input artifact", args.abs_path)
 
     step_start = time.perf_counter()
     data = load_simulation_data(args.abs_path)
@@ -293,84 +485,51 @@ def main() -> None:
     rwa_sl = simulation_config.rwa_sl
     carrier_freq_cm = simulation_config.carrier_freq_cm
 
-    print(
-        f"Available signals: {list(signals.keys())}, shapes={[s.shape for s in signals.values()]}"
-    )
-    print(
-        f"Loaded t_det shape: {t_det.shape}; t_coh shape: {t_coh.shape if t_coh is not None else 'None'}"
-    )
-    print(f"Carrier frequency: {carrier_freq_cm:.2f} cm^-1")
-    print(f"Load time: {_format_seconds(time.perf_counter() - step_start)}")
+    _print_section("Loaded Data")
+    _print_kv("signals", list(signals.keys()))
+    _print_kv("signal shapes", _format_signal_shapes(signals))
+    _print_kv("t_det shape", t_det.shape)
+    _print_kv("t_coh shape", t_coh.shape if t_coh is not None else "None")
+    _print_kv("carrier frequency", f"{carrier_freq_cm:.2f} cm^-1")
+    _print_kv("load time", _format_seconds(time.perf_counter() - step_start))
 
-    components = ["real", "imag", "abs"]
+    components = validate_plot_components(COMPONENTS)
     figures_root = _resolve_figures_dir(data["job_metadata"], artifact_path=args.abs_path)
     config_stem = _extract_config_stem(data["job_metadata"])
-    print(f"Config stem: {config_stem}")
+    _print_section("Plot Settings")
+    _print_kv("config stem", config_stem)
+    _print_kv("components", list(components))
+    _print_kv("pad factor", PAD_FACTOR)
+    _print_kv("apodization", apodization_window)
+    _print_kv("time transparent", TRANSPARENTCY)
+    _print_kv("freq transparent", TRANSPARENTCY)
+    _print_path("Figures folder", figures_root)
 
-    # ---------------------------------------------------------------------
-    # Time-domain normalisation factor
-    # ---------------------------------------------------------------------
-    if NORMALISE_TIME_DOMAIN and TIME_NORM_SCOPE == "all_signals":
-        time_norm_factor_global = _group_normalisation_factor(list(signals.values()))
+    if args.freq_only:
+        _print_section("Time Domain")
+        print("  Time-domain plotting skipped (--freq_only set).")
     else:
-        time_norm_factor_global = None
-
-    for signal_type, sig_data in signals.items():
-        signal_start = time.perf_counter()
-        print(f"Plotting time-domain signal: {signal_type}")
-
-        if NORMALISE_TIME_DOMAIN:
-            if TIME_NORM_SCOPE == "all_signals":
-                time_norm_factor = time_norm_factor_global
-            else:
-                time_norm_factor = _group_normalisation_factor([sig_data])
-        else:
-            time_norm_factor = None
-
-        _print_signal_scale_summary(
+        _print_section("Time Domain")
+        _render_domain_figure(
             domain="time",
-            signal_type=signal_type,
-            data=sig_data,
-            normalization_factor=time_norm_factor,
-        )
-
-        for component in components:
-            plot_norm = _plot_norm_for_component(
-                sig_data,
-                component,
-                time_norm_factor,
-            )
-
-            fig = plot_el_field(
-                axis_det=t_det,
-                data=sig_data,
-                axis_coh=t_coh,
-                component=component,
-                domain="time",
-                normalization_factor=time_norm_factor,
-                plot_norm=plot_norm,
-            )
-            saved = save_fig(
-                fig,
-                filename=_unique_fig_path(
-                    figures_root,
-                    _figure_stem("time", signal_type, component, config_stem=config_stem),
-                ),
-                formats=FIG_FORMATS,
-            )
-            print(f"Saved: {saved}")
-
-        print(
-            f"Time-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}"
+            axis_det=t_det,
+            signal_items=list(signals.items()),
+            components=components,
+            figures_root=figures_root,
+            config_stem=config_stem,
+            normalise=NORMALISE_TIME_DOMAIN,
+            norm_scope=TIME_NORM_SCOPE,
+            axis_coh=t_coh,
         )
 
     if args.time_only:
-        print("Skipping frequency-domain plots (--time_only set)")
-        print(f"Figures folder: {figures_root}")
-        print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
+        _print_section("Done")
+        print("  Frequency-domain plotting skipped (--time_only set).")
+        _print_path("Figures folder", figures_root)
+        _print_kv("total time", _format_seconds(time.perf_counter() - start_all))
         return
 
-    print("Plotting frequency domain...")
+    _print_section("Frequency Domain")
     step_start = time.perf_counter()
 
     stored_section = _section_to_stored_freq_frame(
@@ -386,7 +545,7 @@ def main() -> None:
         t_coh,
         pad=PAD_FACTOR,
         section=stored_section,
-        apodization=APODIZATION_WINDOW,
+        apodization=apodization_window,
     )
 
     if rwa_sl:
@@ -398,70 +557,27 @@ def main() -> None:
     else:
         nu_cohs_plot, nu_dets_plot = nu_cohs, nu_dets
 
-    print(f"Frequency-domain transform time: {_format_seconds(time.perf_counter() - step_start)}")
+    _print_kv("transform time", _format_seconds(time.perf_counter() - step_start))
+    print("")
 
-    # ---------------------------------------------------------------------
-    # Frequency-domain normalisation factor
-    # ---------------------------------------------------------------------
-    if NORMALISE_FREQUENCY_DOMAIN and FREQ_NORM_SCOPE == "all_signals":
-        freq_norm_factor_global = _group_normalisation_factor(list(datas_nu))
-    else:
-        freq_norm_factor_global = None
+    _render_domain_figure(
+        domain="freq",
+        axis_det=nu_dets_plot,
+        signal_items=list(zip(out_types, datas_nu)),
+        components=components,
+        figures_root=figures_root,
+        config_stem=config_stem,
+        normalise=NORMALISE_FREQUENCY_DOMAIN,
+        norm_scope=FREQ_NORM_SCOPE,
+        axis_coh=nu_cohs_plot,
+        cutoff_percent=CUTOFF_PERCENT,
+        contour_lines=CONTOUR_LINES,
+        apodization_window=apodization_window,
+    )
 
-    for idx, signal_type in enumerate(out_types):
-        signal_start = time.perf_counter()
-        print(f"Plotting frequency-domain signal: {signal_type}")
-
-        if NORMALISE_FREQUENCY_DOMAIN:
-            if FREQ_NORM_SCOPE == "all_signals":
-                freq_norm_factor = freq_norm_factor_global
-            else:
-                freq_norm_factor = _group_normalisation_factor([datas_nu[idx]])
-        else:
-            freq_norm_factor = None
-
-        _print_signal_scale_summary(
-            domain="freq",
-            signal_type=signal_type,
-            data=datas_nu[idx],
-            normalization_factor=freq_norm_factor,
-        )
-
-        for component in components:
-            plot_norm = _plot_norm_for_component(
-                datas_nu[idx],
-                component,
-                freq_norm_factor,
-            )
-
-            fig = plot_el_field(
-                axis_det=nu_dets_plot,
-                data=datas_nu[idx],
-                axis_coh=nu_cohs_plot,
-                component=component,
-                domain="freq",
-                cutoff_percent=CUTOFF_PERCENT,
-                contour_lines=CONTOUR_LINES,
-                normalization_factor=freq_norm_factor,
-                plot_norm=plot_norm,
-            )
-            saved = save_fig(
-                fig,
-                filename=_unique_fig_path(
-                    figures_root,
-                    _figure_stem("freq", signal_type, component, config_stem=config_stem),
-                ),
-                transparent=TRANSPARENTCY,
-                formats=FIG_FORMATS,
-            )
-            print(f"Saved: {saved}")
-
-        print(
-            f"Frequency-domain {signal_type} done in {_format_seconds(time.perf_counter() - signal_start)}"
-        )
-
-    print(f"Figures folder: {figures_root}")
-    print(f"Total time: {_format_seconds(time.perf_counter() - start_all)}")
+    _print_section("Done")
+    _print_path("Figures folder", figures_root)
+    _print_kv("total time", _format_seconds(time.perf_counter() - start_all))
 
 
 if __name__ == "__main__":

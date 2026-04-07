@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.sparse as sp
-from matplotlib.colors import Normalize, TwoSlopeNorm 
-from plotstyle import COLORS, LINE_STYLES, init_style, simplify_figure_text
+from matplotlib.colors import Normalize, TwoSlopeNorm
+from plotstyle import (
+    COLORS,
+    LINE_STYLES,
+    apply_decimal_axis_ticks,
+    apply_decimal_colorbar_ticks,
+    init_style,
+    simplify_figure_text,
+)
 
 from ..core.laser_system import (
     LaserPulseSequence,
@@ -357,49 +365,46 @@ def plot_example_evo(
     return fig
 
 
-def plot_el_field(
+def _prepare_el_field_input(
     axis_det: np.ndarray,
-    data: np.ndarray,
-    axis_coh: np.ndarray | None = None,
-    component: Literal["real", "imag", "abs", "phase"] = "real",
-    domain: Literal["time", "freq"] = "time",
-    ax: plt.Axes | None = None,
-    cutoff_percent: float = 0.0,
-    contour_lines: bool = False,
-    normalization_factor: float | None = None,
-    plot_norm: Normalize | None = None,
-    **kwargs: dict,
-) -> plt.Figure:
-    """Plot emitted field."""
-
-    if component not in {"real", "imag", "abs", "phase"}:
-        raise ValueError("component must be one of: 'real', 'imag', 'abs', 'phase'")
-    if domain not in {"time", "freq"}:
-        raise ValueError("domain must be 'time' or 'freq'")
-
+    data: np.ndarray | sp.spmatrix,
+    axis_coh: np.ndarray | None,
+    domain: Literal["time", "freq"],
+) -> tuple[np.ndarray | None, np.ndarray, np.ndarray]:
+    """Prepare plotting axes and dense data once before per-component rendering."""
     axis_det = np.asarray(axis_det, dtype=float)
     axis_coh = None if axis_coh is None else np.asarray(axis_coh, dtype=float)
 
     if domain == "freq" and isinstance(data, sp.spmatrix):
-        axis_coh, axis_det, data = _materialize_sparse_roi_for_plot(
+        axis_coh, axis_det, dense_data = _materialize_sparse_roi_for_plot(
             axis_det,
             data,
             axis_coh,
         )
-        if np.size(data) == 0:
+        if np.size(dense_data) == 0:
             raise ValueError(
                 "Empty frequency ROI after sparse cropping. "
                 "Check whether SECTION is specified in lab-frame units and "
                 "was converted correctly before calling compute_spectra."
             )
     else:
-        if isinstance(data, sp.spmatrix):
-            data = data.toarray()
-        data = np.asarray(data)
+        dense_data = data.toarray() if isinstance(data, sp.spmatrix) else np.asarray(data)
 
-    if axis_coh is None and data.ndim == 2 and data.shape[1] == 1:
-        data = data.squeeze(axis=1)
+    dense_data = np.asarray(dense_data)
+    if axis_coh is None and dense_data.ndim == 2 and dense_data.shape[1] == 1:
+        dense_data = dense_data.squeeze(axis=1)
 
+    return axis_coh, axis_det, dense_data
+
+
+def _prepare_component_plot_data(
+    data: np.ndarray,
+    component: str,
+    *,
+    cutoff_percent: float = 0.0,
+    normalization_factor: float | None = None,
+) -> tuple[np.ndarray, str, bool]:
+    """Return transformed component data together with its title and norm state."""
     plot_data, base_title = _component_data(np.asarray(data), component)
 
     if cutoff_percent > 0 and plot_data.size > 0:
@@ -412,41 +417,508 @@ def plot_el_field(
         if np.isfinite(factor) and factor > 0.0:
             plot_data = plot_data / factor
 
-    fig, ax = _get_fig_ax(ax)
+    return plot_data, base_title, is_normalised
 
-    if plot_data.ndim == 1:
-        _plot_el_field_1d(
-            ax=ax,
-            axis_det=axis_det,
-            plot_data=plot_data,
-            component=component,
-            domain=domain,
-            base_title=base_title,
-            plot_norm=plot_norm,
-            is_normalised=is_normalised,
+
+def validate_plot_components(components: Sequence[str]) -> tuple[str, ...]:
+    """Validate the component list used for composite job plots."""
+    allowed = {"real", "imag", "abs"}
+    validated: list[str] = []
+    seen: set[str] = set()
+
+    if not components:
+        raise ValueError("components must be a non-empty sequence drawn from {'real', 'imag', 'abs'}")
+
+    for component in components:
+        if component not in allowed:
+            raise ValueError(
+                f"Unsupported composite component: {component!r}. "
+                "Allowed values are 'real', 'imag', and 'abs'."
+            )
+        if component in seen:
+            raise ValueError(f"Duplicate composite component: {component!r}")
+        seen.add(component)
+        validated.append(component)
+
+    return tuple(validated)
+
+
+def _composite_signed_colorbar_label(
+    components: Sequence[str],
+    *,
+    is_normalised: bool,
+) -> str:
+    """Return an explicit shared colorbar label for signed components."""
+    numerators: list[str] = []
+    for component in components:
+        if component == "real":
+            numerators.append(r"\mathrm{Re}[E_{k_S}]")
+        elif component == "imag":
+            numerators.append(r"\mathrm{Im}[E_{k_S}]")
+
+    if not numerators:
+        raise ValueError("Signed colorbar label requires at least one signed component")
+
+    numerator = numerators[0] if len(numerators) == 1 else f"({', '.join(numerators)})"
+    if is_normalised:
+        return rf"${numerator} / |E_{{k_S}}|_{{\max}}$"
+    return rf"${numerator}$"
+
+
+def _component_colorbar_specs(
+    components: Sequence[str],
+    panels: Sequence[dict[str, object]],
+    mappables: dict[str, object],
+) -> list[tuple[object, str]]:
+    """Build shared colorbar specs for a component row."""
+    colorbar_specs: list[tuple[object, str]] = []
+    signed_components = [component for component in components if component in {"real", "imag"}]
+    if signed_components:
+        first_component = signed_components[0]
+        signed_panel = next(panel for panel in panels if panel["component"] == first_component)
+        colorbar_specs.append(
+            (
+                mappables[first_component],
+                _composite_signed_colorbar_label(
+                    signed_components,
+                    is_normalised=bool(signed_panel["is_normalised"]),
+                ),
+            )
         )
-    elif plot_data.ndim == 2:
-        if axis_coh is None:
-            raise ValueError("axis_coh must be provided for 2D data")
-        _plot_el_field_2d(
-            ax=ax,
-            axis_coh=axis_coh,
-            axis_det=axis_det,
-            plot_data=plot_data,
-            component=component,
-            domain=domain,
-            base_title=base_title,
-            contour_lines=contour_lines,
-            plot_norm=plot_norm,
-            is_normalised=is_normalised,
+    if "abs" in components:
+        abs_panel = next(panel for panel in panels if panel["component"] == "abs")
+        colorbar_specs.append(
+            (
+                mappables["abs"],
+                _component_signal_label(
+                    "abs",
+                    is_normalised=bool(abs_panel["is_normalised"]),
+                ),
+            )
         )
+    return colorbar_specs
+
+
+def _colorbar_positions_for_anchor(
+    anchor_box,
+    *,
+    colorbar_count: int,
+) -> list[tuple[float, float, float, float]]:
+    """Place one or two colorbars flush to the right of a subplot row."""
+    if colorbar_count == 1:
+        return [(anchor_box.x1 + 0.015, anchor_box.y0, 0.02, anchor_box.height)]
+    if colorbar_count == 2:
+        return [
+            (anchor_box.x1 + 0.015, anchor_box.y0, 0.02, anchor_box.height),
+            (anchor_box.x1 + 0.065, anchor_box.y0, 0.02, anchor_box.height),
+        ]
+    return []
+
+
+def _add_component_colorbars(
+    fig: plt.Figure,
+    *,
+    anchor_ax: plt.Axes,
+    colorbar_specs: Sequence[tuple[object, str]],
+) -> None:
+    """Add one or two row-aligned colorbars next to the anchor axis."""
+    anchor_box = anchor_ax.get_position()
+    positions = _colorbar_positions_for_anchor(
+        anchor_box,
+        colorbar_count=len(colorbar_specs),
+    )
+
+    for idx, ((mappable, label), position) in enumerate(zip(colorbar_specs, positions)):
+        cax = fig.add_axes(position)
+        cax.set_in_layout(False)
+        cbar = fig.colorbar(mappable, cax=cax)
+        if label:
+            cbar.set_label(label)
+        if len(colorbar_specs) == 2 and idx == 0:
+            cbar.set_label("")
+        apply_decimal_colorbar_ticks(cbar, decimals=1)
+
+
+def _signal_grid_figsize(n_rows: int, n_cols: int) -> tuple[float, float]:
+    panel = 3.0
+    w_gap = 0.0
+    h_gap = 0.0
+    left = 0.0
+    right = 0.0
+    bottom = 0.0
+    top = 0.0
+
+    fig_w = left + n_cols * panel + (n_cols - 1) * w_gap + right
+    fig_h = bottom + n_rows * panel + (n_rows - 1) * h_gap + top
+    return fig_w, fig_h
+
+
+def _panel_display_vmax(panel: dict[str, object]) -> float:
+    component = str(panel["component"])
+    plot_data = np.asarray(panel["plot_data"], dtype=float)
+    plot_norm = panel["plot_norm"]
+    if plot_norm is None:
+        plot_norm = _default_plot_norm(component, plot_data)
+
+    if plot_norm is not None:
+        vmax = getattr(plot_norm, "vmax", None)
+        if vmax is not None and np.isfinite(vmax):
+            return float(vmax)
+        vmin = getattr(plot_norm, "vmin", None)
+        if vmin is not None and np.isfinite(vmin):
+            return abs(float(vmin))
+
+    values = _finite_values(plot_data)
+    if values.size == 0:
+        return 0.0
+    if component == "abs":
+        return float(np.max(values))
+    return float(np.max(np.abs(values)))
+
+
+def _grouped_1d_axis_layout(
+    components: Sequence[str],
+) -> dict[str, dict[str, int | str]]:
+    signed_indices = [idx for idx, component in enumerate(components) if component in {"real", "imag"}]
+    abs_index = next((idx for idx, component in enumerate(components) if component == "abs"), None)
+
+    layout: dict[str, dict[str, int | str]] = {}
+    if signed_indices and abs_index is not None:
+        signed_left = min(signed_indices)
+        signed_right = max(signed_indices)
+        if abs_index < signed_left:
+            layout["abs"] = {"anchor_index": abs_index, "side": "left"}
+            layout["signed"] = {"anchor_index": signed_right, "side": "right"}
+        else:
+            layout["signed"] = {"anchor_index": signed_left, "side": "left"}
+            layout["abs"] = {"anchor_index": abs_index, "side": "right"}
+        return layout
+
+    if signed_indices:
+        layout["signed"] = {"anchor_index": min(signed_indices), "side": "left"}
+    if abs_index is not None:
+        layout["abs"] = {"anchor_index": abs_index, "side": "left"}
+    return layout
+
+
+def _configure_visible_y_axis(ax: plt.Axes, *, side: str) -> None:
+    if side == "right":
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position("right")
+        ax.tick_params(axis="y", labelleft=False, left=False, labelright=True, right=True)
+        return
+
+    ax.yaxis.set_ticks_position("left")
+    ax.yaxis.set_label_position("left")
+    ax.tick_params(axis="y", labelleft=True, left=True, labelright=False, right=False)
+
+
+def _expanded_1d_ylim(
+    vmin: float,
+    vmax: float,
+    *,
+    pad_fraction: float = 0.025,
+) -> tuple[float, float]:
+    scale = max(abs(float(vmin)), abs(float(vmax)))
+    if not np.isfinite(scale) or scale <= 0.0:
+        return float(vmin), float(vmax)
+
+    pad = pad_fraction * scale
+    if float(vmin) >= 0.0:
+        return float(vmin), float(vmax) + pad
+    return float(vmin) - pad, float(vmax) + pad
+
+
+def _apply_grouped_1d_row_axes(
+    row_axes: Sequence[plt.Axes],
+    row_panels: Sequence[dict[str, object]],
+    *,
+    components: Sequence[str],
+) -> None:
+    layout = _grouped_1d_axis_layout(components)
+
+    for axis in row_axes:
+        axis.tick_params(
+            axis="y",
+            labelleft=False,
+            left=False,
+            labelright=False,
+            right=False,
+        )
+
+    signed_spec = layout.get("signed")
+    if signed_spec is not None:
+        signed_indices = [idx for idx, component in enumerate(components) if component in {"real", "imag"}]
+        signed_vmax = max(
+            (
+                _panel_display_vmax(panel)
+                for panel in row_panels
+                if str(panel["component"]) in {"real", "imag"}
+            ),
+            default=0.0,
+        )
+        if np.isfinite(signed_vmax) and signed_vmax > 0.0:
+            ylim = _expanded_1d_ylim(-signed_vmax, signed_vmax)
+            for idx in signed_indices:
+                row_axes[idx].set_ylim(*ylim)
+
+        signed_axis = row_axes[int(signed_spec["anchor_index"])]
+        _configure_visible_y_axis(signed_axis, side=str(signed_spec["side"]))
+        apply_decimal_axis_ticks(signed_axis, axis="y", decimals=1)
+
+    abs_spec = layout.get("abs")
+    if abs_spec is not None:
+        abs_axis = row_axes[int(abs_spec["anchor_index"])]
+        abs_vmax = max(
+            (
+                _panel_display_vmax(panel)
+                for panel in row_panels
+                if str(panel["component"]) == "abs"
+            ),
+            default=0.0,
+        )
+        if np.isfinite(abs_vmax) and abs_vmax > 0.0:
+            abs_axis.set_ylim(*_expanded_1d_ylim(0.0, abs_vmax))
+
+        _configure_visible_y_axis(abs_axis, side=str(abs_spec["side"]))
+        apply_decimal_axis_ticks(abs_axis, axis="y", decimals=1)
+
+def plot_el_field_signal_grid(
+    axis_det: np.ndarray,
+    signal_datas: Sequence[np.ndarray | sp.spmatrix],
+    *,
+    signal_labels: Sequence[str],
+    components: Sequence[str],
+    axis_coh: np.ndarray | None = None,
+    domain: Literal["time", "freq"] = "time",
+    cutoff_percent: float = 0.0,
+    contour_lines: bool = False,
+    normalization_factors: Sequence[float | None] | None = None,
+    plot_norms_by_signal: Sequence[dict[str, Normalize | None]] | None = None,
+    suptitle: str | None = None,
+    **kwargs: dict,
+) -> plt.Figure:
+    """Plot all selected signal types in one domain-wide component grid."""
+    components = validate_plot_components(components)
+    signal_datas = list(signal_datas)
+    signal_labels = list(signal_labels)
+
+    if not signal_datas:
+        raise ValueError("signal_datas must contain at least one signal")
+    if len(signal_labels) != len(signal_datas):
+        raise ValueError("signal_labels must have the same length as signal_datas")
+
+    if normalization_factors is None:
+        normalization_factors = [None] * len(signal_datas)
     else:
-        raise ValueError("data must be 1D or 2D")
+        normalization_factors = list(normalization_factors)
+        if len(normalization_factors) != len(signal_datas):
+            raise ValueError("normalization_factors must match signal_datas length")
 
-    add_text_box(ax, kwargs=kwargs)
-    fig.tight_layout()
+    if plot_norms_by_signal is None:
+        plot_norms_by_signal = [{} for _ in signal_datas]
+    else:
+        plot_norms_by_signal = [dict(plot_norms) for plot_norms in plot_norms_by_signal]
+        if len(plot_norms_by_signal) != len(signal_datas):
+            raise ValueError("plot_norms_by_signal must match signal_datas length")
+
+    rows: list[dict[str, object]] = []
+    ndim: int | None = None
+    for signal_data, normalization_factor, plot_norms in zip(
+        signal_datas,
+        normalization_factors,
+        plot_norms_by_signal,
+    ):
+        row_axis_coh, row_axis_det, dense_data = _prepare_el_field_input(
+            axis_det,
+            signal_data,
+            axis_coh,
+            domain,
+        )
+        row_panels: list[dict[str, object]] = []
+        for component in components:
+            plot_data, base_title, is_normalised = _prepare_component_plot_data(
+                dense_data,
+                component,
+                cutoff_percent=cutoff_percent,
+                normalization_factor=normalization_factor,
+            )
+            row_panels.append(
+                {
+                    "component": component,
+                    "plot_data": plot_data,
+                    "base_title": base_title,
+                    "is_normalised": is_normalised,
+                    "plot_norm": plot_norms.get(component),
+                }
+            )
+
+        row_ndim = int(np.ndim(row_panels[0]["plot_data"]))
+        if row_ndim not in {1, 2}:
+            raise ValueError("Signal grid plots require 1D or 2D component data")
+        if row_ndim == 2 and row_axis_coh is None:
+            raise ValueError("axis_coh must be provided for 2D signal grid plots")
+        if ndim is None:
+            ndim = row_ndim
+        elif row_ndim != ndim:
+            raise ValueError("All signals in a grid must have the same dimensionality")
+
+        rows.append(
+            {
+                "axis_coh": row_axis_coh,
+                "axis_det": row_axis_det,
+                "panels": row_panels,
+            }
+        )
+    assert ndim is not None
+
+    figsize = _signal_grid_figsize(len(rows), len(components))
+    sharex = True
+    sharey = (ndim == 2)   
+
+    fig, axes = plt.subplots(
+        len(rows),
+        len(components),
+        figsize=figsize,
+        squeeze=False,
+        sharex=sharex,
+        sharey=sharey,
+    )
+
+    for row_idx, (row_label, row) in enumerate(zip(signal_labels, rows)):
+        row_axes = axes[row_idx]
+        row_panels = row["panels"]
+        row_axis_det = row["axis_det"]
+        row_axis_coh = row["axis_coh"]
+        is_bottom_row = row_idx == len(rows) - 1
+        row_name = str(row_label).replace("_", " ").title()
+        for col_idx, (axis, panel) in enumerate(zip(row_axes, row_panels)):
+            component = str(panel["component"])
+            plot_data = panel["plot_data"]
+            base_title = str(panel["base_title"])
+            is_normalised = bool(panel["is_normalised"])
+            plot_norm = panel["plot_norm"]
+            title = base_title if row_idx == 0 else ""
+
+            if np.ndim(plot_data) == 1:
+                _plot_el_field_1d(
+                    ax=axis,
+                    axis_det=row_axis_det,
+                    plot_data=plot_data,
+                    component=component,
+                    domain=domain,
+                    base_title=base_title,
+                    plot_norm=plot_norm,
+                    is_normalised=is_normalised,
+                    title=title,
+                    show_xlabel=is_bottom_row,
+                    show_ylabel=False,
+                    show_legend=False,
+                )
+                axis.set_box_aspect(1)
+            else:
+                _plot_el_field_2d(
+                    ax=axis,
+                    axis_coh=row_axis_coh,
+                    axis_det=row_axis_det,
+                    plot_data=plot_data,
+                    component=component,
+                    domain=domain,
+                    base_title=base_title,
+                    contour_lines=contour_lines,
+                    plot_norm=plot_norm,
+                    is_normalised=is_normalised,
+                    title=title,
+                    show_xlabel=is_bottom_row,
+                    show_ylabel=(col_idx == 0),
+                    add_colorbar=False,
+                    square_axes=True,
+                )
+                apply_decimal_axis_ticks(axis, axis="x", decimals=2)
+                apply_decimal_axis_ticks(axis, axis="y", decimals=2)
+
+            axis.tick_params(labelbottom=is_bottom_row)
+
+        row_label_artist = row_axes[0].annotate(
+            row_name,
+            xy=(0.02, 0.94),
+            xycoords="axes fraction",
+            ha="left",
+            va="top",
+        )
+        row_label_artist.set_in_layout(False)
+
+    is_any_normalised = any(
+        bool(panel["is_normalised"])
+        for row in rows
+        for panel in row["panels"]
+    )
+    if ndim == 1:
+        for row_axes, row in zip(axes, rows):
+            _apply_grouped_1d_row_axes(
+                row_axes,
+                row["panels"],
+                components=components,
+            )
+    if kwargs:
+        add_text_box(axes[0, 0], kwargs=kwargs)
+    if suptitle:
+        fig.suptitle(suptitle)
+
+    if ndim == 1:
+        top_margin = 0.96 if suptitle else 0.98
+        _add_simple_1d_ylabel(
+            axes,
+            components=components,
+            is_normalised=is_any_normalised,
+        )
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, top_margin))
+    else:
+        fig.tight_layout()
+
+    if ndim == 2:
+        for row_idx, row in enumerate(rows):
+            row_panels = row["panels"]
+            row_mappables = {
+                str(panel["component"]): axes[row_idx, col_idx].images[0]
+                for col_idx, panel in enumerate(row_panels)
+                if str(panel["component"]) in components
+            }
+            colorbar_specs = _component_colorbar_specs(components, row_panels, row_mappables)
+            if colorbar_specs:
+                _add_component_colorbars(
+                    fig,
+                    anchor_ax=axes[row_idx, -1],
+                    colorbar_specs=colorbar_specs,
+                )
+
     simplify_figure_text(fig)
     return fig
+
+
+def _shared_1d_signal_axis_label(*, is_normalised: bool) -> str:
+    if is_normalised:
+        return r"$E_{k_S} / |E_{k_S}|_{\max}$"
+    return r"$E_{k_S}$"
+
+
+def _add_simple_1d_ylabel(
+    axes: np.ndarray,
+    *,
+    components: Sequence[str],
+    is_normalised: bool,
+) -> None:
+    layout = _grouped_1d_axis_layout(components)
+    signed_spec = layout.get("signed")
+    if signed_spec is None:
+        return
+
+    mid_row = axes.shape[0] // 2
+    signed_axis = axes[mid_row, int(signed_spec["anchor_index"])]
+    signed_axis.set_ylabel(
+        _shared_1d_signal_axis_label(is_normalised=is_normalised),
+        labelpad=6,
+    )
 
 def _plot_el_field_1d(
     *,
@@ -458,6 +930,10 @@ def _plot_el_field_1d(
     base_title: str,
     plot_norm: Normalize | None = None,
     is_normalised: bool = False,
+    title: str | None = None,
+    show_xlabel: bool = True,
+    show_ylabel: bool = True,
+    show_legend: bool = True,
 ) -> None:
     color, linestyle = _style_for_component(component, 1, domain=domain)
 
@@ -472,9 +948,13 @@ def _plot_el_field_1d(
         linestyle=linestyle,
         label=base_title.strip(),
     )
-    ax.set_title(base_title + " " + title_suffix)
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(y_label)
+    ax.set_title(base_title + " " + title_suffix if title is None else title)
+    ax.set_xlabel(x_label if show_xlabel else "")
+    ax.set_ylabel(y_label if show_ylabel else "")
+    if not show_xlabel:
+        ax.tick_params(labelbottom=False)
+    if not show_ylabel:
+        ax.tick_params(labelleft=False)
 
     if plot_norm is not None:
         vmin = getattr(plot_norm, "vmin", None)
@@ -486,9 +966,10 @@ def _plot_el_field_1d(
             and np.isfinite(vmax)
             and float(vmin) < float(vmax)
         ):
-            ax.set_ylim(float(vmin), float(vmax))
+            ax.set_ylim(*_expanded_1d_ylim(float(vmin), float(vmax)))
 
-    ax.legend()
+    if show_legend:
+        ax.legend()
 
 def _plot_el_field_2d(
     *,
@@ -502,8 +983,13 @@ def _plot_el_field_2d(
     contour_lines: bool = False,
     plot_norm: Normalize | None = None,
     is_normalised: bool = False,
-) -> None:
-    colormap, _ = _style_for_component(component, 2, data=plot_data, domain=domain)
+    title: str | None = None,
+    show_xlabel: bool = True,
+    show_ylabel: bool = True,
+    add_colorbar: bool = True,
+    square_axes: bool = False,
+):
+    colormap = _style_for_component(component, 2, domain=domain)
     norm = plot_norm if plot_norm is not None else _default_plot_norm(component, plot_data)
 
     def _axis_extent(axis: np.ndarray) -> tuple[float, float]:
@@ -546,11 +1032,21 @@ def _plot_el_field_2d(
 
     x_label, y_label, _, title_suffix = _domain_labels(domain, 2)
     cbar_label = _component_signal_label(component, is_normalised=is_normalised)
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(y_label)
-    ax.set_title(base_title + " " + title_suffix)
+    ax.set_xlabel(x_label if show_xlabel else "")
+    ax.set_ylabel(y_label if show_ylabel else "")
+    ax.set_title(base_title + " " + title_suffix if title is None else title)
+    if not show_xlabel:
+        ax.tick_params(labelbottom=False)
+    if not show_ylabel:
+        ax.tick_params(labelleft=False)
+    if square_axes:
+        ax.set_box_aspect(1)
 
-    plt.colorbar(im, ax=ax, label=cbar_label)
+    if add_colorbar:
+        cbar = ax.figure.colorbar(im, ax=ax, label=cbar_label)
+        apply_decimal_colorbar_ticks(cbar, decimals=1)
+
+    return im
 
 def crop_nd_data_along_axis(
     coord_array: np.ndarray,
@@ -583,7 +1079,6 @@ def crop_nd_data_along_axis(
 def _style_for_component(
     component: str,
     ndim: int,
-    data: np.ndarray | None = None,
     domain: str = "time",
 ):
     """Return style parameters for a component."""
@@ -594,17 +1089,10 @@ def _style_for_component(
 
     if ndim == 2:
         if component in {"real", "imag", "phase"}:
-            if data is None or np.size(data) == 0:
-                return plt.get_cmap("RdBu_r"), None
-
-            vmax = float(np.max(np.abs(data)))
-            if vmax > 0:
-                return plt.get_cmap("RdBu_r"), TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
-            return plt.get_cmap("RdBu_r"), None
-
+            return plt.get_cmap("RdBu_r")
         if domain == "freq":
-            return "plasma", None
-        return "viridis", None
+            return "plasma"
+        return "viridis"
 
     raise ValueError("ndim must be 1 or 2")
 

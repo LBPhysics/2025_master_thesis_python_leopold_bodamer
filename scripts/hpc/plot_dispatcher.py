@@ -261,10 +261,21 @@ def main() -> None:
         raise FileNotFoundError(f"Data directory missing: {data_dir}")
 
     final_artifact = data_dir / final_processed_filename(str(metadata.get("sim_type", "1d")))
+    final_info = final_artifact.with_suffix(".pkl")
     prefix = str(metadata["data_base_name"])
     partial_count = _partial_count(data_dir, prefix)
     print(f"Expected processed artifact: {final_artifact}")
+    print(f"Expected processed info: {final_info}")
     print(f"Detected partial artifact count: {partial_count}")
+
+    processed_artifact_ready = final_artifact.exists() and final_info.exists()
+    skip_reduction = args.skip_if_exists and processed_artifact_ready
+    if args.skip_if_exists and not skip_reduction:
+        missing = [str(path) for path in (final_artifact, final_info) if not path.exists()]
+        print(
+            "Skip-if-exists requested, but processed outputs are incomplete; "
+            f"reduction will still run. Missing: {missing}"
+        )
 
     job_unique_id = str(metadata.get("job_unique_id") or extract_job_unique_id(job_dir))
     reduce_job_name = format_slurm_job_name(
@@ -336,6 +347,13 @@ def main() -> None:
 
     if args.no_submit:
         print("Submission skipped (use without --no_submit to call sbatch).")
+        return
+
+    if skip_reduction:
+        print("Processed artifact already exists; skipping reduction job submission.")
+        print("Submitting plotting SLURM job without dependency...")
+        plot_submit_msg = submit_sbatch(plot_script_path)
+        print(f"  {plot_script_path.name}: {plot_submit_msg}")
         return
 
     print("Submitting reduction SLURM job...")

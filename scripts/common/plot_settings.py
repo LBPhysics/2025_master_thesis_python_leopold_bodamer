@@ -22,6 +22,9 @@ CUTOFF_PERCENT: float = 0.0
 CONTOUR_LINES: bool = False
 TRANSPARENTCY: bool = False
 FIG_FORMATS: list[str] = ["svg", "png"]  # Save both high-quality SVG and low-cost PNG
+# Order defines the left-to-right panel order in the composite figures.
+# Allowed values for plot_datas.py are: "real", "imag", "abs".
+COMPONENTS: list[str] = ["real", "imag", "abs"]
 __all__ = [
     "SECTION",
     "PAD_FACTOR",
@@ -30,6 +33,11 @@ __all__ = [
     "CONTOUR_LINES",
     "TRANSPARENTCY",
     "FIG_FORMATS",
+    "COMPONENTS",
+    "NORMALISE_TIME_DOMAIN",
+    "NORMALISE_FREQUENCY_DOMAIN",
+    "TIME_NORM_SCOPE",
+    "FREQ_NORM_SCOPE",
 ]
 
 

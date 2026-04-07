@@ -11,6 +11,8 @@ from .style import (
     format_sci_notation,
     simplify_figure_text,
     beautify_colorbar,
+    apply_decimal_axis_ticks,
+    apply_decimal_colorbar_ticks,
     latex_available,
 )
 from .constants import (
@@ -35,6 +37,8 @@ __all__ = [
     "format_sci_notation",
     "simplify_figure_text",
     "beautify_colorbar",
+    "apply_decimal_axis_ticks",
+    "apply_decimal_colorbar_ticks",
     "DEFAULT_THEME",
     "PlotTheme",
     "COLORS",

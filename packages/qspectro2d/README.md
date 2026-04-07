@@ -134,34 +134,27 @@ The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging a
 
 ### Solver options
 
-You can pass solver-specific knobs under `config.solver_options`. These are forwarded to the selected QuTiP solver backend.
+You can pass adaptive-ODE settings under `config.solver_options`. These are forwarded to the selected QuTiP backend.
 
-Default solver options live in `qspectro2d.config.defaults.DEFAULTS["config"]["solver_options"]`, and the allowed keys are validated in `qspectro2d.config.validate_config`.
-Unknown keys raise an error to avoid silently ignored typos.
+Default solver options live in `qspectro2d.config.defaults.DEFAULTS["config"]["solver_options"]`, and the allowed keys are validated in `qspectro2d.config.validate_config`. Unknown keys raise an error to avoid silently ignored typos.
 
 Common keys (for the supported solvers):
 - `atol`, `rtol`: absolute/relative tolerances (must be > 0)
 - `nsteps`: maximum allowed internal steps (must be > 0)
 - `method`: ODE method string (e.g. `"bdf"`)
 
-Solver-specific keys:
-- `redfield`:
-	- `sec_cutoff`: controls the secular approximation in QuTiP `brmesolve`
-		- `sec_cutoff = -1` disables the secular approximation
-		- `sec_cutoff > 0` enables the secular approximation with that cutoff
-- `paper_eqs`: no `solver_options` (empty allow-list)
+Redfield-specific run kwargs live under `config.solver_run_kwargs`:
+- `sec_cutoff` controls the secular approximation in QuTiP `brmesolve`
+- `sec_cutoff = -1` disables the secular approximation
+- `sec_cutoff > 0` is interpreted in units of `w0`, just like the YAML bath parameters
 
-Example (turn off secular approximation for Bloch–Redfield):
+Example:
 
 ```yaml
 config:
 	solver: redfield
-
-	# Solver-specific knobs. For QuTiP brmesolve:
-	#   sec_cutoff = -1 disables the secular approximation
-	#   sec_cutoff > 0 applies secular approximation with that cutoff
-	solver_options:
-		sec_cutoff: -1
+	solver_run_kwargs:
+		sec_cutoff: 1.0e-5
 ```
 
 ## Bath configuration (normalized units)

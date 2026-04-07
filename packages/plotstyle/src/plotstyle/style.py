@@ -16,7 +16,9 @@ import sys
 import shutil
 import math
 from pathlib import Path
-from typing import Optional, Iterable, Sequence, Union, List, Tuple, TYPE_CHECKING, Mapping
+from typing import Optional, Iterable, Sequence, Union, List, Tuple, TYPE_CHECKING, Mapping, Literal
+from matplotlib.ticker import FuncFormatter
+import numpy as np
 import matplotlib as mpl
 from .constants import (
     LATEX_DOC_WIDTH,
@@ -44,6 +46,8 @@ __all__ = [
     "format_sci_notation",
     "simplify_figure_text",
     "beautify_colorbar",
+    "apply_decimal_axis_ticks",
+    "apply_decimal_colorbar_ticks",
 ]
 
 latex_available = False
@@ -409,6 +413,109 @@ def beautify_colorbar(
         fmt.set_powerlimits(sci_limits)
         cb.formatter = fmt
     cb.update_ticks()
+    return cb
+
+
+def _fixed_decimal_formatter(decimals: int) -> FuncFormatter:
+    digits = max(0, int(decimals))
+    return FuncFormatter(lambda value, _pos: f"{value:.{digits}f}")
+
+
+def _rounded_visible_ticks(
+    values: Sequence[float],
+    *,
+    lower: float,
+    upper: float,
+    decimals: int,
+) -> list[float]:
+    """Return finite, unique, rounded ticks clipped to the visible axis range."""
+    digits = max(0, int(decimals))
+    ticks = np.asarray(values, dtype=float)
+
+    if ticks.size == 0:
+        return []
+
+    ticks = ticks[np.isfinite(ticks)]
+    if ticks.size == 0:
+        return []
+
+    lo, hi = (float(lower), float(upper))
+    if lo > hi:
+        lo, hi = hi, lo
+
+    # Keep only ticks inside the currently visible interval.
+    # Small tolerance avoids dropping boundary ticks due to float noise.
+    tol = 10 ** (-(digits + 2))
+    ticks = ticks[(ticks >= lo - tol) & (ticks <= hi + tol)]
+    if ticks.size == 0:
+        return []
+
+    ticks = np.round(ticks, decimals=digits)
+    ticks[ticks == 0.0] = 0.0
+
+    # Clip once more after rounding, because rounding can push a value just outside.
+    ticks = ticks[(ticks >= lo - tol) & (ticks <= hi + tol)]
+    if ticks.size == 0:
+        return []
+
+    return np.unique(ticks).tolist()
+
+
+def apply_decimal_axis_ticks(
+    ax: "mpl.axes.Axes",
+    *,
+    axis: Literal["x", "y", "z"] = "y",
+    decimals: int = 1,
+) -> "mpl.axes.Axes":
+    """Format one axis with fixed decimal ticks, clipped to the visible range."""
+    axis_map = {
+        "x": (ax.xaxis, ax.set_xticks, ax.get_xlim),
+        "y": (ax.yaxis, ax.set_yticks, ax.get_ylim),
+    }
+
+    if axis == "z":
+        if not hasattr(ax, "zaxis"):
+            raise ValueError("axis='z' requires a 3D axis")
+        axis_obj, setter, get_lim = ax.zaxis, ax.set_zticks, ax.get_zlim
+    else:
+        try:
+            axis_obj, setter, get_lim = axis_map[axis]
+        except KeyError as exc:
+            raise ValueError("axis must be one of: 'x', 'y', 'z'") from exc
+
+    axis_obj.set_major_formatter(_fixed_decimal_formatter(decimals))
+
+    lower, upper = get_lim()
+    rounded_ticks = _rounded_visible_ticks(
+        axis_obj.get_majorticklocs(),
+        lower=lower,
+        upper=upper,
+        decimals=decimals,
+    )
+    if rounded_ticks:
+        setter(rounded_ticks)
+
+    return ax
+
+
+def apply_decimal_colorbar_ticks(
+    cb: "mpl.colorbar.Colorbar",
+    *,
+    decimals: int = 1,
+) -> "mpl.colorbar.Colorbar":
+    """Format colorbar ticks with a fixed number of decimal places."""
+    cb.ax.yaxis.set_major_formatter(_fixed_decimal_formatter(decimals))
+
+    lower, upper = cb.mappable.get_clim()
+    rounded_ticks = _rounded_visible_ticks(
+        cb.get_ticks(),
+        lower=lower,
+        upper=upper,
+        decimals=decimals,
+    )
+    if rounded_ticks:
+        cb.set_ticks(rounded_ticks)
+
     return cb
 
 

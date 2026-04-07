@@ -23,10 +23,19 @@ def _simulation_config_from_resolved(cfg: Mapping[str, Any]) -> SimulationConfig
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
 
+    solver_run_kwargs = dict(sim_cfg["solver_run_kwargs"])
+    if str(sim_cfg["solver"]) == "redfield" and "sec_cutoff" in solver_run_kwargs:
+        sec_cutoff = float(solver_run_kwargs["sec_cutoff"])
+        if not np.isclose(sec_cutoff, -1.0):
+            frequencies_cm = np.asarray(atomic_cfg["frequencies_cm"], dtype=float)
+            mean_freq_cm = float(np.mean(frequencies_cm))
+            w0_fs = float(convert_cm_to_fs(mean_freq_cm))
+            solver_run_kwargs["sec_cutoff"] = sec_cutoff * w0_fs
+
     return SimulationConfig(
         ode_solver=str(sim_cfg["solver"]),
         solver_options=dict(sim_cfg["solver_options"]),
-        solver_run_kwargs=dict(sim_cfg["solver_run_kwargs"]),
+        solver_run_kwargs=solver_run_kwargs,
         rwa_sl=bool(laser_cfg["rwa_sl"]),
         t_det=float(sim_cfg["t_det"]),
         t_coh=float(sim_cfg["t_coh"]),
