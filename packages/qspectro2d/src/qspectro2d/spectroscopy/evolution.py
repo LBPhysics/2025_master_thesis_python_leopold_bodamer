@@ -77,6 +77,7 @@ def compute_evolution(
     solver_times: np.ndarray | None = None,
     initial_state: Qobj | None = None,
     field_free: bool = False,
+    log_solver_debug_on_error: bool = False,
     **override_options: dict,
 ) -> tuple[np.ndarray, list]:
     """Return the simulation time grid together with expectations or states.
@@ -128,7 +129,8 @@ def compute_evolution(
                 **run_kwargs,
             )
         except Exception:
-            log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
+            if log_solver_debug_on_error:
+                log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
             raise
     elif solver == "lindblad":
         try:
@@ -142,7 +144,8 @@ def compute_evolution(
                 **run_kwargs,
             )
         except Exception:
-            log_lindblad_solver_debug(sim_oqs, t_list, run_kwargs, options)
+            if log_solver_debug_on_error:
+                log_lindblad_solver_debug(sim_oqs, t_list, run_kwargs, options)
             raise
     elif solver == "paper_eqs":
         result = mesolve(
@@ -168,7 +171,11 @@ def compute_evolution(
 
 
 def compute_polarisation_over_window(
-    sim_oqs: SimulationModuleOQS, window=None, *, solver_times=None
+    sim_oqs: SimulationModuleOQS,
+    window=None,
+    *,
+    solver_times=None,
+    log_solver_debug_on_error: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the canonical positive-frequency signal on the requested detection axis.
 
@@ -183,5 +190,10 @@ def compute_polarisation_over_window(
     dipole_op = sim_oqs.dipole_op_eigenbasis
     mu_plus = Qobj(np.tril(dipole_op.full(), k=-1), dims=dipole_op.dims)
 
-    times, polarisation_t = compute_evolution(sim_oqs, e_ops=[mu_plus], solver_times=solver_times)
+    times, polarisation_t = compute_evolution(
+        sim_oqs,
+        e_ops=[mu_plus],
+        solver_times=solver_times,
+        log_solver_debug_on_error=log_solver_debug_on_error,
+    )
     return window, slice_polarisation_to_window(times, polarisation_t, window)

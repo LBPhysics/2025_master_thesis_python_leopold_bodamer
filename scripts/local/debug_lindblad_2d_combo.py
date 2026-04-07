@@ -186,6 +186,7 @@ def _run_one_case(
             run_sim,
             window=detection_window,
             solver_times=solver_times,
+            log_solver_debug_on_error=True,
         )
     except Exception as exc:
         print(f"FAILED for t_coh={t_coh_value:.6g} fs: {exc}")
