@@ -21,15 +21,9 @@ SUPPORTED_ENVELOPES = ["gaussian", "cos2"]
 SUPPORTED_SIM_TYPES = ["0d", "1d", "2d"]
 
 ALLOWED_SOLVER_OPTIONS = {
-    "paper_eqs": [],
+    "paper_eqs": ["atol", "rtol", "nsteps", "method", "max_step"],
     "lindblad": ["atol", "rtol", "nsteps", "method", "max_step"],
-    "redfield": [
-        "atol",
-        "rtol",
-        "nsteps",
-        "method",
-        "max_step",
-    ],
+    "redfield": ["atol", "rtol", "nsteps", "method", "max_step"],
 }
 ALLOWED_SOLVER_RUN_KWARGS = {
     "paper_eqs": [],
@@ -43,7 +37,7 @@ PHASE_CYCLING_PHASES = DPHI * np.arange(N_PHASES)
 
 N_PULSES = 3
 PULSE_AMPLITUDES = [
-    0.005
+    0.002
 ] * N_PULSES  # ensures that the population of the excited state is less then 1% -> contributions of higher nonlinearities remain negligible
 
 COMPONENT_MAP: dict[str, tuple[int, int]] = {
@@ -98,7 +92,7 @@ DEFAULTS = {
     },
     "config": {
         "solver": "redfield",
-        "solver_options": {},
+        "solver_options": {"method": "lsoda"},
         "solver_run_kwargs": {
             "sec_cutoff": 1.0e-3,
         },

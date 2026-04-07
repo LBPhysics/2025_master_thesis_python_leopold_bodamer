@@ -344,7 +344,7 @@ def _inject_default_max_step(cfg: dict[str, Any]) -> None:
     else:
         # Assume dt_out was already made carrier-safe by _enforce_nonrwa_output_dt.
         # Choose a modest amount of internal substepping relative to saved spacing.
-        no_rwa_substeps = 1  # use 2 for 0.5*dt_out, 4 for 0.25*dt_out
+        no_rwa_substeps = 4  # use 2 for 0.5*dt_out, 4 for 0.25*dt_out
         sim_cfg["solver_options"]["max_step"] = dt_out  / no_rwa_substeps
 
 
