@@ -285,10 +285,7 @@ def _enforce_nonrwa_output_dt(cfg: dict[str, Any], *, emit_runtime_warnings: boo
     """
     sim_cfg = cfg["config"]
     laser_cfg = cfg["laser"]
-    solver = str(sim_cfg["solver"])
 
-    if solver not in {"lindblad", "redfield"}:
-        return
     if bool(laser_cfg["rwa_sl"]):
         return
 
@@ -328,7 +325,7 @@ def _inject_default_max_step(cfg: dict[str, Any]) -> None:
     laser_cfg = cfg["laser"]
     solver = str(sim_cfg["solver"])
 
-    if solver not in {"lindblad", "redfield"}:
+    if solver not in {"lindblad", "redfield", "paper_eqs"}:
         return
 
     dt_out = float(sim_cfg["dt"])

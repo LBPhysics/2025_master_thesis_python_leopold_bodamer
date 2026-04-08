@@ -143,6 +143,28 @@ Common keys (for the supported solvers):
 - `nsteps`: maximum allowed internal steps (must be > 0)
 - `method`: ODE method string (e.g. `"bdf"`)
 
+### Internal solver step size
+
+`config.solver_options.max_step` is intentionally not treated as a user-facing YAML
+parameter in the shipped template.
+
+For the time-dependent solvers `lindblad`, `redfield`, and `paper_eqs`, the loader
+injects an internal `max_step` automatically after config merging:
+
+- With `laser.rwa_sl: true`, `max_step` is chosen from the pulse-envelope
+  timescale, targeting about ten internal steps across `laser.pulse_fwhm_fs`
+- With `laser.rwa_sl: false`, the loader first enforces a carrier-safe output
+  spacing if needed, then chooses `max_step` as a fraction of the saved/output
+  spacing `config.dt`
+
+This split is intentional:
+- the YAML template documents user-settable parameters only
+- the README documents internal loader behavior that affects numerics
+
+Practical consequences:
+- `config.dt` is the saved/output spacing seen in stored results
+- the actual internal solver step may be smaller than `config.dt`
+
 Redfield-specific run kwargs live under `config.solver_run_kwargs`:
 - `sec_cutoff` controls the secular approximation in QuTiP `brmesolve`
 - `sec_cutoff = -1` disables the secular approximation
