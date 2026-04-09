@@ -38,7 +38,7 @@ from common.workflow import (
 from qspectro2d.core.simulation.time_axes import compute_times_local
 
 DEFAULT_CPUS_PER_TASK = 12  # makes sense if each phase combo is as costly as the others
-DEFAULT_PARTITION = "kratos96G,kratos48G,GPGPU,metis"
+DEFAULT_PARTITION = "GPGPU,metis"
 
 
 def _split_indices(n_items: int, n_batches: int) -> list[np.ndarray]:

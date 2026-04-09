@@ -448,27 +448,18 @@ def _composite_signed_colorbar_label(
     *,
     is_normalised: bool,
 ) -> str:
-    """Return an explicit shared colorbar label for signed components."""
-    numerators: list[str] = []
-    for component in components:
-        if component == "real":
-            numerators.append(r"\mathrm{Re}[E_{k_S}]")
-        elif component == "imag":
-            numerators.append(r"\mathrm{Im}[E_{k_S}]")
-
-    if not numerators:
+    """Return a simplified shared label for the signed colorbar."""
+    if not any(component in {"real", "imag"} for component in components):
         raise ValueError("Signed colorbar label requires at least one signed component")
-
-    numerator = numerators[0] if len(numerators) == 1 else f"({', '.join(numerators)})"
-    if is_normalised:
-        return rf"${numerator} / |E_{{k_S}}|_{{\max}}$"
-    return rf"${numerator}$"
+    return _shared_signal_axis_label(is_normalised=is_normalised)
 
 
 def _component_colorbar_specs(
     components: Sequence[str],
     panels: Sequence[dict[str, object]],
     mappables: dict[str, object],
+    *,
+    show_labels: bool = True,
 ) -> list[tuple[object, str]]:
     """Build shared colorbar specs for a component row."""
     colorbar_specs: list[tuple[object, str]] = []
@@ -479,9 +470,13 @@ def _component_colorbar_specs(
         colorbar_specs.append(
             (
                 mappables[first_component],
-                _composite_signed_colorbar_label(
-                    signed_components,
-                    is_normalised=bool(signed_panel["is_normalised"]),
+                (
+                    _composite_signed_colorbar_label(
+                        signed_components,
+                        is_normalised=bool(signed_panel["is_normalised"]),
+                    )
+                    if show_labels
+                    else ""
                 ),
             )
         )
@@ -490,27 +485,115 @@ def _component_colorbar_specs(
         colorbar_specs.append(
             (
                 mappables["abs"],
-                _component_signal_label(
-                    "abs",
-                    is_normalised=bool(abs_panel["is_normalised"]),
+                (
+                    _component_signal_label(
+                        "abs",
+                        is_normalised=bool(abs_panel["is_normalised"]),
+                    )
+                    if show_labels
+                    else ""
                 ),
             )
         )
     return colorbar_specs
 
 
+_SIGNAL_GRID_PANEL_IN = 2.6
+_SIGNAL_GRID_W_GAP_IN = 0.1
+_SIGNAL_GRID_H_GAP_IN = 0.1
+_SIGNAL_GRID_LEFT_IN = 0.1
+_SIGNAL_GRID_RIGHT_IN = 0.0
+_SIGNAL_GRID_BOTTOM_IN = 0.0
+_SIGNAL_GRID_TOP_IN = 0.5
+_SIGNAL_GRID_SUPTITLE_IN = 0.45
+_SIGNAL_GRID_COLORBAR_PAD_IN = 0.16
+_SIGNAL_GRID_COLORBAR_WIDTH_IN = 0.20
+_SIGNAL_GRID_COLORBAR_GAP_IN = 0.7
+_SIGNAL_GRID_COLORBAR_LABEL_IN = 0.40
+_SIGNAL_GRID_SUPTITLE_Y_PAD_IN = 0.20
+
+
+def _disable_automatic_figure_layout(fig: plt.Figure) -> None:
+    """Turn off rcParam-driven auto layout so panel geometry stays explicit."""
+    try:
+        fig.set_layout_engine(None)
+    except AttributeError:
+        try:
+            fig.set_tight_layout(False)
+        except Exception:
+            pass
+
+    try:
+        fig.set_constrained_layout(False)
+    except Exception:
+        pass
+
+
+def _signal_grid_colorbar_count(components: Sequence[str]) -> int:
+    count = 0
+    if any(component in {"real", "imag"} for component in components):
+        count += 1
+    if "abs" in components:
+        count += 1
+    return count
+
+
+def _signal_grid_layout(
+    n_rows: int,
+    n_cols: int,
+    *,
+    ndim: int,
+    components: Sequence[str],
+    has_suptitle: bool,
+) -> dict[str, object]:
+    """Return a fixed physical layout so every subplot keeps the same size."""
+    left = _SIGNAL_GRID_LEFT_IN
+    right = _SIGNAL_GRID_RIGHT_IN
+    bottom = _SIGNAL_GRID_BOTTOM_IN
+    top = _SIGNAL_GRID_TOP_IN + (_SIGNAL_GRID_SUPTITLE_IN if has_suptitle else 0.0)
+
+    if ndim == 2:
+        colorbar_count = _signal_grid_colorbar_count(components)
+        if colorbar_count:
+            right += _SIGNAL_GRID_COLORBAR_PAD_IN
+            right += colorbar_count * _SIGNAL_GRID_COLORBAR_WIDTH_IN
+            right += max(0, colorbar_count - 1) * _SIGNAL_GRID_COLORBAR_GAP_IN
+            right += _SIGNAL_GRID_COLORBAR_LABEL_IN
+
+    fig_w = left + n_cols * _SIGNAL_GRID_PANEL_IN + (n_cols - 1) * _SIGNAL_GRID_W_GAP_IN + right
+    fig_h = bottom + n_rows * _SIGNAL_GRID_PANEL_IN + (n_rows - 1) * _SIGNAL_GRID_H_GAP_IN + top
+
+    return {
+        "figsize": (fig_w, fig_h),
+        "subplots_adjust": {
+            "left": left / fig_w,
+            "right": 1.0 - right / fig_w,
+            "bottom": bottom / fig_h,
+            "top": 1.0 - top / fig_h,
+            "wspace": _SIGNAL_GRID_W_GAP_IN / _SIGNAL_GRID_PANEL_IN,
+            "hspace": _SIGNAL_GRID_H_GAP_IN / _SIGNAL_GRID_PANEL_IN,
+        },
+        "suptitle_y": 1.0 - (_SIGNAL_GRID_SUPTITLE_Y_PAD_IN / fig_h),
+    }
+
+
 def _colorbar_positions_for_anchor(
+    fig: plt.Figure,
     anchor_box,
     *,
     colorbar_count: int,
 ) -> list[tuple[float, float, float, float]]:
     """Place one or two colorbars flush to the right of a subplot row."""
+    x_pad = _SIGNAL_GRID_COLORBAR_PAD_IN / fig.get_figwidth()
+    width = _SIGNAL_GRID_COLORBAR_WIDTH_IN / fig.get_figwidth()
+    gap = _SIGNAL_GRID_COLORBAR_GAP_IN / fig.get_figwidth()
+
     if colorbar_count == 1:
-        return [(anchor_box.x1 + 0.015, anchor_box.y0, 0.02, anchor_box.height)]
+        return [(anchor_box.x1 + x_pad, anchor_box.y0, width, anchor_box.height)]
     if colorbar_count == 2:
         return [
-            (anchor_box.x1 + 0.015, anchor_box.y0, 0.02, anchor_box.height),
-            (anchor_box.x1 + 0.065, anchor_box.y0, 0.02, anchor_box.height),
+            (anchor_box.x1 + x_pad, anchor_box.y0, width, anchor_box.height),
+            (anchor_box.x1 + x_pad + width + gap, anchor_box.y0, width, anchor_box.height),
         ]
     return []
 
@@ -524,6 +607,7 @@ def _add_component_colorbars(
     """Add one or two row-aligned colorbars next to the anchor axis."""
     anchor_box = anchor_ax.get_position()
     positions = _colorbar_positions_for_anchor(
+        fig,
         anchor_box,
         colorbar_count=len(colorbar_specs),
     )
@@ -534,23 +618,7 @@ def _add_component_colorbars(
         cbar = fig.colorbar(mappable, cax=cax)
         if label:
             cbar.set_label(label)
-        if len(colorbar_specs) == 2 and idx == 0:
-            cbar.set_label("")
         apply_decimal_colorbar_ticks(cbar, decimals=1)
-
-
-def _signal_grid_figsize(n_rows: int, n_cols: int) -> tuple[float, float]:
-    panel = 4.0
-    w_gap = 0.0
-    h_gap = 0.0
-    left = 0.0
-    right = 0.0
-    bottom = 0.0
-    top = 0.0
-
-    fig_w = left + n_cols * panel + (n_cols - 1) * w_gap + right
-    fig_h = bottom + n_rows * panel + (n_rows - 1) * h_gap + top
-    return fig_w, fig_h
 
 
 def _panel_display_vmax(panel: dict[str, object]) -> float:
@@ -772,18 +840,25 @@ def plot_el_field_signal_grid(
         )
     assert ndim is not None
 
-    figsize = _signal_grid_figsize(len(rows), len(components))
+    layout = _signal_grid_layout(
+        len(rows),
+        len(components),
+        ndim=ndim,
+        components=components,
+        has_suptitle=suptitle is not None,
+    )
     sharex = True
     sharey = (ndim == 2)   
 
     fig, axes = plt.subplots(
         len(rows),
         len(components),
-        figsize=figsize,
+        figsize=layout["figsize"],
         squeeze=False,
         sharex=sharex,
         sharey=sharey,
     )
+    _disable_automatic_figure_layout(fig)
 
     for row_idx, (row_label, row) in enumerate(zip(signal_labels, rows)):
         row_axes = axes[row_idx]
@@ -834,8 +909,8 @@ def plot_el_field_signal_grid(
                     add_colorbar=False,
                     square_axes=True,
                 )
-                apply_decimal_axis_ticks(axis, axis="x", decimals=2)
-                apply_decimal_axis_ticks(axis, axis="y", decimals=2)
+                apply_decimal_axis_ticks(axis, axis="x", decimals=1)
+                apply_decimal_axis_ticks(axis, axis="y", decimals=1)
 
             axis.tick_params(labelbottom=is_bottom_row)
 
@@ -863,18 +938,16 @@ def plot_el_field_signal_grid(
     if kwargs:
         add_text_box(axes[0, 0], kwargs=kwargs)
     if suptitle:
-        fig.suptitle(suptitle)
+        fig.suptitle(suptitle, y=float(layout["suptitle_y"]))
 
     if ndim == 1:
-        top_margin = 0.96 if suptitle else 0.98
         _add_simple_1d_ylabel(
             axes,
             components=components,
             is_normalised=is_any_normalised,
         )
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, top_margin))
-    else:
-        fig.tight_layout()
+
+    fig.subplots_adjust(**layout["subplots_adjust"])
 
     if ndim == 2:
         for row_idx, row in enumerate(rows):
@@ -884,7 +957,12 @@ def plot_el_field_signal_grid(
                 for col_idx, panel in enumerate(row_panels)
                 if str(panel["component"]) in components
             }
-            colorbar_specs = _component_colorbar_specs(components, row_panels, row_mappables)
+            colorbar_specs = _component_colorbar_specs(
+                components,
+                row_panels,
+                row_mappables,
+                show_labels=(row_idx == len(rows) // 2),
+            )
             if colorbar_specs:
                 _add_component_colorbars(
                     fig,
@@ -896,10 +974,10 @@ def plot_el_field_signal_grid(
     return fig
 
 
-def _shared_1d_signal_axis_label(*, is_normalised: bool) -> str:
+def _shared_signal_axis_label(*, is_normalised: bool) -> str:
     if is_normalised:
-        return r"$E_{k_S} / |E_{k_S}|_{\max}$"
-    return r"$E_{k_S}$"
+        return r"$E_{k_{\mathrm{S}}} / |E_{k_{\mathrm{S}}}|_{\max}$"
+    return r"$E_{k_{\mathrm{S}}}$"
 
 
 def _add_simple_1d_ylabel(
@@ -916,7 +994,7 @@ def _add_simple_1d_ylabel(
     mid_row = axes.shape[0] // 2
     signed_axis = axes[mid_row, int(signed_spec["anchor_index"])]
     signed_axis.set_ylabel(
-        _shared_1d_signal_axis_label(is_normalised=is_normalised),
+        _shared_signal_axis_label(is_normalised=is_normalised),
         labelpad=6,
     )
 
@@ -1112,19 +1190,17 @@ def _component_data(data: np.ndarray, component: str) -> tuple[np.ndarray, str]:
 
 def _component_signal_label(component: str, *, is_normalised: bool = False) -> str:
     """Return an explicit axis/colorbar label for the plotted component."""
-    if component == "real":
-        numerator = r"\mathrm{Re}[E_{k_S}]"
-    elif component == "imag":
-        numerator = r"\mathrm{Im}[E_{k_S}]"
-    elif component == "abs":
-        numerator = r"|E_{k_S}|"
+    if component in {"real", "imag"}:
+        return _shared_signal_axis_label(is_normalised=is_normalised)
+    if component == "abs":
+        numerator = r"|E_{k_{\mathrm{S}}}|"
     elif component == "phase":
-        return r"$\arg(E_{k_S})$"
+        return r"$\arg(E_{k_{\mathrm{S}}})$"
     else:
         raise ValueError(f"Invalid component: {component!r}")
 
     if is_normalised:
-        return rf"${numerator} / |E_{{k_S}}|_{{\max}}$"
+        return r"$" + numerator + r" / |E_{k_{\mathrm{S}}}|_{\max}$"
     return rf"${numerator}$"
 
 
@@ -1133,7 +1209,7 @@ def _domain_labels(domain: str, ndim: int):
     if domain not in {"time", "freq"}:
         raise ValueError("Invalid domain. Use 'time' or 'freq'.")
 
-    signal_label = r"$E_{k_S}$"
+    signal_label = r"$E_{k_{\mathrm{S}}}$"
     title_suffix = "Time domain signal" if domain == "time" else "Spectrum"
 
     if ndim == 1:
