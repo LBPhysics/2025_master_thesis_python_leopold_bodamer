@@ -27,6 +27,12 @@ from .rwa_utils import (
     get_expect_vals_with_RWA,
 )
 from .phase_cycling import phase_cycle_component
+from .phase_pool import (
+    PHASE_POOL_MAX_COMBOS_ENV,
+    create_phase_pool_executor,
+    phase_pool_combo_limit,
+    resolve_phase_pool_worker_count,
+)
 
 __all__ = [
     # constants
@@ -52,4 +58,9 @@ __all__ = [
     "get_expect_vals_with_RWA",
     # phase cycling
     "phase_cycle_component",
+    # phase pool
+    "PHASE_POOL_MAX_COMBOS_ENV",
+    "create_phase_pool_executor",
+    "phase_pool_combo_limit",
+    "resolve_phase_pool_worker_count",
 ]

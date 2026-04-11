@@ -67,10 +67,13 @@ class AtomicSystem:
         ):
             self.__dict__.pop(key, None)
 
-    def update_frequencies_cm(self, new_freqs: list[float]) -> None:
+    def update_frequencies_cm(self, new_freqs: list[float], *, track_history: bool = True) -> None:
         if len(new_freqs) != self.n_atoms:
             raise ValueError(f"Expected {self.n_atoms} frequencies, got {len(new_freqs)}")
-        self.frequencies_cm_history.append(new_freqs.copy())
+        if track_history:
+            self.frequencies_cm_history.append(new_freqs.copy())
+        else:
+            self.frequencies_cm_history = [new_freqs.copy()]
         self.frequencies_cm = new_freqs.copy()
         self._sync_units()
         self.reset_cache()

@@ -17,11 +17,15 @@ from qspectro2d.spectroscopy import compute_emitted_field_components
 from qspectro2d.utils.data_io import save_partial_reduction_artifact
 from qspectro2d.core.simulation.time_axes import compute_t_det
 from qspectro2d.config.factory import load_simulation_config
+from qspectro2d.utils.phase_pool import (
+    create_phase_pool_executor,
+    phase_pool_combo_limit,
+    resolve_phase_pool_worker_count,
+)
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in os.sys.path:
     os.sys.path.insert(0, str(SCRIPTS_DIR))
-
 
 def _load_combinations(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
@@ -62,6 +66,9 @@ def main() -> None:
         job_metadata = json.load(handle)
 
     merged_cfg = job_metadata["merged_config"]
+    config_source: str | dict[str, Any] = str(job_metadata.get("config_path", ""))
+    if not config_source:
+        config_source = merged_cfg
 
     slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
     if slurm_cpus is not None:
@@ -110,9 +117,17 @@ def main() -> None:
         raise ValueError(f"Invalid n_t_coh={n_t_coh}")
 
     phase_jobs = int(cfg.n_phases) ** 2 + 2 * int(cfg.n_phases) + 1
-    pool_workers = max(1, min(int(cfg.max_workers), phase_jobs))
+    pool_workers = resolve_phase_pool_worker_count(
+        configured_workers=int(cfg.max_workers),
+        phase_jobs=phase_jobs,
+    )
+    pool_combo_limit = phase_pool_combo_limit()
     print(
         f"Using one shared phase-cycling process pool: {pool_workers} worker(s) for {phase_jobs} phase jobs",
+        flush=True,
+    )
+    print(
+        f"Recycling the phase-cycling worker pool every {pool_combo_limit} combination(s)",
         flush=True,
     )
 
@@ -129,8 +144,24 @@ def main() -> None:
         total_global_combinations = len(combinations)
 
     t_start = time.time()
-    with ProcessPoolExecutor(max_workers=pool_workers) as executor:
+    executor: ProcessPoolExecutor | None = None
+    combos_since_pool_start = 0
+    try:
         for combo_idx, combo in enumerate(_iter_combos(combinations), start=1):
+            if executor is None or combos_since_pool_start >= pool_combo_limit:
+                if executor is not None:
+                    print(
+                        f"Recycling phase-cycling pool after {combos_since_pool_start} combination(s)",
+                        flush=True,
+                    )
+                    executor.shutdown(wait=True)
+                executor = create_phase_pool_executor(max_workers=pool_workers)
+                combos_since_pool_start = 0
+                print(
+                    f"Started phase-cycling pool for combo {combo_idx} / {len(combinations)}",
+                    flush=True,
+                )
+
             t_idx = int(combo["t_index"])
             inhom_idx = int(combo["inhom_index"])
             global_idx = int(combo.get("index", combo_idx - 1))
@@ -154,7 +185,7 @@ def main() -> None:
 
             call_start = time.time()
             e_components, run_status, status_message = compute_emitted_field_components(
-                config_source=merged_cfg,
+                config_source=config_source,
                 t_coh=t_coh_val,
                 freq_vector=freq_vector.tolist(),
                 time_cut=args.time_cut,
@@ -186,6 +217,10 @@ def main() -> None:
             counts_per_t_coh[t_idx] += 1
             frequency_sample_sum_cm += freq_vector
             frequency_sample_count += 1
+            combos_since_pool_start += 1
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True)
 
     partial_metadata = {
         "signal_types": signal_types,

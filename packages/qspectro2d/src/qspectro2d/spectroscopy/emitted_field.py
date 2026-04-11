@@ -7,17 +7,120 @@ this module returns field components proportional to ``-i P_sig(t)``.
 
 from __future__ import annotations
 
-from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
+import json
+from copy import deepcopy
+from concurrent.futures import Executor, as_completed
 from typing import Any, Mapping
 
 import numpy as np
 
+from ..config import resolve_config
 from ..config.defaults import COMPONENT_MAP, phase_cycling_phases
-from ..config.factory import load_simulation_config
+from ..config.factory import load_simulation, load_simulation_config
 from ..core.simulation.time_axes import compute_t_det
+from ..utils.phase_pool import create_phase_pool_executor, resolve_phase_pool_worker_count
 from .evolution import compute_polarisation_over_window
 
 __all__ = ["compute_emitted_field_components"]
+
+
+_WORKER_RESOLVED_CONFIG_CACHE: dict[str, Mapping[str, Any]] = {}
+_WORKER_SIMULATION_CACHE: dict[tuple[str, str | None], Any] = {}
+
+
+def _clear_worker_caches() -> None:
+    """Clear worker-local caches.
+
+    This is mainly intended for tests; production workers reuse these caches
+    for the lifetime of the process.
+    """
+    _WORKER_RESOLVED_CONFIG_CACHE.clear()
+    _WORKER_SIMULATION_CACHE.clear()
+
+
+def _config_cache_key(config_source: Mapping[str, Any] | str) -> str:
+    if isinstance(config_source, str):
+        return f"path:{config_source}"
+    payload = json.dumps(config_source, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return f"mapping:{payload}"
+
+
+def _resolved_worker_config(config_source: Mapping[str, Any] | str) -> tuple[str, Mapping[str, Any]]:
+    config_key = _config_cache_key(config_source)
+    cached_cfg = _WORKER_RESOLVED_CONFIG_CACHE.get(config_key)
+    if cached_cfg is None:
+        cached_cfg = resolve_config(config_source, emit_runtime_warnings=False)
+        _WORKER_RESOLVED_CONFIG_CACHE[config_key] = cached_cfg
+    return config_key, cached_cfg
+
+
+def _simulation_source_for_method(
+    resolved_cfg: Mapping[str, Any],
+    method_override: str | None,
+) -> Mapping[str, Any]:
+    if method_override is None:
+        return resolved_cfg
+
+    cfg_with_override = deepcopy(dict(resolved_cfg))
+    cfg_with_override.setdefault("config", {}).setdefault("solver_options", {})["method"] = (
+        method_override
+    )
+    return cfg_with_override
+
+
+def _cached_worker_run_sim(
+    config_source: Mapping[str, Any] | str,
+    *,
+    method_override: str | None,
+):
+    config_key, resolved_cfg = _resolved_worker_config(config_source)
+    cache_key = (config_key, method_override)
+
+    cached_sim = _WORKER_SIMULATION_CACHE.get(cache_key)
+    if cached_sim is not None:
+        return cached_sim
+
+    simulation_source = _simulation_source_for_method(resolved_cfg, method_override)
+    run_sim = load_simulation(simulation_source, emit_runtime_warnings=False)
+    _WORKER_SIMULATION_CACHE[cache_key] = run_sim
+    return run_sim
+
+
+def _update_worker_frequencies(system, freq_vector: list[float]) -> None:
+    """Update worker-local frequencies without unbounded history growth.
+
+    Some environments may still import an older ``AtomicSystem`` signature that
+    lacks the ``track_history`` keyword, so we keep a compatible fallback.
+    """
+    try:
+        system.update_frequencies_cm(freq_vector, track_history=False)
+        return
+    except TypeError as exc:
+        if "track_history" not in str(exc):
+            raise
+
+    system.update_frequencies_cm(freq_vector)
+    if hasattr(system, "frequencies_cm_history"):
+        system.frequencies_cm_history = [list(map(float, freq_vector))]
+
+
+def _prepare_worker_run_sim(
+    base_sim,
+    *,
+    t_coh: float,
+    freq_vector: list[float],
+    phi1: float,
+    phi2: float,
+    active_pulses: list[int] | None,
+):
+    # Keep the original ordering from the pre-cache implementation:
+    # update the full simulation first, then carve out reduced pulse subsets.
+    base_sim.update_delays(t_coh=t_coh)
+    _update_worker_frequencies(base_sim.system, freq_vector)
+    base_sim.refresh_cache()
+    run_sim = base_sim if active_pulses is None else base_sim.with_pulse_subset(active_pulses)
+    _set_phase_subset(run_sim, phi1=phi1, phi2=phi2, active_pulses=active_pulses)
+    return run_sim
 
 
 def _set_phase_subset(
@@ -51,34 +154,23 @@ def _worker_polarisation(
     freq_vector: list[float],
     phi1: float,
     phi2: float,
-    detection_window: list[float],
+    detection_window: tuple[float, ...],
     active_pulses: list[int] | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """Worker for one phase-cycling polarisation calculation."""
     from qutip.solver.integrator.integrator import IntegratorException
 
-    from qspectro2d.config import resolve_config
-    from qspectro2d.config.factory import load_simulation
-
-    def _build_run_sim(method_override: str | None = None):
-        simulation_source: Mapping[str, Any] | str = config_source
-        if method_override is not None:
-            resolved_cfg = resolve_config(config_source, emit_runtime_warnings=False)
-            resolved_cfg.setdefault("config", {}).setdefault("solver_options", {})["method"] = (
-                method_override
-            )
-            simulation_source = resolved_cfg
-
-        sim_oqs = load_simulation(simulation_source, emit_runtime_warnings=False)
-        sim_oqs.update_delays(t_coh=t_coh)
-        sim_oqs.system.update_frequencies_cm(freq_vector)
-        sim_oqs.refresh_cache()
-
-        run_sim = sim_oqs if active_pulses is None else sim_oqs.with_pulse_subset(active_pulses)
-        _set_phase_subset(run_sim, phi1=phi1, phi2=phi2, active_pulses=active_pulses)
-        return run_sim
-
-    run_sim = _build_run_sim()
+    run_sim = _prepare_worker_run_sim(
+        _cached_worker_run_sim(
+            config_source,
+            method_override=None,
+        ),
+        t_coh=t_coh,
+        freq_vector=freq_vector,
+        phi1=phi1,
+        phi2=phi2,
+        active_pulses=active_pulses,
+    )
     t_det = np.asarray(detection_window, dtype=float)
     try:
         _, polarisation = compute_polarisation_over_window(run_sim, t_det)
@@ -97,7 +189,17 @@ def _worker_polarisation(
             flush=True,
         )
         try:
-            retry_run_sim = _build_run_sim(method_override="bdf")
+            retry_run_sim = _prepare_worker_run_sim(
+                _cached_worker_run_sim(
+                    config_source,
+                    method_override="bdf",
+                ),
+                t_coh=t_coh,
+                freq_vector=freq_vector,
+                phi1=phi1,
+                phi2=phi2,
+                active_pulses=active_pulses,
+            )
             _, polarisation = compute_polarisation_over_window(retry_run_sim, t_det)
         except Exception as retry_exc:
             raise RuntimeError(
@@ -105,7 +207,9 @@ def _worker_polarisation(
                 f"BDF retry also failed with {type(retry_exc).__name__}: {retry_exc}"
             ) from retry_exc
 
-    return t_det, polarisation
+    # The detection axis is identical for every worker task, so returning only
+    # the polarisation avoids repeated IPC copies of the same array.
+    return np.asarray(polarisation, dtype=np.complex128)
 
 
 def compute_emitted_field_components(
@@ -161,17 +265,19 @@ def compute_emitted_field_components(
     if time_cut is not None and np.isfinite(time_cut):
         time_mask = (detection_window_arr <= float(time_cut)).astype(np.float64)
 
-    zero_component = np.zeros(component_count, dtype=np.complex128)
     accumulated = {
         signal_type: np.zeros(component_count, dtype=np.complex128) for signal_type in signal_types
     }
-
-    total_polarisations: dict[tuple[float, float], np.ndarray] = {}
-    single_pulse_1: dict[float, np.ndarray] = {}
-    single_pulse_2: dict[float, np.ndarray] = {}
-    single_pulse_3: np.ndarray | None = None
+    total_weights_by_signal: dict[str, dict[tuple[float, float], complex]] = {}
+    single_1_weights_by_signal: dict[str, dict[float, complex]] = {}
+    single_2_weights_by_signal: dict[str, dict[float, complex]] = {}
+    single_3_weights_by_signal: dict[str, complex] = {}
 
     issues: list[str] = []
+    seen_total: set[tuple[float, float]] = set()
+    seen_single_1: set[float] = set()
+    seen_single_2: set[float] = set()
+    seen_single_3 = False
 
     def _result_key(
         worker_kind: str,
@@ -187,9 +293,8 @@ def compute_emitted_field_components(
 
     def _normalise_worker_result(
         worker_label: str,
-        result: tuple[np.ndarray, np.ndarray],
+        polarisation: np.ndarray,
     ) -> np.ndarray:
-        _, polarisation = result
         polarisation = np.asarray(polarisation, dtype=np.complex128)
 
         if polarisation.shape != (component_count,):
@@ -227,12 +332,38 @@ def compute_emitted_field_components(
     job_specs.append(("single_3", 0.0, 0.0, [2]))
 
     total_tasks = len(job_specs)
-    max_workers = max(1, min(int(config.max_workers), total_tasks))
-    detection_window_list = detection_window_arr.tolist()
+    max_workers = resolve_phase_pool_worker_count(
+        configured_workers=int(config.max_workers),
+        phase_jobs=total_tasks,
+    )
+    detection_window_values = tuple(float(value) for value in detection_window_arr)
+
+    for signal_type in signal_types:
+        l_index, m_index = COMPONENT_MAP[signal_type] if lm is None else lm
+        phi1_factors = {
+            phi1: np.exp(-1j * l_index * phi1) for phi1 in phase_values
+        }
+        phi2_factors = {
+            phi2: np.exp(-1j * m_index * phi2) for phi2 in phase_values
+        }
+        phi1_sum = sum(phi1_factors.values())
+        phi2_sum = sum(phi2_factors.values())
+        total_weights_by_signal[signal_type] = {
+            (phi1, phi2): phi1_factors[phi1] * phi2_factors[phi2]
+            for phi1 in phase_values
+            for phi2 in phase_values
+        }
+        single_1_weights_by_signal[signal_type] = {
+            phi1: -phi1_factors[phi1] * phi2_sum for phi1 in phase_values
+        }
+        single_2_weights_by_signal[signal_type] = {
+            phi2: -phi1_sum * phi2_factors[phi2] for phi2 in phase_values
+        }
+        single_3_weights_by_signal[signal_type] = -phi1_sum * phi2_sum
 
     owns_executor = executor is None
     if owns_executor:
-        executor = ProcessPoolExecutor(max_workers=max_workers)
+        executor = create_phase_pool_executor(max_workers=max_workers)
 
     assert executor is not None
     try:
@@ -246,7 +377,7 @@ def compute_emitted_field_components(
                 freq_vector_list,
                 phi1,
                 phi2,
-                detection_window_list,
+                detection_window_values,
                 active_pulses,
             )
             futures[fut] = (worker_kind, phi1, phi2, active_pulses)
@@ -268,23 +399,40 @@ def compute_emitted_field_components(
                 continue
 
             if worker_kind == "total":
-                total_polarisations[(phi1_requested, phi2_requested)] = polarisation
+                seen_total.add((phi1_requested, phi2_requested))
+                for signal_type in signal_types:
+                    accumulated[signal_type] += (
+                        total_weights_by_signal[signal_type][(phi1_requested, phi2_requested)]
+                        * polarisation
+                    )
             elif worker_kind == "single_1":
-                single_pulse_1[phi1_requested] = polarisation
+                seen_single_1.add(phi1_requested)
+                for signal_type in signal_types:
+                    accumulated[signal_type] += (
+                        single_1_weights_by_signal[signal_type][phi1_requested] * polarisation
+                    )
             elif worker_kind == "single_2":
-                single_pulse_2[phi2_requested] = polarisation
+                seen_single_2.add(phi2_requested)
+                for signal_type in signal_types:
+                    accumulated[signal_type] += (
+                        single_2_weights_by_signal[signal_type][phi2_requested] * polarisation
+                    )
             elif worker_kind == "single_3":
-                single_pulse_3 = polarisation
+                seen_single_3 = True
+                for signal_type in signal_types:
+                    accumulated[signal_type] += (
+                        single_3_weights_by_signal[signal_type] * polarisation
+                    )
             else:
                 raise RuntimeError(f"Unexpected worker kind: {worker_kind}")
     finally:
         if owns_executor:
             executor.shutdown(wait=True)
 
-    missing_total = len(phase_values) ** 2 - len(total_polarisations)
-    missing_single_1 = len(phase_values) - len(single_pulse_1)
-    missing_single_2 = len(phase_values) - len(single_pulse_2)
-    missing_single_3 = 0 if single_pulse_3 is not None else 1
+    missing_total = len(phase_values) ** 2 - len(seen_total)
+    missing_single_1 = len(phase_values) - len(seen_single_1)
+    missing_single_2 = len(phase_values) - len(seen_single_2)
+    missing_single_3 = 0 if seen_single_3 else 1
 
     incomplete = bool(
         issues or missing_total or missing_single_1 or missing_single_2 or missing_single_3
@@ -312,27 +460,11 @@ def compute_emitted_field_components(
             "WARNING: Phase-cycling data incomplete or invalid; "
             "continuing with zero-filled missing components.\n"
             f"{status_message}",
-            flush=True,
+        flush=True,
         )
         run_status = "phase_cycling_incomplete"
     else:
         run_status = "ok"
-
-    p_sub_3 = single_pulse_3 if single_pulse_3 is not None else zero_component
-
-    for phi1 in phase_values:
-        p_sub_1 = single_pulse_1.get(phi1, zero_component)
-
-        for phi2 in phase_values:
-            p_total = total_polarisations.get((phi1, phi2), zero_component)
-            p_sub_2 = single_pulse_2.get(phi2, zero_component)
-
-            polarisation_component = p_total - p_sub_1 - p_sub_2 - p_sub_3
-
-            for signal_type in signal_types:
-                l_index, m_index = COMPONENT_MAP[signal_type] if lm is None else lm
-                phase_factor = np.exp(-1j * (l_index * phi1 + m_index * phi2))
-                accumulated[signal_type] += phase_factor * polarisation_component
 
     dphi = 2 * np.pi / len(phase_values)
     normalisation = (dphi / (2 * np.pi)) ** 2
