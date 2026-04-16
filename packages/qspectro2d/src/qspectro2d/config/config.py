@@ -278,9 +278,9 @@ def _enforce_nonrwa_output_dt(cfg: dict[str, Any], *, emit_runtime_warnings: boo
 
     Policy:
     - strict Nyquist limit: dt_out <= T_opt / 2
-    - implemented safe default: dt_out <= T_opt / 4
+    - implemented safe default: dt_out <= T_opt / 5
 
-    The T_opt / 4 rule is stricter than Nyquist and gives four output samples
+    The T_opt / 5 rule is stricter than Nyquist and gives five output samples
     per optical cycle instead of only two.
     """
     sim_cfg = cfg["config"]
@@ -295,7 +295,7 @@ def _enforce_nonrwa_output_dt(cfg: dict[str, Any], *, emit_runtime_warnings: boo
     recommended_dt_fs = optical_period_fs / 5.0
 
     dt_out = float(sim_cfg["dt"])
-    if dt_out > nyquist_dt_fs:
+    if dt_out > recommended_dt_fs:
         old_dt = dt_out
         sim_cfg["dt"] = recommended_dt_fs
 
@@ -303,8 +303,10 @@ def _enforce_nonrwa_output_dt(cfg: dict[str, Any], *, emit_runtime_warnings: boo
             warnings.warn(
                 "laser.rwa_sl=False: config.dt was automatically reduced from "
                 f"{old_dt:.6g} fs to {recommended_dt_fs:.6g} fs because the original "
-                "output spacing would alias the raw lab-frame optical carrier "
-                f"(T_opt={optical_period_fs:.6g} fs, Nyquist limit={nyquist_dt_fs:.6g} fs).",
+                "output spacing is too coarse for robust raw lab-frame carrier "
+                "resolution "
+                f"(T_opt={optical_period_fs:.6g} fs, Nyquist limit={nyquist_dt_fs:.6g} fs, "
+                f"recommended <= {recommended_dt_fs:.6g} fs).",
                 category=UserWarning,
                 stacklevel=2,
             )

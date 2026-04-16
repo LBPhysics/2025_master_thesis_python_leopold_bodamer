@@ -108,12 +108,12 @@ LINDBLAD_NONRWA_PROFILE = TimeProfile(
     liouville_exponent=0.85,
 )
 REDFIELD_NONRWA_PROFILE = TimeProfile(
-    ref_seconds_per_combo=25.93,
+    ref_seconds_per_combo=15.0,
     time_exponent=1.10,
     liouville_exponent=1.25,
 )
 REDFIELD_RWA_PROFILE = TimeProfile(
-    ref_seconds_per_combo=3.48,
+    ref_seconds_per_combo=2.30,
     time_exponent=1.10,
     liouville_exponent=1.25,
 )
@@ -152,11 +152,11 @@ MEMORY_PROFILES: dict[str, MemoryProfile] = {
         worker_history_copies=6.0,
     ),
     "redfield": MemoryProfile(
-        parent_base_mb=384.0,
-        worker_base_mb=160.0,
-        parent_dense_copies=6.0,
-        worker_dense_copies=2.5,
-        worker_history_copies=36.0,
+        parent_base_mb=256.0,
+        worker_base_mb=96.0,
+        parent_dense_copies=4.0,
+        worker_dense_copies=2.0,
+        worker_history_copies=18.0,
     ),
 }
 
@@ -279,13 +279,10 @@ def _estimate_requested_memory_mb(
         and effective_workers >= 10
         and n_t_det >= 250
     ):
-        if str(solver) == "paper_eqs":
-            # Proteus validation on an intermediate dimer 2D paper_eqs run
-            # showed the old 4096M blanket floor was much too high, but we
-            # still keep a conservative floor for the heavier long-batch runs.
-            risky_dimer_floor_mb = 2816.0
-        elif str(solver) == "redfield":
-            risky_dimer_floor_mb = 4096.0
+        # Proteus validation on an intermediate dimer 2D paper_eqs run
+        # showed the old 4096M blanket floor was much too high, but we
+        # still keep a conservative floor for the heavier long-batch runs.
+        risky_dimer_floor_mb = 1500.0
 
     return max(estimated_mb, risky_dimer_floor_mb)
 

@@ -201,3 +201,15 @@ archive/
 **/.err
 **/logs
 command_to_replace.txt
+
+# Session cleanup: keep only core tracked edits
+/.mplconfig_codex*/
+/tmp/
+
+# Experimental/audit scripts not needed for this commit
+/packages/qspectro2d/src/qspectro2d/diagnostics/paper_dimer_audit.py
+/scripts/local/debug_coupled_paper_eqs_audit.py
+/scripts/local/fit_fig4_bath_and_plot.py
+/scripts/local/fit_monomer_bath_rates.py
+/scripts/local/plot_dimer_intrinsic_debug.py
+/scripts/local/plot_dimer_paper_debug.py

@@ -1298,7 +1298,7 @@ def add_custom_contour_lines(
                 y,
                 filled,
                 levels=positive_levels,
-                colors=COLORS[0],
+                colors=COLORS[1],
                 linewidths=1.0,
                 alpha=0.9,
             )
@@ -1308,7 +1308,7 @@ def add_custom_contour_lines(
                 y,
                 filled,
                 levels=negative_levels,
-                colors=COLORS[1],
+                colors=COLORS[0],
                 linewidths=1.0,
                 alpha=0.9,
                 linestyles=LINE_STYLES[1],
@@ -1324,7 +1324,7 @@ def add_custom_contour_lines(
     if levels.size == 0:
         return
 
-    contour_plot = ax.contour(
+    ax.contour(
         x,
         y,
         filled,
@@ -1333,14 +1333,6 @@ def add_custom_contour_lines(
         linewidths=0.7,
         alpha=0.8,
     )
-    ax.clabel(
-        contour_plot,
-        inline=True,
-        fontsize=8,
-        fmt="%.2f",
-        levels=contour_plot.levels[::2],
-    )
-
 
 def _format_text_box_value(value) -> str:
     if isinstance(value, float):

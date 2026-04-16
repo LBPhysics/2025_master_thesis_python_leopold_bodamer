@@ -158,7 +158,6 @@ def _worker_polarisation(
     active_pulses: list[int] | None = None,
 ) -> np.ndarray:
     """Worker for one phase-cycling polarisation calculation."""
-    from qutip.solver.integrator.integrator import IntegratorException
 
     run_sim = _prepare_worker_run_sim(
         _cached_worker_run_sim(
@@ -172,40 +171,7 @@ def _worker_polarisation(
         active_pulses=active_pulses,
     )
     t_det = np.asarray(detection_window, dtype=float)
-    try:
-        _, polarisation = compute_polarisation_over_window(run_sim, t_det)
-    except IntegratorException as exc:
-        current_method = str(run_sim.simulation_config.solver_options.get("method", "")).lower()
-        if current_method != "lsoda":
-            print(
-                f"\n\nWARNING: ODE solver '{current_method}' failed;\n\n")
-            raise
-
-        print(
-            "WARNING: LSODA worker failed; retrying with BDF "
-            f"(solver={run_sim.simulation_config.ode_solver}, "
-            f"t_coh={float(t_coh):.6g}, phi1={float(phi1):.6g}, phi2={float(phi2):.6g}, "
-            f"active_pulses={'all' if active_pulses is None else list(active_pulses)})",
-            flush=True,
-        )
-        try:
-            retry_run_sim = _prepare_worker_run_sim(
-                _cached_worker_run_sim(
-                    config_source,
-                    method_override="bdf",
-                ),
-                t_coh=t_coh,
-                freq_vector=freq_vector,
-                phi1=phi1,
-                phi2=phi2,
-                active_pulses=active_pulses,
-            )
-            _, polarisation = compute_polarisation_over_window(retry_run_sim, t_det)
-        except Exception as retry_exc:
-            raise RuntimeError(
-                f"LSODA failed with {type(exc).__name__}: {exc}; "
-                f"BDF retry also failed with {type(retry_exc).__name__}: {retry_exc}"
-            ) from retry_exc
+    _, polarisation = compute_polarisation_over_window(run_sim, t_det)
 
     # The detection axis is identical for every worker task, so returning only
     # the polarisation avoids repeated IPC copies of the same array.

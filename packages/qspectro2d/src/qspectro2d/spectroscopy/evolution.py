@@ -17,6 +17,7 @@ SimulationModuleOQS.
 from __future__ import annotations
 from qutip import Qobj, brmesolve, mesolve
 import numpy as np
+from qutip.solver.integrator.integrator import IntegratorException
 
 from ..core.simulation import SimulationModuleOQS
 from ..core.simulation.time_axes import compute_t_det, compute_times_local
@@ -128,10 +129,28 @@ def compute_evolution(
                 options=options,
                 **run_kwargs,
             )
-        except Exception:
-            if log_solver_debug_on_error:
-                log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
-            raise
+        except Exception as exc:
+            if isinstance(exc, IntegratorException) and str(options.get("method", "")).lower() == "lsoda":
+                retry_options = options.copy()
+                retry_options["method"] = "bdf"
+                try:
+                    result = brmesolve(
+                        H=hamiltonian,
+                        psi0=state0,
+                        tlist=t_list,
+                        a_ops=sim_oqs.decay_channels,
+                        e_ops=e_ops,
+                        options=retry_options,
+                        **run_kwargs,
+                    )
+                except Exception:
+                    if log_solver_debug_on_error:
+                        log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, retry_options)
+                    raise
+            else:
+                if log_solver_debug_on_error:
+                    log_redfield_solver_debug(sim_oqs, t_list, run_kwargs, options)
+                raise
     elif solver == "lindblad":
         try:
             result = mesolve(
@@ -143,10 +162,28 @@ def compute_evolution(
                 options=options,
                 **run_kwargs,
             )
-        except Exception:
-            if log_solver_debug_on_error:
-                log_lindblad_solver_debug(sim_oqs, t_list, run_kwargs, options)
-            raise
+        except Exception as exc:
+            if isinstance(exc, IntegratorException) and str(options.get("method", "")).lower() == "lsoda":
+                retry_options = options.copy()
+                retry_options["method"] = "bdf"
+                try:
+                    result = mesolve(
+                        H=hamiltonian,
+                        rho0=state0,
+                        tlist=t_list,
+                        c_ops=sim_oqs.decay_channels,
+                        e_ops=e_ops,
+                        options=retry_options,
+                        **run_kwargs,
+                    )
+                except Exception:
+                    if log_solver_debug_on_error:
+                        log_lindblad_solver_debug(sim_oqs, t_list, run_kwargs, retry_options)
+                    raise
+            else:
+                if log_solver_debug_on_error:
+                    log_lindblad_solver_debug(sim_oqs, t_list, run_kwargs, options)
+                raise
     elif solver == "paper_eqs":
         result = mesolve(
             H=hamiltonian,
