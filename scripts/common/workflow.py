@@ -32,7 +32,9 @@ from qspectro2d.core.simulation.time_axes import (
     compute_t_det,
 )
 from qspectro2d.diagnostics import check_the_solver
-from qspectro2d.spectroscopy import sample_from_gaussian
+from qspectro2d.spectroscopy import (
+    sample_static_disorder,
+)
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 for _parent in SCRIPTS_DIR.parents:
@@ -262,10 +264,14 @@ def prepare_workflow(
     if n_inhom <= 0:
         raise ValueError("n_inhomogen must be positive")
 
-    samples = sample_from_gaussian(
+    mu = np.asarray(sim.system.frequencies_cm, dtype=float)
+    fwhm = float(sim.system.delta_inhomogen_cm)
+    corr = getattr(sim.system, "inhom_correlation", None)
+    samples = sample_static_disorder(
         n_samples=n_inhom,
-        fwhm=float(sim.system.delta_inhomogen_cm),
-        mu=np.asarray(sim.system.frequencies_cm, dtype=float),
+        fwhm=fwhm,
+        mu=mu,
+        corr=corr,
     )
 
     t_coh_values = np.asarray(compute_t_coh(sim.simulation_config), dtype=float)

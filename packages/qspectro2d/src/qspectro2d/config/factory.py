@@ -23,14 +23,10 @@ def _simulation_config_from_resolved(cfg: Mapping[str, Any]) -> SimulationConfig
     laser_cfg = cfg["laser"]
     sim_cfg = cfg["config"]
 
+    # Pass Redfield sec_cutoff through unchanged.
+    # QuTiP interprets it as a dimensionless multiplier of dw_min, the smallest
+    # nonzero Bohr-frequency spacing of the instantaneous Hamiltonian.
     solver_run_kwargs = dict(sim_cfg["solver_run_kwargs"])
-    if str(sim_cfg["solver"]) == "redfield" and "sec_cutoff" in solver_run_kwargs:
-        sec_cutoff = float(solver_run_kwargs["sec_cutoff"])
-        if not np.isclose(sec_cutoff, -1.0):
-            frequencies_cm = np.asarray(atomic_cfg["frequencies_cm"], dtype=float)
-            mean_freq_cm = float(np.mean(frequencies_cm))
-            w0_fs = float(convert_cm_to_fs(mean_freq_cm))
-            solver_run_kwargs["sec_cutoff"] = sec_cutoff * w0_fs
 
     return SimulationConfig(
         ode_solver=str(sim_cfg["solver"]),
@@ -86,6 +82,7 @@ def load_simulation_atomic_system(cfg: Mapping[str, Any]) -> AtomicSystem:
         dip_moments=list(atomic_cfg["dip_moments"]),
         coupling_cm=float(atomic_cfg["coupling_cm"]),
         delta_inhomogen_cm=float(atomic_cfg["delta_inhomogen_cm"]),
+        inhom_correlation=atomic_cfg.get("inhom_correlation"),
         max_excitation=int(atomic_cfg["max_excitation"]),
         deph_rate_fs=float(atomic_cfg["deph_rate_fs"]),
         down_rate_fs=float(atomic_cfg["down_rate_fs"]),

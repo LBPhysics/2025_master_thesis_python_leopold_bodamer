@@ -413,6 +413,7 @@ def _render_domain_figure(
         contour_lines=contour_lines,
         normalization_factors=payload.normalization_factors,
         plot_norms_by_signal=payload.plot_norms_by_signal,
+        normalization_scope=norm_scope,
         suptitle=_domain_suptitle(domain),
     )
     saved = save_fig(

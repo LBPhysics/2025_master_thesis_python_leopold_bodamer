@@ -22,6 +22,7 @@ class AtomicSystem:
     dip_moments: list[float] = field(default_factory=lambda: [1.0])
     coupling_cm: float = 0.0
     delta_inhomogen_cm: float = 0.0
+    inhom_correlation: float | list[list[float]] | None = None
     max_excitation: int = 1
     # Store dissipative rates on the system so every solver backend uses the
     # same configured values rather than package-level defaults.
@@ -30,10 +31,24 @@ class AtomicSystem:
     up_rate_fs: float = 0.0
 
     def __post_init__(self) -> None:
+        self._normalize_inhom_correlation()
         self.frequencies_cm_history = [self.frequencies_cm.copy()]
         self._sync_units()
         self._build_basis()
         self._setup_geometry()
+
+    def _normalize_inhom_correlation(self) -> None:
+        if self.inhom_correlation is None:
+            return
+
+        corr_array = np.asarray(self.inhom_correlation, dtype=float)
+        if corr_array.ndim == 0:
+            self.inhom_correlation = float(corr_array)
+            return
+        if corr_array.ndim == 2:
+            self.inhom_correlation = corr_array.tolist()
+            return
+        raise ValueError("inhom_correlation must be a scalar or a 2D matrix")
 
     def _sync_units(self) -> None:
         self.frequencies_fs = np.asarray(convert_cm_to_fs(self.frequencies_cm), dtype=float)
@@ -280,6 +295,8 @@ class AtomicSystem:
         if self.n_atoms == 2:
             lines.append(f"    {'coupling':<20}: {self.coupling_cm} cm^-1")
             lines.append(f"    {'delta':<20}: {self.delta_inhomogen_cm} cm^-1")
+            if self.inhom_correlation is not None:
+                lines.append(f"    {'inhom corr':<20}: {self.inhom_correlation}")
         elif self.n_atoms > 2:
             lines.append(f"    {'n_rings':<20}: {self.n_rings} (n_chains = {self.n_chains})")
             lines.append(f"    {'positions shape':<20}: {self._positions.shape}")
@@ -316,6 +333,8 @@ class AtomicSystem:
             payload["n_rings"] = self.n_rings
         if self.delta_inhomogen_cm != 0.0:
             payload["delta_inhomogen_cm"] = self.delta_inhomogen_cm
+        if self.inhom_correlation is not None:
+            payload["inhom_correlation"] = self.inhom_correlation
         if self.coupling_cm != 0.0:
             payload["coupling_cm"] = self.coupling_cm
         return payload

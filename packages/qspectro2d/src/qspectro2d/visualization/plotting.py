@@ -142,6 +142,17 @@ def _finite_values(data: np.ndarray) -> np.ndarray:
     return values[np.isfinite(values)]
 
 
+def _abs_finite_max(data: np.ndarray) -> float | None:
+    values = _finite_values(data)
+    if values.size == 0:
+        return None
+
+    vmax = float(np.max(np.abs(values)))
+    if not np.isfinite(vmax) or vmax <= 0.0:
+        return None
+    return vmax
+
+
 def _default_plot_norm(
     component: str,
     plot_data: np.ndarray,
@@ -420,6 +431,56 @@ def _prepare_component_plot_data(
     return plot_data, base_title, is_normalised
 
 
+def _contour_reference_vmax(
+    panels: Sequence[dict[str, object]],
+) -> float | None:
+    """Return per-row contour vmax from the largest magnitude across real/imag."""
+    candidates: list[float] = []
+    for panel in panels:
+        component = str(panel["component"])
+        if component not in {"real", "imag"}:
+            continue
+        panel_vmax = _abs_finite_max(np.ma.asarray(panel["plot_data"]))
+        if panel_vmax is not None:
+            candidates.append(panel_vmax)
+
+    if not candidates:
+        return None
+
+    vmax = float(max(candidates))
+    return vmax if np.isfinite(vmax) and vmax > 0.0 else None
+
+
+def _absorptive_real_contour_vmax(
+    *,
+    signal_labels: Sequence[str],
+    rows: Sequence[dict[str, object]],
+) -> float | None:
+    """Return shared contour vmax as max(Re(absorptive)) if available."""
+    for signal_label, row in zip(signal_labels, rows):
+        if "absorptive" not in str(signal_label).lower():
+            continue
+
+        panels = row.get("panels", [])
+        real_panel = next(
+            (panel for panel in panels if str(panel.get("component")) == "real"),
+            None,
+        )
+        if real_panel is None:
+            return None
+
+        values = _finite_values(np.ma.asarray(real_panel.get("plot_data")))
+        if values.size == 0:
+            return None
+
+        vmax = float(np.max(values))
+        if np.isfinite(vmax) and vmax > 0.0:
+            return vmax
+        return None
+
+    return None
+
+
 def validate_plot_components(components: Sequence[str]) -> tuple[str, ...]:
     """Validate the component list used for composite job plots."""
     allowed = {"real", "imag", "abs"}
@@ -447,11 +508,15 @@ def _composite_signed_colorbar_label(
     components: Sequence[str],
     *,
     is_normalised: bool,
+    normalization_scope: str | None,
 ) -> str:
     """Return a simplified shared label for the signed colorbar."""
     if not any(component in {"real", "imag"} for component in components):
         raise ValueError("Signed colorbar label requires at least one signed component")
-    return _shared_signal_axis_label(is_normalised=is_normalised)
+    return _shared_signal_axis_label(
+        is_normalised=is_normalised,
+        normalization_scope=normalization_scope,
+    )
 
 
 def _component_colorbar_specs(
@@ -460,6 +525,7 @@ def _component_colorbar_specs(
     mappables: dict[str, object],
     *,
     show_labels: bool = True,
+    normalization_scope: str | None = None,
 ) -> list[tuple[object, str]]:
     """Build shared colorbar specs for a component row."""
     colorbar_specs: list[tuple[object, str]] = []
@@ -474,8 +540,9 @@ def _component_colorbar_specs(
                     _composite_signed_colorbar_label(
                         signed_components,
                         is_normalised=bool(signed_panel["is_normalised"]),
+                        normalization_scope=normalization_scope,
                     )
-                    if show_labels
+                    if show_labels and "abs" not in components
                     else ""
                 ),
             )
@@ -489,6 +556,7 @@ def _component_colorbar_specs(
                     _component_signal_label(
                         "abs",
                         is_normalised=bool(abs_panel["is_normalised"]),
+                        normalization_scope=normalization_scope,
                     )
                     if show_labels
                     else ""
@@ -763,6 +831,7 @@ def plot_el_field_signal_grid(
     contour_lines: bool = False,
     normalization_factors: Sequence[float | None] | None = None,
     plot_norms_by_signal: Sequence[dict[str, Normalize | None]] | None = None,
+    normalization_scope: str | None = None,
     suptitle: str | None = None,
     **kwargs: dict,
 ) -> plt.Figure:
@@ -836,9 +905,18 @@ def plot_el_field_signal_grid(
                 "axis_coh": row_axis_coh,
                 "axis_det": row_axis_det,
                 "panels": row_panels,
+                "contour_vmax": _contour_reference_vmax(row_panels),
             }
         )
     assert ndim is not None
+
+    shared_absorptive_vmax = _absorptive_real_contour_vmax(
+        signal_labels=signal_labels,
+        rows=rows,
+    )
+    if shared_absorptive_vmax is not None:
+        for row in rows:
+            row["contour_vmax"] = shared_absorptive_vmax
 
     layout = _signal_grid_layout(
         len(rows),
@@ -865,6 +943,7 @@ def plot_el_field_signal_grid(
         row_panels = row["panels"]
         row_axis_det = row["axis_det"]
         row_axis_coh = row["axis_coh"]
+        row_contour_vmax = row["contour_vmax"]
         is_bottom_row = row_idx == len(rows) - 1
         row_name = str(row_label).replace("_", " ").title()
         for col_idx, (axis, panel) in enumerate(zip(row_axes, row_panels)):
@@ -885,6 +964,7 @@ def plot_el_field_signal_grid(
                     base_title=base_title,
                     plot_norm=plot_norm,
                     is_normalised=is_normalised,
+                    normalization_scope=normalization_scope,
                     title=title,
                     show_xlabel=is_bottom_row,
                     show_ylabel=False,
@@ -901,8 +981,10 @@ def plot_el_field_signal_grid(
                     domain=domain,
                     base_title=base_title,
                     contour_lines=contour_lines,
+                    contour_vmax=row_contour_vmax,
                     plot_norm=plot_norm,
                     is_normalised=is_normalised,
+                    normalization_scope=normalization_scope,
                     title=title,
                     show_xlabel=is_bottom_row,
                     show_ylabel=(col_idx == 0),
@@ -945,6 +1027,7 @@ def plot_el_field_signal_grid(
             axes,
             components=components,
             is_normalised=is_any_normalised,
+            normalization_scope=normalization_scope,
         )
 
     fig.subplots_adjust(**layout["subplots_adjust"])
@@ -962,6 +1045,7 @@ def plot_el_field_signal_grid(
                 row_panels,
                 row_mappables,
                 show_labels=(row_idx == len(rows) // 2),
+                normalization_scope=normalization_scope,
             )
             if colorbar_specs:
                 _add_component_colorbars(
@@ -974,9 +1058,20 @@ def plot_el_field_signal_grid(
     return fig
 
 
-def _shared_signal_axis_label(*, is_normalised: bool) -> str:
+def _normalization_denominator_label(normalization_scope: str | None) -> str:
+    if normalization_scope == "all_signals":
+        return r"|E|_{\max}"
+    return r"|E_{k_{\mathrm{S}}}|_{\max}"
+
+
+def _shared_signal_axis_label(
+    *,
+    is_normalised: bool,
+    normalization_scope: str | None = None,
+) -> str:
     if is_normalised:
-        return r"$E_{k_{\mathrm{S}}} / |E_{k_{\mathrm{S}}}|_{\max}$"
+        denominator = _normalization_denominator_label(normalization_scope)
+        return rf"$E_{{k_{{\mathrm{{S}}}}}} / {denominator}$"
     return r"$E_{k_{\mathrm{S}}}$"
 
 
@@ -985,6 +1080,7 @@ def _add_simple_1d_ylabel(
     *,
     components: Sequence[str],
     is_normalised: bool,
+    normalization_scope: str | None = None,
 ) -> None:
     layout = _grouped_1d_axis_layout(components)
     signed_spec = layout.get("signed")
@@ -994,7 +1090,10 @@ def _add_simple_1d_ylabel(
     mid_row = axes.shape[0] // 2
     signed_axis = axes[mid_row, int(signed_spec["anchor_index"])]
     signed_axis.set_ylabel(
-        _shared_signal_axis_label(is_normalised=is_normalised),
+        _shared_signal_axis_label(
+            is_normalised=is_normalised,
+            normalization_scope=normalization_scope,
+        ),
         labelpad=6,
     )
 
@@ -1008,6 +1107,7 @@ def _plot_el_field_1d(
     base_title: str,
     plot_norm: Normalize | None = None,
     is_normalised: bool = False,
+    normalization_scope: str | None = None,
     title: str | None = None,
     show_xlabel: bool = True,
     show_ylabel: bool = True,
@@ -1017,7 +1117,11 @@ def _plot_el_field_1d(
 
     values = np.asarray(plot_data, dtype=float)
     x_label, _, title_suffix = _domain_labels(domain, 1)
-    y_label = _component_signal_label(component, is_normalised=is_normalised)
+    y_label = _component_signal_label(
+        component,
+        is_normalised=is_normalised,
+        normalization_scope=normalization_scope,
+    )
 
     ax.plot(
         axis_det,
@@ -1059,8 +1163,10 @@ def _plot_el_field_2d(
     domain: str,
     base_title: str,
     contour_lines: bool = False,
+    contour_vmax: float | None = None,
     plot_norm: Normalize | None = None,
     is_normalised: bool = False,
+    normalization_scope: str | None = None,
     title: str | None = None,
     show_xlabel: bool = True,
     show_ylabel: bool = True,
@@ -1105,11 +1211,16 @@ def _plot_el_field_2d(
             y=axis_det,
             data=plot_data.T,
             component=component,
+            vmax_reference=contour_vmax,
             ax=ax,
         )
 
     x_label, y_label, _, title_suffix = _domain_labels(domain, 2)
-    cbar_label = _component_signal_label(component, is_normalised=is_normalised)
+    cbar_label = _component_signal_label(
+        component,
+        is_normalised=is_normalised,
+        normalization_scope=normalization_scope,
+    )
     ax.set_xlabel(x_label if show_xlabel else "")
     ax.set_ylabel(y_label if show_ylabel else "")
     ax.set_title(base_title + " " + title_suffix if title is None else title)
@@ -1188,10 +1299,18 @@ def _component_data(data: np.ndarray, component: str) -> tuple[np.ndarray, str]:
     raise ValueError("Invalid component.")
 
 
-def _component_signal_label(component: str, *, is_normalised: bool = False) -> str:
+def _component_signal_label(
+    component: str,
+    *,
+    is_normalised: bool = False,
+    normalization_scope: str | None = None,
+) -> str:
     """Return an explicit axis/colorbar label for the plotted component."""
     if component in {"real", "imag"}:
-        return _shared_signal_axis_label(is_normalised=is_normalised)
+        return _shared_signal_axis_label(
+            is_normalised=is_normalised,
+            normalization_scope=normalization_scope,
+        )
     if component == "abs":
         numerator = r"|E_{k_{\mathrm{S}}}|"
     elif component == "phase":
@@ -1200,7 +1319,8 @@ def _component_signal_label(component: str, *, is_normalised: bool = False) -> s
         raise ValueError(f"Invalid component: {component!r}")
 
     if is_normalised:
-        return r"$" + numerator + r" / |E_{k_{\mathrm{S}}}|_{\max}$"
+        denominator = _normalization_denominator_label(normalization_scope)
+        return r"$" + numerator + r" / " + denominator + r"$"
     return rf"${numerator}$"
 
 
@@ -1241,6 +1361,7 @@ def add_custom_contour_lines(
     data: np.ndarray,
     component: str,
     level_count: int = 10,
+    vmax_reference: float | None = None,
     ax: plt.Axes | None = None,
 ) -> None:
     """Add contour lines to a 2D plot.
@@ -1255,6 +1376,9 @@ def add_custom_contour_lines(
         2D array in plotting orientation, i.e. shape ``(len(y), len(x))``.
     component
         One of ``real``, ``imag``, ``abs``, ``phase``.
+    vmax_reference
+        Optional shared positive vmax. Used for ``real`` and ``imag`` components
+        to keep contour levels aligned within the same signal row.
     """
     if ax is None:
         ax = plt.gca()
@@ -1277,7 +1401,13 @@ def add_custom_contour_lines(
         return
 
     if component in {"real", "imag", "phase"}:
-        vmax = float(np.nanmax(np.abs(filled)))
+        shared_vmax = None
+        if component in {"real", "imag"} and vmax_reference is not None:
+            candidate = float(vmax_reference)
+            if np.isfinite(candidate) and candidate > 0.0:
+                shared_vmax = candidate
+
+        vmax = shared_vmax if shared_vmax is not None else float(np.nanmax(np.abs(filled)))
         if vmax <= 0:
             return
 

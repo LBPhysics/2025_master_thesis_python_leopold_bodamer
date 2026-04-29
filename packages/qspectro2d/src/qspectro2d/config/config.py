@@ -122,6 +122,49 @@ def _coerce_float_list(value: Any, *, field_name: str) -> list[float]:
     ]
 
 
+def _coerce_inhom_correlation(
+    value: Any,
+    *,
+    field_name: str,
+) -> float | list[list[float]] | None:
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float, str)):
+        return _coerce_float(value, field_name=field_name)
+
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(
+            f"Expected scalar or 2D list for {field_name}, got {type(value).__name__}: {value!r}"
+        )
+
+    if not value:
+        raise ValueError(f"{field_name} cannot be an empty list")
+
+    matrix: list[list[float]] = []
+    n_cols: int | None = None
+    for row_idx, row in enumerate(value):
+        if not isinstance(row, (list, tuple)):
+            raise TypeError(
+                f"{field_name}[{row_idx}] must be a list/tuple, got {type(row).__name__}: {row!r}"
+            )
+        if n_cols is None:
+            n_cols = len(row)
+            if n_cols == 0:
+                raise ValueError(f"{field_name} rows cannot be empty")
+        elif len(row) != n_cols:
+            raise ValueError(f"{field_name} must be a rectangular 2D list")
+
+        matrix.append(
+            [
+                _coerce_float(item, field_name=f"{field_name}[{row_idx}][{col_idx}]")
+                for col_idx, item in enumerate(row)
+            ]
+        )
+
+    return matrix
+
+
 def _coerce_str_list(value: Any, *, field_name: str) -> list[str]:
     if not isinstance(value, (list, tuple)):
         raise TypeError(f"Expected a list for {field_name}, got {type(value).__name__}: {value!r}")
@@ -141,6 +184,7 @@ SECTION_SCHEMAS: dict[str, dict[str, Coercer]] = {
         "n_inhomogen": _coerce_int,
         "coupling_cm": _coerce_float,
         "delta_inhomogen_cm": _coerce_float,
+        "inhom_correlation": _coerce_inhom_correlation,
         "deph_rate_fs": _coerce_float,
         "down_rate_fs": _coerce_float,
         "up_rate_fs": _coerce_float,
@@ -412,6 +456,7 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
     envelope_type = laser_cfg["envelope_type"]
     coupling_cm = atomic_cfg["coupling_cm"]
     delta_inhomogen_cm = atomic_cfg["delta_inhomogen_cm"]
+    inhom_correlation = atomic_cfg.get("inhom_correlation")
     solver_options = sim_cfg["solver_options"]
     solver_run_kwargs = sim_cfg["solver_run_kwargs"]
     sim_type = sim_cfg["sim_type"]
@@ -464,6 +509,35 @@ def validate_config(cfg: Mapping[str, Any], *, emit_runtime_warnings: bool = Tru
         raise ValueError("coupling_cm must be >= 0")
     if delta_inhomogen_cm < 0:
         raise ValueError("delta_inhomogen_cm must be >= 0")
+    if inhom_correlation is not None:
+        corr_array = np.asarray(inhom_correlation, dtype=float)
+        if corr_array.ndim == 0:
+            rho = float(corr_array)
+            if n_atoms != 2:
+                raise ValueError(
+                    "atomic.inhom_correlation scalar is only valid for atomic.n_atoms == 2"
+                )
+            if not (-1.0 <= rho <= 1.0):
+                raise ValueError("atomic.inhom_correlation scalar must satisfy -1 <= rho <= 1")
+        elif corr_array.ndim == 2:
+            expected_shape = (n_atoms, n_atoms)
+            if corr_array.shape != expected_shape:
+                raise ValueError(
+                    "atomic.inhom_correlation matrix shape must be "
+                    f"{expected_shape}, got {corr_array.shape}"
+                )
+            if not np.allclose(corr_array, corr_array.T):
+                raise ValueError("atomic.inhom_correlation matrix must be symmetric")
+            if not np.allclose(np.diag(corr_array), 1.0):
+                raise ValueError(
+                    "atomic.inhom_correlation matrix diagonal must contain only ones"
+                )
+            if np.min(np.linalg.eigvalsh(corr_array)) < -1e-12:
+                raise ValueError(
+                    "atomic.inhom_correlation matrix must be positive semidefinite"
+                )
+        else:
+            raise ValueError("atomic.inhom_correlation must be a scalar or a 2D matrix")
 
     if n_phases <= 0:
         raise ValueError("n_phases must be > 0")

@@ -204,6 +204,9 @@ command_to_replace.txt
 
 # Session cleanup: keep only core tracked edits
 /.mplconfig_codex*/
+/.mplconfig_plot_*/
+/.matplotlib/
+/pytest-cache-files-*/
 /tmp/
 
 # Experimental/audit scripts not needed for this commit

@@ -1,6 +1,11 @@
 """Spectroscopy calculations and post-processing."""
 
-from .broadening import normalized_gauss, sample_from_gaussian
+from .broadening import (
+    normalized_gauss,
+    sample_from_correlated_gaussian,
+    sample_from_gaussian,
+    sample_static_disorder,
+)
 from .emitted_field import compute_emitted_field_components
 from .evolution import compute_evolution
 from .polarisation import complex_polarisation
@@ -13,6 +18,8 @@ __all__ = [
     "compute_emitted_field_components",
     "phase_cycle_component",
     "normalized_gauss",
+    "sample_static_disorder",
     "sample_from_gaussian",
+    "sample_from_correlated_gaussian",
     "compute_spectra",
 ]

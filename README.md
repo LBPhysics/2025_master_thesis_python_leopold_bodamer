@@ -52,10 +52,11 @@ That is:
 - `bath.bath_temperature` means $T/\bar\omega_0$
 - `bath.bath_cutoff` means $\omega_c/\bar\omega_0$
 - `bath.sb_coupling` means $\text{coupling}/\bar\omega_0$
-- `config.solver_run_kwargs.sec_cutoff` means $\omega_\mathrm{sec}/\bar\omega_0$ for Redfield runs, with `-1` reserved as the disable-secular-cutoff sentinel
+- `config.solver_run_kwargs.sec_cutoff` is passed directly to QuTiP for Redfield runs; QuTiP interprets positive values as a dimensionless multiplier of `dw_min`, the smallest nonzero Bohr-frequency spacing of the Hamiltonian, while `-1` disables the secular cutoff
 
 Internally, the code converts `atomic.frequencies_cm` to fs^-1 for the dynamics; the same
-$\bar\omega_0$ (in fs^-1) is used to scale these bath parameters and the Redfield secular cutoff.
+$\bar\omega_0$ (in fs^-1) is used to scale these bath parameters. The Redfield `sec_cutoff`
+is no longer rescaled by the loader.
 
 ### Stable bath types
 

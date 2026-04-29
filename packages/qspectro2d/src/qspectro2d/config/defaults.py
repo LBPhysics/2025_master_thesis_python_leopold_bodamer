@@ -46,7 +46,7 @@ COMPONENT_MAP: dict[str, tuple[int, int]] = {
     "nonrephasing": (1, -1),
 }
 
-NEGATIVE_EIGVAL_THRESHOLD = -1e-3
+NEGATIVE_EIGVAL_THRESHOLD = -1e-6
 TRACE_TOLERANCE = 1e-6
 
 # --- Time and grid defaults ---
@@ -67,6 +67,7 @@ DEFAULTS = {
         "max_excitation": 1,
         "n_inhomogen": 1,
         "delta_inhomogen_cm": 0.0,
+        "inhom_correlation": None,
         # Currently mainly kept for paper-reproduction workflows.
         "deph_rate_fs": 1 / 100,
         "down_rate_fs": 1 / 300,

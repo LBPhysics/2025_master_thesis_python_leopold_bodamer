@@ -168,7 +168,8 @@ Practical consequences:
 Redfield-specific run kwargs live under `config.solver_run_kwargs`:
 - `sec_cutoff` controls the secular approximation in QuTiP `brmesolve`
 - `sec_cutoff = -1` disables the secular approximation
-- `sec_cutoff > 0` is interpreted in units of `w0`, just like the YAML bath parameters
+- `sec_cutoff > 0` is passed through unchanged and is dimensionless
+- QuTiP uses the effective frequency threshold `sec_cutoff * dw_min`, where `dw_min` is the smallest nonzero Bohr-frequency spacing of the system Hamiltonian
 
 Example:
 
