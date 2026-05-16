@@ -1,234 +1,111 @@
 # qspectro2d
 
-Modular tools for simulating 1D and 2D electronic four-wave mixing spectroscopy on open quantum systems, developed as part my  overall Master’s thesis project.
+`qspectro2d` is the simulation package that powers the spectroscopy workflow in this repository. It exposes the core open-quantum-system objects at package level and keeps the configuration and artifact helpers in submodules.
 
-## Table of contents
-- [Overview](#overview)
-- [Core capabilities](#core-capabilities)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [Configuration-driven workflow](#configuration-driven-workflow)
-- [Working with results](#working-with-results)
-- [Visualization](#visualization)
-- [Background literature](#background-literature)
+## Public API
 
-## Overview
-`qspectro2d` streamlines the complete workflow of nonlinear spectroscopy simulations:
+The top-level package exports:
 
-1. Define excitonic systems with configurable geometries, truncation levels, and inhomogeneous broadening.
-2. Specify laser pulses and phase-cycling schemes consistent with four-wave mixing experiments.
-3. Couple systems to dissipative environments using Bloch–Redfield, Lindblad, or paper-specific equations of motion.
-4. Propagate dynamics, compute polarisations, and perform Fourier-domain post-processing for 1D/2D spectroscopy.
+- `AtomicSystem`
+- `LaserPulse`
+- `LaserPulseSequence`
+- `SimulationConfig`
+- `SimulationModuleOQS`
+- `compute_spectra`
+- `save_run_artifact`
+- `load_run_artifact`
+- `load_simulation_data`
 
-The package underpins the numerical results of the Master’s thesis and is designed to be reusable for related projects.
+Configuration helpers live in `qspectro2d.config` and `qspectro2d.config.factory`:
 
-## Branch notes
-
-- **master**: stable baseline.
-	- Solvers: `lindblad`, `redfield`, `paper_eqs`.
-	- Bath models: `ohmic`, `drudelorentz`, `ohmic+lorentzian`, `drudelorentz+lorentzian`.
-
-## Core capabilities
-
-| Domain | Highlights |
-| --- | --- |
-| Atomic & excitonic models | Cylindrical chain geometries, single/double excitation truncation, history-aware frequency updates |
-| Bath descriptions | Ohmic and Drude–Lorentz spectral densities, Qutip `OhmicEnvironment`, configurable coupling strengths |
-| Laser pulses | Gaussian and cos² envelopes, automatic pulse-delay synthesis, phase cycling presets |
-| Simulation engine | Factory to assemble `SimulationModuleOQS`, solver validation, support for QuTiP solvers and paper-derived Liouvillians |
-| Spectroscopy utilities | Analytical polarisation, solver sanity checks, FFT helpers, signal averaging and component selection |
-| Project utilities | Default parameter validation, file I/O helpers, thesis path conventions, plotting helpers |
-
-## Architecture
-
-```
-qspectro2d/
-├── config/        # Default parameters, YAML loading → SimulationModuleOQS factory
-├── core/          # Atomic, laser, bath, and simulation classes
-├── spectroscopy/  # Polarisation, solver validation, post-processing
-├── utils/         # Constants, I/O, file naming, rotating-wave helpers
-└── visualization/ # Plotting wrappers (Matplotlib + thesis aesthetics)
-```
-
-### Key modules
-- `config.factory` – builds validated simulation objects from one merged config dictionary.
-- `core.atomic_system.system` – manages basis construction, exciton Hamiltonians, and geometry-dependent couplings.
-- `core.simulation.simulation` – wraps system, laser, bath, and solver settings.
-- `spectroscopy.polarisation` – provides analytical polarisation computation (`complex_polarisation`) compatible with solver outputs.
-- `utils.data_io` – standardizes how time-domain signals and metadata are saved/loaded to support reproducible thesis figures.
+- `resolve_config`
+- `validate_config`
+- `load_simulation_config`
+- `load_simulation`
+- `create_base_sim_oqs`
 
 ## Installation
 
-The package targets Python ≥ 3.11. It depends on NumPy, SciPy, Matplotlib, Qutip, PyYAML, and optional extras for plotting.
+From the repository root, either create the conda environment:
 
-
-### User installation
 ```bash
-pip install -e qspectro2d
+conda env create -f environment.yml
+conda activate m_env
 ```
 
-Optional extras:
-- `plotstyle` (https://github.com/LBPhysics/plotstyle) for LaTeX-quality Matplotlib output.
+or install the package directly in editable mode:
+
+```bash
+pip install -e ./packages/qspectro2d
+```
+
+The package targets Python 3.11 and depends on NumPy, SciPy, QuTiP, Matplotlib, and PyYAML. If you also want thesis-style plots, install the sibling package `plotstyle` from `packages/plotstyle`.
 
 ## Quick start
 
-Discover the public API and assemble basic simulations programmatically:
-
-```python
-from qspectro2d import (
-		AtomicSystem,
-)
-from qspectro2d.core.laser_system.laser import LaserPulseSequence
-from qspectro2d.core.simulation.sim_config import SimulationConfig
-from qspectro2d.core.simulation.simulation import SimulationModuleOQS
-
-system = AtomicSystem(
-		n_atoms=2,
-		frequencies_cm=[16000.0, 16050.0],
-		dip_moments=[1.0, 0.9],
-		coupling_cm=150.0,
-)
-
-sequence = LaserPulseSequence.from_pulse_delays(
-		pulse_delays=[0.0, 50.0],
-		pulse_fwhm_fs=15.0,
-		carrier_freq_cm=16000.0,
-)
-
-config = SimulationConfig(
-		ode_solver="redfield",
-		dt=0.1,
-		t_coh=0.0,
-		t_wait=100.0,
-		t_det=250.0,
-)
-
-simulation = SimulationModuleOQS(
-		simulation_config=config,
-		system=system,
-		laser=sequence,
-)
-```
-
-## Configuration-driven workflow
-
-1. Describe system, laser, bath, and solver blocks in YAML (values omitted fall back to module defaults in `qspectro2d.config`).
-2. Call `load_simulation(path_to_yaml)` to obtain a validated `SimulationModuleOQS` instance, with cutoff time (where the simulation becomes unphysical).
-
-### Loading and validating configuration
+Create a simulation from a YAML configuration file:
 
 ```python
 from pathlib import Path
-from qspectro2d.config import resolve_config
-from qspectro2d.config.factory import load_simulation
+
+from qspectro2d import AtomicSystem, LaserPulseSequence, SimulationConfig, SimulationModuleOQS
+from qspectro2d.config.factory import create_base_sim_oqs, load_simulation
 
 sim = load_simulation(Path("config/dimer.yaml"))
-sim_summary = sim.summary()
+print(sim.summary())
 
-sim, time_cut = create_base_sim_oqs(Path("config/dimer.yaml"))
+sim_checked, time_cut = create_base_sim_oqs(Path("config/dimer.yaml"))
 print(f"Usable detection window: {time_cut:.1f} fs")
 ```
 
-The loader automatically respects `SLURM_CPUS_PER_TASK` for parallel averaging and raises actionable errors when parameter combinations are inconsistent (see `qspectro2d.config.validate_config`).
-
-### Solver options
-
-You can pass adaptive-ODE settings under `config.solver_options`. These are forwarded to the selected QuTiP backend.
-
-Default solver options live in `qspectro2d.config.defaults.DEFAULTS["config"]["solver_options"]`, and the allowed keys are validated in `qspectro2d.config.validate_config`. Unknown keys raise an error to avoid silently ignored typos.
-
-Common keys (for the supported solvers):
-- `atol`, `rtol`: absolute/relative tolerances (must be > 0)
-- `nsteps`: maximum allowed internal steps (must be > 0)
-- `method`: ODE method string (e.g. `"bdf"`)
-
-### Internal solver step size
-
-`config.solver_options.max_step` is intentionally not treated as a user-facing YAML
-parameter in the shipped template.
-
-For the time-dependent solvers `lindblad`, `redfield`, and `paper_eqs`, the loader
-injects an internal `max_step` automatically after config merging:
-
-- With `laser.rwa_sl: true`, `max_step` is chosen from the pulse-envelope
-  timescale, targeting about ten internal steps across `laser.pulse_fwhm_fs`
-- With `laser.rwa_sl: false`, the loader first enforces a carrier-safe output
-  spacing if needed, then chooses `max_step` as a fraction of the saved/output
-  spacing `config.dt`
-
-This split is intentional:
-- the YAML template documents user-settable parameters only
-- the README documents internal loader behavior that affects numerics
-
-Practical consequences:
-- `config.dt` is the saved/output spacing seen in stored results
-- the actual internal solver step may be smaller than `config.dt`
-
-Redfield-specific run kwargs live under `config.solver_run_kwargs`:
-- `sec_cutoff` controls the secular approximation in QuTiP `brmesolve`
-- `sec_cutoff = -1` disables the secular approximation
-- `sec_cutoff > 0` is passed through unchanged and is dimensionless
-- QuTiP uses the effective frequency threshold `sec_cutoff * dw_min`, where `dw_min` is the smallest nonzero Bohr-frequency spacing of the system Hamiltonian
-
-Example:
-
-```yaml
-config:
-	solver: redfield
-	solver_run_kwargs:
-		sec_cutoff: 1.0e-5
-```
-
-## Bath configuration (normalized units)
-
-Bath parameters in YAML are interpreted as dimensionless multiples of
-$\bar\omega_0 = \mathrm{mean}(\texttt{atomic.frequencies_cm})$ (converted internally to fs⁻¹).
-
-Supported `bath.bath_type` values:
-- `ohmic`
-- `drudelorentz`
-- `ohmic+lorentzian`
-- `drudelorentz+lorentzian`
-
-For the Ohmic variants (`ohmic`, `ohmic+lorentzian`), you can optionally set `bath.s` to override the
-power-law exponent. If omitted, the default is `s = 1.0`.
-
-For the `*+lorentzian` types, add a Lorentzian peak to the base spectral density using normalized inputs:
-- `bath.peak_width`: $\gamma / \bar\omega_0$
-- `bath.peak_strength`: $\text{strength} / \text{sb\_coupling}$
-- `bath.peak_center` (optional): $\omega_\mathrm{center}/\bar\omega_0$ (default `0.0`)
-- `bath.wmax_factor` (optional): `wMax = wmax_factor * bath_cutoff` in internal units (default `10.0`)
-
-**Known limitation:** the `*+lorentzian` bath types are still numerically delicate.
-Peaks very close to $\omega\approx 0$ (often used to boost pure dephasing) can make Bloch–Redfield rates highly sensitive to low-frequency details and may lead to slow/unstable numerics.
-For stable dephasing control, prefer the built-in Ohmic or Drude–Lorentz families, or analytic Drude–Lorentz / underdamped-mode environments.
-
-## Working with results
-
-- `qspectro2d.utils.data_io` – save raw time-domain polarisations, spectral grids, and metadata.
-- `qspectro2d.spectroscopy.post_processing` – apply FFTs, phase matching, and generate absorption/emission maps.
-- `qspectro2d.diagnostics.solver_check.check_the_solver` – detect unphysical behavior and return the recommended time cut.
-
-All outputs are designed to integrate with the thesis data hierarchy (`Master_thesis/data` and `Master_thesis/figures`).
-
-## Visualization
-
-The optional companion package `plotstyle` enforces LaTeX fonts, consistent color palettes, and thesis-ready sizes:
+Or build the core objects manually:
 
 ```python
-from plotstyle import init_style, save_fig, set_size
+from qspectro2d import AtomicSystem, LaserPulseSequence, SimulationConfig, SimulationModuleOQS
 
-init_style()
-figsize = set_size(fraction=0.9)
+system = AtomicSystem(
+    n_atoms=2,
+    frequencies_cm=[16000.0, 16050.0],
+    dip_moments=[1.0, 0.9],
+    coupling_cm=150.0,
+)
 
-# ... build Matplotlib figure ...
+laser = LaserPulseSequence.from_pulse_delays(
+    pulse_delays=[0.0, 50.0],
+    pulse_fwhm_fs=15.0,
+    carrier_freq_cm=16000.0,
+)
 
-save_fig(fig, "./figures/2d_spectrum", formats=["pdf", "png"])
+config = SimulationConfig(
+    ode_solver="redfield",
+    dt=0.1,
+    t_coh=0.0,
+    t_wait=100.0,
+    t_det=250.0,
+)
+
+simulation = SimulationModuleOQS(
+    simulation_config=config,
+    system=system,
+    laser=laser,
+)
 ```
 
-If LaTeX binaries are missing, the style falls back gracefully to non-TeX rendering.
+## Configuration
 
-## Background literature
-- Monomer response: [J. Chem. Phys. 124, 234504 (2006)](https://pubs.aip.org/jcp/article/124/23/234504/930650/)
-- Dimer response (coupled/uncoupled): [J. Chem. Phys. 124, 234505 (2006)](https://pubs.aip.org/jcp/article/124/23/234505/930637/)
+`qspectro2d.config.defaults` defines the supported solver, bath, envelope, and simulation-type options. The shipped defaults currently cover:
+
+- solvers: `lindblad`, `redfield`, `paper_eqs`
+- bath types: `ohmic`, `drudelorentz`, `ohmic+lorentzian`, `drudelorentz+lorentzian`
+- envelopes: `gaussian`, `cos2`
+- simulation types: `0d`, `1d`, `2d`
+
+YAML configuration is merged with those defaults and validated once. The loader also passes `config.solver_run_kwargs.sec_cutoff` through to QuTiP unchanged for Redfield runs.
+
+Bath parameters are normalized against the mean atomic transition frequency. In practice, `bath_temperature`, `bath_cutoff`, and the Lorentzian peak parameters are dimensionless inputs that are converted to internal units by the loader.
+
+## Results and diagnostics
+
+Use `qspectro2d.utils.data_io` to save and load run artifacts, and `qspectro2d.spectroscopy.post_processing.compute_spectra` for FFT-based post-processing. The solver diagnostic in `qspectro2d.diagnostics.check_the_solver` returns the recommended time cut when the evolution becomes unphysical.
+
+The workflow scripts in `scripts/local/` and `scripts/hpc/` both consume the same configuration and artifact format, so results can be processed locally or through SLURM without changing the package API.
